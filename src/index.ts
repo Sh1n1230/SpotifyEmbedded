@@ -12,6 +12,17 @@ import authRouter from './routes/auth.js';
 
 const app = express();
 
+// セキュリティ: Express の技術スタック情報を隠す
+app.disable('x-powered-by');
+
+// セキュリティヘッダー
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 app.use(cors({ origin: config.server.corsOrigin }));
 
 app.use(

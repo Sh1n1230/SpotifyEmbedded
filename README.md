@@ -1,114 +1,111 @@
 # SpotifyEmbedded
 
-Self-hosted API that exposes your Spotify listening activity for embedding in personal portfolio sites. Returns the currently playing track (with album art, artist, track name) alongside a Japanese AI-generated mood description, plus your recent top tracks.
+自分のSpotifyの再生状況をポートフォリオサイトに埋め込むためのセルフホスト型APIサーバーです。現在再生中の曲（ジャケ写・アーティスト名・曲名）と、AIが生成した日本語のムード文、直近の再生ランキングを返します。
 
-## Features
+## 機能
 
-- `GET /api/now-playing` — current track with **album art**, **artist name**, **track name**, and a **Gemini-generated Japanese mood** (e.g. "今ノリノリなようです")
-- `GET /api/top-tracks` — ranked list of your top 50 tracks from the past ~4 weeks
-- `GET /api/status` — all data in one call
-- **JSON and YAML** response formats
-- Auto-refreshing Spotify OAuth token
-- In-memory caching (30s for now-playing, 1h for top-tracks)
-- Rate limiting to protect upstream APIs
+- `GET /api/now-playing` — 現在再生中の曲（**ジャケ写・アーティスト名・曲名**）＋ **AI生成の日本語ムード文**（例: "今ノリノリなようです"）
+- `GET /api/top-tracks` — 直近約4週間の再生ランキング（最大50曲）
+- `GET /api/status` — 上記をまとめて一括取得
+- **JSON / YAML** 両フォーマット対応
+- Spotifyトークン自動更新
+- インメモリキャッシュ（now-playing: 30秒、top-tracks: 1時間）
+- レート制限でAPI保護
 
-## Quick Start
+## セットアップ
 
-### 1. Prerequisites
+### 必要なもの
 
-- Node.js 20+
-- A [Spotify account](https://spotify.com)
-- A [Google AI Studio](https://aistudio.google.com) account (free)
+- Node.js 20以上
+- [Spotifyアカウント](https://spotify.com)
+- [Groq](https://console.groq.com) のAPIキー（無料・クレジットカード不要）
 
-### 2. Clone & install
+### 1. クローン＆インストール
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/SpotifyEmbedded.git
+git clone https://github.com/Sh1n1230/SpotifyEmbedded.git
 cd SpotifyEmbedded
 npm install
 cp .env.example .env
 ```
 
-### 3. Spotify app setup
+### 2. Spotifyアプリの作成
 
-1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app.
-2. Under **Settings**, add `http://127.0.0.1:3000/auth/callback` as a Redirect URI.
-3. Copy **Client ID** and **Client Secret** into `.env`.
+1. [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) でアプリを作成
+2. **Settings** → **Redirect URIs** に `http://127.0.0.1:3000/auth/callback` を追加
+3. **Client ID** と **Client Secret** を `.env` に記入
 
-### 4. Get your Spotify refresh_token (one-time)
+### 3. Spotify refresh_token の取得（初回のみ）
 
 ```bash
 npm run auth
 ```
 
-Open [http://localhost:3000/auth/login](http://localhost:3000/auth/login) in your browser, log in with your Spotify account, and authorize the app. The page will display your `SPOTIFY_REFRESH_TOKEN` — copy it into `.env`.
+ブラウザで `http://127.0.0.1:3000/auth/login` を開き、Spotifyアカウントでログイン・承認すると `SPOTIFY_REFRESH_TOKEN` が表示されます。それを `.env` にコピーし、サーバーを停止（`Ctrl+C`）してください。
 
-Stop the server (`Ctrl+C`).
+### 4. Groq APIキーの取得（無料）
 
-### 5. Get your Gemini API key (free)
+1. [Groq Console](https://console.groq.com) でAPIキーを発行
+2. `GROQ_API_KEY` に記入
 
-1. Go to [Google AI Studio](https://aistudio.google.com/apikey).
-2. Create an API key and paste it into `.env` as `GEMINI_API_KEY`.
-
-### 6. Run
+### 5. 起動
 
 ```bash
-npm run dev        # development (auto-restart on file changes)
-npm run build && npm start  # production
+npm run dev        # 開発サーバー（ファイル変更で自動再起動）
+npm run build && npm start  # 本番起動
 ```
 
-## API Reference
+## APIリファレンス
 
-All endpoints support JSON (default) and YAML (`?format=yaml` or `Accept: application/yaml`).
+全エンドポイントはJSON（デフォルト）とYAML（`?format=yaml` または `Accept: application/yaml`）に対応しています。
 
 ### `GET /api/now-playing`
 
-Returns the currently playing track with a mood description.
+現在再生中の曲とムード文を返します。
 
-**Response:**
 ```json
 {
   "is_playing": true,
   "track": {
-    "id": "4uLU6hMCjMI75M1A2tKUQC",
-    "name": "Never Gonna Give You Up",
-    "artist": "Rick Astley",
-    "album": "Whenever You Need Somebody",
+    "id": "5wujBwqG7INdStqGd4tRMX",
+    "name": "Armed And Dangerous",
+    "artist": "Juice WRLD",
+    "album": "Goodbye & Good Riddance",
     "album_art_url": "https://i.scdn.co/image/...",
-    "duration_ms": 213573,
-    "popularity": 79,
+    "duration_ms": 169999,
+    "popularity": 78,
     "spotify_url": "https://open.spotify.com/track/...",
-    "preview_url": "https://p.scdn.co/mp3-preview/..."
+    "preview_url": null
   },
   "mood": {
-    "text": "今ノリノリなようです",
-    "generated_at": "2025-05-31T10:00:00.000Z"
+    "text": "ダークな気分になっています",
+    "generated_at": "2026-05-31T13:35:14.667Z"
   },
-  "fetched_at": "2025-05-31T10:00:00.000Z"
+  "fetched_at": "2026-05-31T13:35:14.669Z"
 }
 ```
 
-When nothing is playing: `is_playing: false`, `track: null`, `mood: null`.
+再生していない場合: `is_playing: false`、`track: null`、`mood: null`
 
 ### `GET /api/top-tracks`
 
-Returns your top 50 tracks from the past ~4 weeks.
+直近約4週間の再生ランキング（最大50曲）を返します。
 
 ```json
 {
   "range": "short_term",
-  "fetched_at": "2025-05-31T10:00:00.000Z",
+  "fetched_at": "2026-05-31T10:00:00.000Z",
   "tracks": [
     {
       "rank": 1,
       "id": "...",
-      "name": "Song Name",
-      "artist": "Artist Name",
-      "album": "Album Name",
+      "name": "曲名",
+      "artist": "アーティスト名",
+      "album": "アルバム名",
       "album_art_url": "https://i.scdn.co/image/...",
       "duration_ms": 200000,
       "popularity": 85,
-      "genres": ["pop", "dance pop"],
+      "genres": ["hip hop", "rap"],
       "spotify_url": "https://open.spotify.com/track/...",
       "preview_url": null
     }
@@ -118,45 +115,45 @@ Returns your top 50 tracks from the past ~4 weeks.
 
 ### `GET /api/status`
 
-Combined response with both now-playing and top-tracks.
+now-playing と top-tracks をまとめて返します。
 
-### YAML format
+### YAMLフォーマット
 
 ```bash
 curl "http://localhost:3000/api/now-playing?format=yaml"
-# or
+# または
 curl -H "Accept: application/yaml" http://localhost:3000/api/now-playing
 ```
 
-## Embedding in your portfolio
+## ポートフォリオへの埋め込み方法
 
 ```javascript
-// Vanilla JS / React / Astro / etc.
+// Vanilla JS / React / Astro など
 const res = await fetch('https://your-api.example.com/api/now-playing');
 const data = await res.json();
 
 if (data.is_playing) {
-  console.log(data.track.name);         // "Never Gonna Give You Up"
-  console.log(data.track.artist);       // "Rick Astley"
-  console.log(data.track.album_art_url); // album cover URL
-  console.log(data.mood.text);          // "今ノリノリなようです"
+  console.log(data.track.name);          // "Armed And Dangerous"
+  console.log(data.track.artist);        // "Juice WRLD"
+  console.log(data.track.album_art_url); // ジャケ写のURL
+  console.log(data.mood.text);           // "ダークな気分になっています"
 }
 ```
 
-## Deployment
+## デプロイ
 
-This server is stateless (no database). Deploy anywhere Node.js runs:
+DBは不要で、どこでも動かせます:
 
-- [Railway](https://railway.app) (free tier)
-- [Render](https://render.com) (free tier)
+- [Railway](https://railway.app)（無料プランあり）
+- [Render](https://render.com)（無料プランあり）
 - [Fly.io](https://fly.io)
 
-Set the same environment variables as your `.env` in the platform's dashboard. Set `CORS_ORIGIN` to your portfolio domain.
+各プラットフォームのダッシュボードで `.env` と同じ環境変数を設定してください。本番環境では `CORS_ORIGIN` を自分のポートフォリオのURLに制限することを推奨します。
 
-## Why no audio features?
+## audio-featuresを使わない理由
 
-Spotify deprecated the `/audio-features` endpoint for apps created after November 2024. This project infers mood from **artist genres** (fetched from `/artists`), **track popularity**, and track/album metadata — passed to Gemini 2.0 Flash for Japanese mood generation.
+Spotifyは2024年11月以降に作成されたアプリでは `/audio-features`（テンポ・エネルギー等の音声特徴）エンドポイントを廃止しました。本プロジェクトでは代わりに **アーティストのジャンルタグ**（`/artists` から取得）・**楽曲の人気度**・**曲名・アーティスト名**をGroq（Llama 3.3）に渡してムードを推論しています。
 
-## License
+## ライセンス
 
 MIT
