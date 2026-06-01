@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpotifyEmbedded Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff;
+      color: #111;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #888;
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+    }
+
+    /* ── Now Playing ─────────────────────────────── */
+    #now-playing {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+      max-width: 480px;
+    }
+
+    #album-art {
+      width: 200px;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: #eee;
+    }
+
+    #album-art-placeholder {
+      width: 200px;
+      height: 200px;
+      background: #eee;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 0.85rem;
+    }
+
+    #track-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    #artist-name {
+      font-size: 1rem;
+      color: #555;
+    }
+
+    #mood-text {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-top: 0.5rem;
+      color: #111;
+    }
+
+    #status-msg {
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    /* ── Ranking ─────────────────────────────────── */
+    #ranking-toggle {
+      margin-top: 1.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+    }
+
+    #ranking-toggle:hover { background: #333; }
+
+    #ranking-section {
+      display: none;
+      margin-top: 1.5rem;
+      max-width: 480px;
+    }
+
+    #ranking-section.open { display: block; }
+
+    #ranking-section h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #888;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+
+    #ranking-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .ranking-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .ranking-item .rank {
+      width: 1.5rem;
+      font-size: 0.85rem;
+      color: #aaa;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .ranking-item img {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .ranking-item .info .name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 320px;
+    }
+
+    .ranking-item .info .artist {
+      font-size: 0.8rem;
+      color: #777;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>SPOTIFYEMBEDDED DEMO</h1>
+
+  <section id="now-playing">
+    <div id="album-art-placeholder">読み込み中...</div>
+    <p id="track-name"></p>
+    <p id="artist-name"></p>
+    <p id="mood-text"></p>
+    <p id="status-msg"></p>
+  </section>
+
+  <button id="ranking-toggle" style="display:none">ランキングを見る ↓</button>
+
+  <section id="ranking-section">
+    <h2>直近4週間の再生ランキング</h2>
+    <ul id="ranking-list"></ul>
+  </section>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    let topTracksCache = null;
+    let rankingOpen = false;
+
+    // ── Now Playing ───────────────────────────────
+    async function fetchNowPlaying() {
+      try {
+        const res = await fetch('/api/now-playing');
+        const data = await res.json();
+        renderNowPlaying(data);
+      } catch (e) {
+        $('status-msg').textContent = 'APIに接続できません';
+      }
+    }
+
+    function renderNowPlaying(data) {
+      const placeholder = $('album-art-placeholder');
+      let img = $('album-art');
+
+      if (!data.is_playing || !data.track) {
+        placeholder.style.display = 'flex';
+        placeholder.textContent = '再生中の曲はありません';
+        if (img) img.style.display = 'none';
+        $('track-name').textContent = '';
+        $('artist-name').textContent = '';
+        $('mood-text').textContent = '';
+        $('status-msg').textContent = '';
+        return;
+      }
+
+      const t = data.track;
+
+      // アルバムアート
+      if (!img) {
+        img = document.createElement('img');
+        img.id = 'album-art';
+        img.alt = 'album art';
+        placeholder.replaceWith(img);
+      } else {
+        placeholder.style.display = 'none';
+        img.style.display = 'block';
+      }
+      img.src = t.album_art_url;
+
+      $('track-name').textContent = t.name;
+      $('artist-name').textContent = t.artist;
+      $('mood-text').textContent = data.mood ? data.mood.text : '';
+      $('status-msg').textContent = '再生中';
+      $('ranking-toggle').style.display = 'inline-block';
+    }
+
+    // ── Ranking ───────────────────────────────────
+    $('ranking-toggle').addEventListener('click', async () => {
+      rankingOpen = !rankingOpen;
+      const section = $('ranking-section');
+      const btn = $('ranking-toggle');
+
+      if (rankingOpen) {
+        section.classList.add('open');
+        btn.textContent = 'ランキングを閉じる ↑';
+        if (!topTracksCache) {
+          try {
+            const res = await fetch('/api/top-tracks');
+            topTracksCache = await res.json();
+          } catch (e) {
+            $('ranking-list').innerHTML = '<li style="color:#aaa">取得できませんでした</li>';
+            return;
+          }
+        }
+        renderRanking(topTracksCache);
+      } else {
+        section.classList.remove('open');
+        btn.textContent = 'ランキングを見る ↓';
+      }
+    });
+
+    function renderRanking(data) {
+      const list = $('ranking-list');
+      list.innerHTML = '';
+      for (const track of data.tracks) {
+        const li = document.createElement('li');
+        li.className = 'ranking-item';
+        li.innerHTML = `
+          <span class="rank">${track.rank}</span>
+          <img src="${track.album_art_url}" alt="">
+          <div class="info">
+            <div class="name">${escapeHtml(track.name)}</div>
+            <div class="artist">${escapeHtml(track.artist)}</div>
+          </div>`;
+        list.appendChild(li);
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    // ── ポーリング ────────────────────────────────
+    fetchNowPlaying();
+    setInterval(fetchNowPlaying, 30_000);
+  </script>
+</body>
+</html>

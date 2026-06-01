@@ -37,6 +37,9 @@ app.use(
 
 app.use(formatResponseMiddleware);
 
+// デモフロントエンド
+app.use(express.static('public'));
+
 app.use('/api/now-playing', nowPlayingRouter);
 app.use('/api/top-tracks', topTracksRouter);
 app.use('/api/status', statusRouter);
