@@ -142,13 +142,44 @@ if (data.is_playing) {
 
 ## デプロイ
 
-DBは不要で、どこでも動かせます:
+DBは不要で、どこでも動かせます。**`.env` はコミットされない**ため、APIキーは各プラットフォームのダッシュボードや secrets 機能で設定します。本番環境では `CORS_ORIGIN` を自分のポートフォリオのURLに制限することを推奨します。
 
-- [Railway](https://railway.app)（無料プランあり）
-- [Render](https://render.com)（無料プランあり）
-- [Fly.io](https://fly.io)
+### Render（無料・一番簡単）
 
-各プラットフォームのダッシュボードで `.env` と同じ環境変数を設定してください。本番環境では `CORS_ORIGIN` を自分のポートフォリオのURLに制限することを推奨します。
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+このリポジトリには [`render.yaml`](render.yaml)（Blueprint）が含まれています。
+
+1. このリポジトリを自分のGitHubアカウントにフォーク
+2. [Render ダッシュボード](https://dashboard.render.com) → **New +** → **Blueprint** → フォークしたリポジトリを選択
+3. `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` / `GROQ_API_KEY` を入力（`sync: false` のため値はリポジトリに保存されません）
+4. デプロイ完了後、`https://<your-app>.onrender.com/api/now-playing` で確認
+
+> 無料プランは15分アクセスが無いとスリープします。常に即応させたい場合は、[cron-job.org](https://cron-job.org) などで数分おきに `/health` を叩いてください。
+
+### Docker（Fly.io / Cloud Run / VPS など）
+
+リポジトリ同梱の [`Dockerfile`](Dockerfile) を使います。秘密情報はイメージに含めず、実行時に環境変数で渡します。
+
+```bash
+docker build -t spotify-embedded .
+docker run -p 3000:3000 --env-file .env spotify-embedded
+```
+
+Fly.io の例:
+
+```bash
+fly launch --no-deploy            # fly.toml を生成（Dockerfile を自動検出）
+fly secrets set SPOTIFY_CLIENT_ID=... SPOTIFY_CLIENT_SECRET=... \
+                SPOTIFY_REFRESH_TOKEN=... GROQ_API_KEY=...
+fly deploy
+```
+
+### その他
+
+- [Railway](https://railway.app) — GitHub連携でビルド。環境変数はダッシュボードで設定。
+
+⚠️ デプロイで使う `SPOTIFY_REFRESH_TOKEN` を取得する際は、Spotify Developer Dashboard の **Redirect URIs** にローカル用の `http://127.0.0.1:3000/auth/callback` を登録した状態で `npm run auth` を実行してください（トークン取得はローカルで一度だけ行えばOKです）。
 
 ## audio-featuresを使わない理由
 

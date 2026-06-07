@@ -1,0 +1,32 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# このリポジトリをフォーク/クローンした人は、Render ダッシュボードの
+# "New +" → "Blueprint" でこのファイルを読み込むだけでデプロイできます。
+#
+# 秘密情報（APIキー類）は sync: false にしてあるため、このファイルには
+# 値を一切書きません。Render のダッシュボードで各自が入力します。
+services:
+  - type: web
+    name: spotify-embedded
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # --- 秘密情報: ダッシュボードで各自入力（リポジトリには保存されない） ---
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REFRESH_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      # --- 任意設定 ---
+      # 本番では自分のポートフォリオのURLに制限することを推奨（例: https://example.com）
+      - key: CORS_ORIGIN
+        sync: false
