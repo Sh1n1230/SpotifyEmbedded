@@ -19,8 +19,8 @@ Backend API server (Node.js + TypeScript + Express).
 - `src/types/index.ts` — canonical TypeScript interfaces; all modules import from here
 - `src/config.ts` — env validation; fails fast on startup if required vars are missing
 - `src/spotify/` — Spotify API client (native fetch), token auto-refresh, nowPlaying, topTracks
-- `src/gemini/moodGenerator.ts` — Gemini 2.0 Flash generates Japanese mood strings from track metadata
-- `src/cache/index.ts` — three node-cache instances: nowPlaying (30s TTL), topTracks (1h TTL), mood (per trackId, no TTL)
+- `src/llm/moodGenerator.ts` — Groq (default: llama-3.3-70b-versatile) generates Japanese mood strings from track metadata
+- `src/cache/index.ts` — three node-cache instances: nowPlaying (30s TTL), topTracks (1h TTL), mood (per trackId, 24h TTL, max 200 keys)
 - `src/middleware/formatResponse.ts` — JSON/YAML content negotiation via `res.sendFormatted()`
 - `src/routes/` — Express routers for /api/now-playing, /api/top-tracks, /api/status, /auth/*
 
@@ -33,4 +33,4 @@ Backend API server (Node.js + TypeScript + Express).
 
 ## Environment variables
 
-See `.env.example` for the full list. Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`, `GEMINI_API_KEY`.
+See `.env.example` for the full list. Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`, `GROQ_API_KEY`.

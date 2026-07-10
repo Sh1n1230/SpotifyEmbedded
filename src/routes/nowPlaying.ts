@@ -33,7 +33,7 @@ router.get('/', async (req, res, next) => {
           mood = { text, generated_at: new Date().toISOString() };
           moodCache.set(data.trackId, mood);
         } catch (moodErr) {
-          console.error('[mood] Gemini error (degraded mode):', moodErr);
+          console.error('[mood] LLM error (degraded mode):', moodErr);
         }
       }
     }
