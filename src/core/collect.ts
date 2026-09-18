@@ -8,6 +8,7 @@
 import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
 import { generateMood } from '../llm/moodGenerator.js';
+import { hasLlmConfigured } from '../authStore.js';
 import { nowPlayingCache, topTracksCache, moodCache } from '../cache/index.js';
 import type {
   NowPlayingResponse,
@@ -19,7 +20,7 @@ import type {
 export interface CollectOptions {
   /** キャッシュを読まない。CLI の単発実行のように常に最新が要る場合に使う。 */
   bypassCache?: boolean;
-  /** ムード生成を行わない。GROQ_API_KEY 無しで動かしたい場合に使う。 */
+  /** ムード生成を行わない。LLMキーが未設定の場合は指定しなくても自動で省く。 */
   skipMood?: boolean;
 }
 
@@ -42,8 +43,11 @@ export async function collectNowPlaying(
 
   const data = await fetchNowPlaying();
 
+  // LLMが未設定なら、呼びに行かず静かに省く（曲情報だけで成立する）
+  const wantMood = !options.skipMood && hasLlmConfigured();
+
   let mood: MoodResult | null = null;
-  if (!options.skipMood && data.isPlaying && data.track && data.trackId) {
+  if (wantMood && data.isPlaying && data.track && data.trackId) {
     mood = moodCache.get<MoodResult>(data.trackId) ?? null;
 
     if (!mood) {
@@ -58,8 +62,12 @@ export async function collectNowPlaying(
         mood = { text, generated_at: new Date().toISOString() };
         cacheSet(moodCache, data.trackId, mood);
       } catch (err) {
-        // ムードが出せなくても曲情報は返す（デグレード動作）
-        console.error('[mood] LLM error (degraded mode):', err);
+        // ムードが出せなくても曲情報は返す（デグレード動作）。
+        // 原因が伝わればよいので、スタックトレースは出さない。
+        console.error(
+          '[mood] ムード文を省略しました:',
+          err instanceof Error ? err.message : err
+        );
       }
     }
   }

@@ -94,6 +94,21 @@
   var container = document.createElement('div');
   root.appendChild(container);
 
+  // Spotifyのジャケ写URLはプレフィックスがサイズを表す。表示サイズに
+  // 合ったものを選ばないと、640px画像を40pxで描くことになり表示が遅れる。
+  var ART_SIZES = { 640: 'ab67616d0000b273', 300: 'ab67616d00001e02', 64: 'ab67616d00004851' };
+
+  function artAtSize(url, size) {
+    if (!url) return url;
+    var target = ART_SIZES[size];
+    if (!target) return url;
+    for (var key in ART_SIZES) {
+      var prefix = ART_SIZES[key];
+      if (url.indexOf(prefix) !== -1) return url.replace(prefix, target);
+    }
+    return url;
+  }
+
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -124,9 +139,9 @@
     if (track && track.album_art_url) {
       // ジャケ写は装飾。読み上げはリンク全体の aria-label に任せる。
       var img = el('img', 'art');
-      img.src = track.album_art_url;
+      img.src = artAtSize(track.album_art_url, 300);
       img.alt = '';
-      img.loading = 'lazy';
+      img.decoding = 'async';
       card.appendChild(img);
     } else {
       card.appendChild(el('div', 'art-ph', 'no art'));
@@ -175,9 +190,9 @@
       link.style.cssText = 'display:flex;gap:12px;align-items:center;min-width:0;text-decoration:none;color:inherit';
 
       var img = el('img');
-      img.src = track.album_art_url;
+      img.src = artAtSize(track.album_art_url, 64);
       img.alt = '';
-      img.loading = 'lazy';
+      img.decoding = 'async';
       link.appendChild(img);
 
       var meta = el('div', 'meta');

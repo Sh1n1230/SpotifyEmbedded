@@ -5,14 +5,18 @@ import { generate } from './generate.js';
 const USAGE = `SpotifyEmbedded
 
 使い方:
-  spotify-embedded setup       Spotify と連携し、認証情報を保存する
-  spotify-embedded generate    静的ファイル（SVG / JSON / HTML）を生成する
+  npm run setup       Spotify と連携し、設定を保存する
+  npm run generate    静的ファイル（SVG / JSON / HTML）を生成する
 
-generate のオプション:
+generate のオプション（npm 経由では -- を挟みます）:
   --out <dir>     出力先ディレクトリ（既定: ./out）
   --count <n>     ランキングの表示件数 1〜10（既定: 5）
   --theme <name>  dark | light | both（既定: both）
-  --no-mood       AIムード文の生成をスキップする（GROQ_API_KEY 不要）
+  --no-mood       AIムード文の生成をスキップする（LLM設定が不要になる）
+
+  例: npm run generate -- --out ./public --count 10
+
+ビルド済みなら node dist/cli/index.js <command> でも実行できます。
 `;
 
 async function main(): Promise<void> {

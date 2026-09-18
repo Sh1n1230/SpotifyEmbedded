@@ -39,7 +39,6 @@
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
     "express-rate-limit": "^7.4.0",
-    "groq-sdk": "^1.2.1",
     "js-yaml": "^4.1.0",
     "node-cache": "^5.1.2"
   },

@@ -42,7 +42,7 @@ router.get('/callback', async (req, res, next) => {
     console.log('\n✅ OAuth successful!');
     console.log('SPOTIFY_REFRESH_TOKEN=' + tokens.refresh_token);
     console.log('\n上記の行をコピーして設定してください。');
-    console.log('（`npx spotify-embedded setup` を使うと、この貼り付け作業は不要になります）\n');
+    console.log('（`npm run setup` を使うと、この貼り付け作業は不要になります）\n');
 
     // refresh_token はHTMLエスケープしてXSSを防ぐ
     const escaped = tokens.refresh_token.replace(/[&<>"']/g, (c) =>
@@ -59,7 +59,7 @@ router.get('/callback', async (req, res, next) => {
         <p>以下を設定ファイルにコピーしてください:</p>
         <pre style="background:#f0f0f0;padding:1rem;border-radius:4px">SPOTIFY_REFRESH_TOKEN=${escaped}</pre><!-- nosemgrep: javascript.express.security.injection.raw-html-format.raw-html-format -->
         <p>コピー後、このサーバーを停止して <code>npm run dev</code> で再起動してください。</p>
-        <p style="color:#666">次回からは <code>npx spotify-embedded setup</code> を使うと、この貼り付け作業なしで完了します。</p>
+        <p style="color:#666">次回からは <code>npm run setup</code> を使うと、この貼り付け作業なしで完了します。</p>
       </body></html>
     `);
   } catch (err) {

@@ -36,7 +36,16 @@ npm install
 http://127.0.0.1:3000/auth/callback
 ```
 
-[Groq](https://console.groq.com) のAPIキーも取得します（無料・クレジットカード不要）。ムード文の生成に使います。無くても曲情報だけなら動きます。
+ムード文の生成にはLLMを使いますが、**特定のサービスに縛られません。** OpenAIのChat Completions形式を話すエンドポイントなら何でも使えます。
+
+| | エンドポイント | 備考 |
+|---|---|---|
+| Groq | `https://api.groq.com/openai/v1` | 無料枠あり・カード不要 |
+| OpenAI | `https://api.openai.com/v1` | 従量課金 |
+| OpenRouter | `https://openrouter.ai/api/v1` | 1つのキーで多数のモデル |
+| Ollama / LM Studio | `http://localhost:11434/v1` など | ローカル実行 |
+
+次のステップで対話的に選べます。**設定しなくても構いません**（曲情報だけが表示されます）。
 
 ### 2. セットアップ
 
@@ -99,7 +108,7 @@ Actionsを使わず手元で生成することもできます。
 ```bash
 npm run generate                      # ./out に出力
 npm run generate -- --out ./public --count 10 --theme dark
-npm run generate -- --no-mood         # GROQ_API_KEY 不要
+npm run generate -- --no-mood         # LLM設定なしで実行
 ```
 
 ---
@@ -219,7 +228,7 @@ DBは不要です。秘密情報はリポジトリに含まれないので、各
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
-同梱の [`render.yaml`](render.yaml) を Blueprint として読み込み、`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` / `GROQ_API_KEY` を入力します（`sync: false` なので値はリポジトリに保存されません）。
+同梱の [`render.yaml`](render.yaml) を Blueprint として読み込み、`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` を入力します（`sync: false` なので値はリポジトリに保存されません）。`LLM_API_KEY` などは任意です。
 
 値は `npm run setup` を実行したあとの `.env` からコピーできます。
 
@@ -231,7 +240,7 @@ DBは不要です。秘密情報はリポジトリに含まれないので、各
 docker build -t spotify-embedded .
 docker run -p 3000:3000 \
   -e SPOTIFY_CLIENT_ID=... -e SPOTIFY_CLIENT_SECRET=... \
-  -e SPOTIFY_REFRESH_TOKEN=... -e GROQ_API_KEY=... \
+  -e SPOTIFY_REFRESH_TOKEN=... -e LLM_API_KEY=... \
   spotify-embedded
 ```
 
@@ -246,14 +255,17 @@ docker run -p 3000:3000 \
 | `SPOTIFY_CLIENT_ID` | ✓ | — | Spotifyアプリの Client ID |
 | `SPOTIFY_CLIENT_SECRET` | ✓ | — | Spotifyアプリの Client Secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得 |
-| `GROQ_API_KEY` | ✓ | — | ムード生成用。`--no-mood` なら不要 |
-| `GROQ_MODEL` | | `llama-3.3-70b-versatile` | 使用モデル |
+| `LLM_API_KEY` | | — | **未設定ならムード文なしで動作します** |
+| `LLM_BASE_URL` | | `https://api.groq.com/openai/v1` | OpenAI互換のエンドポイント |
+| `LLM_MODEL` | | `llama-3.3-70b-versatile` | 使用モデル |
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
 | `PORT` | | `3000` | — |
 | `CORS_ORIGIN` | | `*` | 本番では自分のサイトに限定を推奨 |
-| `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
+| `AUTH_STORE_PATH` | | `data/auth.json` | 設定の保存先 |
 
-認証情報は **環境変数 → `data/auth.json`** の順に解決されます。環境変数が優先なので、すでに `.env` だけで運用している場合は何も変わりません。
+設定は **環境変数 → `data/auth.json`** の順に解決されます。環境変数が優先なので、すでに `.env` だけで運用している場合は何も変わりません。
+
+`LLM_API_KEY` は `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `GROQ_API_KEY` という名前でも読み取ります。すでにどれかを設定していれば、そのままで動きます。
 
 ---
 
@@ -261,7 +273,7 @@ docker run -p 3000:3000 \
 
 ### audio-features を使わない理由
 
-Spotifyは2024年11月以降に作成されたアプリで `/audio-features`（テンポ・エネルギー等）を廃止しました。本プロジェクトは代わりに、**アーティストのジャンルタグ**（`/artists`）・**人気度**・**曲名/アーティスト名/アルバム名** をGroq（Llama 3.3）に渡してムードを推論しています。
+Spotifyは2024年11月以降に作成されたアプリで `/audio-features`（テンポ・エネルギー等）を廃止しました。本プロジェクトは代わりに、**アーティストのジャンルタグ**（`/artists`）・**人気度**・**曲名/アーティスト名/アルバム名** をLLMに渡してムードを推論しています。
 
 ### 似たプロジェクトとの違い
 

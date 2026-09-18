@@ -11,6 +11,7 @@
 import type { NowPlayingResponse, TopTracksResponse } from '../types/index.js';
 import { THEMES, FONT_STACK, relativeTimeJa, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
+import { albumArtAtSize } from './image.js';
 import type { PlaybackState } from './card.js';
 
 export interface PageInput {
@@ -201,8 +202,9 @@ function renderCardMarkup(
 
   // ジャケ写は装飾。曲名はテキストとして隣にあるので alt は空にし、
   // 読み上げはリンク全体の aria-label に任せる（画像が落ちても崩れない）。
+  // 112pxで表示するので300px版を使う。640px版だと表示が目に見えて遅れる。
   const art = track.album_art_url
-    ? `<img class="art" id="art" src="${escapeXml(track.album_art_url)}" alt="" loading="lazy" decoding="async">`
+    ? `<img class="art" id="art" src="${escapeXml(albumArtAtSize(track.album_art_url, 300))}" alt="" decoding="async">`
     : '<div class="art-placeholder" id="art">no art</div>';
 
   const ariaLabel = `${state === 'playing' ? '再生中' : '最後に再生'}: ${mood?.text ? `${mood.text} — ` : ''}${track.name} / ${track.artist}（Spotifyで開く）`;
@@ -228,7 +230,7 @@ function renderRanking(topTracks: TopTracksResponse): string {
       (track) => `    <li>
       <span class="rank">${track.rank}</span>
       <a href="${escapeXml(track.spotify_url)}" target="_blank" rel="noopener noreferrer" style="display:flex;gap:12px;align-items:center;min-width:0">
-        <img src="${escapeXml(track.album_art_url)}" alt="" loading="lazy" decoding="async">
+        <img src="${escapeXml(albumArtAtSize(track.album_art_url, 64))}" alt="" decoding="async">
         <span class="meta">
           <span class="name" style="display:block">${escapeXml(track.name)}</span>
           <span class="by" style="display:block">${escapeXml(track.artist)}</span>

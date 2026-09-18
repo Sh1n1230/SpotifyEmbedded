@@ -24,7 +24,13 @@ services:
         sync: false
       - key: SPOTIFY_REFRESH_TOKEN
         sync: false
-      - key: GROQ_API_KEY
+      # ムード文の生成に使うLLM（OpenAI互換なら提供元は問わない）。
+      # 未設定でも、ムード文なしで動作します。
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_MODEL
         sync: false
       # --- 任意設定 ---
       # 本番では自分のポートフォリオのURLに制限することを推奨（例: https://example.com）

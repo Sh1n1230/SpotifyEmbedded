@@ -29,7 +29,7 @@ export interface GenerateOptions {
   count: number;
   /** 'dark' | 'light' | 'both' */
   theme: 'dark' | 'light' | 'both';
-  /** ムード生成をスキップする（GROQ_API_KEY 不要で動かす） */
+  /** ムード生成をスキップする（LLM設定なしで動かす） */
   skipMood: boolean;
 }
 

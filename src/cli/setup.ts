@@ -22,6 +22,7 @@ import {
   type StoredAuth,
 } from '../authStore.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
+import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
 
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -45,12 +46,8 @@ export async function setup(): Promise<void> {
       label: 'Spotify Client Secret',
       secret: true,
     });
-    const groqApiKey = await ensureValue(rl, 'groqApiKey', {
-      label: 'Groq API Key',
-      hint: 'https://console.groq.com で無料発行できます。空のままでもムード文以外は動きます。',
-      secret: true,
-      optional: true,
-    });
+
+    const llm = await askLlm(rl);
 
     const app: OAuthApp = { clientId, clientSecret, redirectUri };
 
@@ -62,8 +59,8 @@ export async function setup(): Promise<void> {
       spotifyClientId: clientId,
       spotifyClientSecret: clientSecret,
       spotifyRefreshToken: refreshToken,
+      ...llm,
     };
-    if (groqApiKey) values.groqApiKey = groqApiKey;
 
     saveStoredAuth(values);
     console.log(`✓ ${authStorePath()} に保存しました (0600)`);
@@ -74,8 +71,12 @@ export async function setup(): Promise<void> {
     await offerGitHubSecrets(rl, values);
 
     console.log('\n完了しました。次のいずれかで使えます:\n');
-    console.log('  npm run dev                    # ライブAPIサーバーを起動');
-    console.log('  npx spotify-embedded generate  # 静的ファイルを生成');
+    console.log('  npm run dev        # ライブAPIサーバーを起動');
+    console.log('  npm run generate   # 静的ファイルを ./out に生成');
+    if (!llm.llmApiKey) {
+      console.log('\n※ LLM未設定のため、ムード文なしで動作します。');
+      console.log('  あとから有効にするには、もう一度 `npm run setup` を実行してください。');
+    }
     console.log('');
   } finally {
     rl.close();
@@ -112,6 +113,71 @@ async function ensureValue(
     if (options.optional) return '';
     console.log('  値を入力してください。');
   }
+}
+
+/**
+ * ムード文を生成するLLMの選択。
+ *
+ * OpenAI互換のエンドポイントなら提供元は問わないので、代表的なものを
+ * プリセットで出しつつ、任意のURLも受け付ける。丸ごとスキップもできる。
+ */
+async function askLlm(rl: Interface): Promise<StoredAuth> {
+  const existingKey = resolveAuthValue('llmApiKey');
+  if (existingKey) {
+    const baseUrl = resolveAuthValue('llmBaseUrl') ?? DEFAULT_BASE_URL;
+    console.log(`\n✓ LLM は設定済みです (${providerLabelForBaseUrl(baseUrl)})`);
+    return {};
+  }
+
+  console.log('\nAIのムード文を生成するLLMを選びます。');
+  console.log('OpenAI互換のエンドポイントであれば、どこでも使えます。\n');
+
+  PROVIDERS.forEach((provider, i) => {
+    const note = provider.note ? `  — ${provider.note}` : '';
+    console.log(`  ${i + 1}) ${provider.label}${note}`);
+  });
+  console.log(`  ${PROVIDERS.length + 1}) 使わない（曲情報のみ表示する）`);
+
+  const choice = (await ask(rl, `\n  番号 (1-${PROVIDERS.length + 1}): `, false)).trim();
+  const index = Number.parseInt(choice, 10) - 1;
+
+  if (!Number.isInteger(index) || index < 0 || index >= PROVIDERS.length) {
+    console.log('  → ムード文なしで進めます。');
+    return {};
+  }
+
+  const preset = PROVIDERS[index];
+  if (!preset) return {};
+
+  let baseUrl = preset.baseUrl;
+  if (!baseUrl) {
+    baseUrl = (
+      await ask(rl, '  エンドポイントURL (例: http://localhost:11434/v1): ', false)
+    ).trim();
+    if (!baseUrl) {
+      console.log('  → URLが空のため、ムード文なしで進めます。');
+      return {};
+    }
+  }
+
+  if (preset.signupUrl) console.log(`\n  APIキーの発行: ${preset.signupUrl}`);
+  const apiKey = (await ask(rl, '  APIキー: ', true)).trim();
+  if (!apiKey) {
+    console.log('  → キーが空のため、ムード文なしで進めます。');
+    return {};
+  }
+
+  const modelPrompt = preset.defaultModel
+    ? `  モデル名 [${preset.defaultModel}]: `
+    : '  モデル名: ';
+  const model = (await ask(rl, modelPrompt, false)).trim() || preset.defaultModel;
+
+  if (!model) {
+    console.log('  → モデル名が空のため、ムード文なしで進めます。');
+    return {};
+  }
+
+  return { llmApiKey: apiKey, llmBaseUrl: baseUrl, llmModel: model };
 }
 
 function ask(rl: Interface, query: string, secret: boolean): Promise<string> {

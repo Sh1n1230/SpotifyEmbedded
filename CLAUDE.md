@@ -31,7 +31,9 @@ The same core powers both. This split is the product's core idea — don't colla
   breaks before it can write anything
 - `src/core/collect.ts` — the only data-collection path; used by both routes and CLI
 - `src/spotify/` — API client (native fetch), token auto-refresh, nowPlaying, topTracks, oauth
-- `src/llm/moodGenerator.ts` — Groq (default: llama-3.3-70b-versatile) generates Japanese mood strings
+- `src/llm/` — OpenAI-compatible chat client (`client.ts`), provider presets (`providers.ts`),
+  and the Japanese mood prompt (`moodGenerator.ts`). Any OpenAI-format endpoint works:
+  OpenAI, OpenRouter, Groq, Ollama. No provider SDK.
 - `src/render/` — pure data→string renderers (`card`, `ranking`, `page`, `text`, `theme`, `image`)
 - `src/cli/` — `spotify-embedded setup | generate`
 - `src/cache/index.ts` — node-cache instances: nowPlaying (30s), topTracks (1h), mood (24h, 200 keys),
@@ -45,6 +47,7 @@ The same core powers both. This split is the product's core idea — don't colla
 
 - Spotify `/audio-features` is deprecated for new apps (post Nov 2024) — do not use it
 - Mood inference uses: artist genres (from `/artists` batch endpoint), track popularity, track/artist/album names
+- LLM is optional everywhere. `hasLlmConfigured()` gates it; never make it required to boot.
 - Top tracks period is `short_term` only (~4 weeks)
 - `module: "Node16"` in tsconfig — imports must use `.js` extensions even for `.ts` source files
 - **SVG rendering**: GitHub's camo proxy does not render external `<image href>` or `<foreignObject>`.
@@ -56,5 +59,6 @@ The same core powers both. This split is the product's core idea — don't colla
 ## Environment variables
 
 See README for the full table. Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`,
-`SPOTIFY_REFRESH_TOKEN`, `GROQ_API_KEY`. Resolution order is env → `data/auth.json`, so existing
+`SPOTIFY_REFRESH_TOKEN`. LLM settings are OPTIONAL — without them the app runs and simply omits
+the mood sentence. Resolution order is env → `data/auth.json`, so existing
 env-only deployments are unaffected.

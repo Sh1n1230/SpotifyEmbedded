@@ -6,7 +6,8 @@
 #
 # 必要な Secrets（`npm run setup` で自動登録できる）:
 #   SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET / SPOTIFY_REFRESH_TOKEN
-#   GROQ_API_KEY … 未設定ならムード文なしで生成する
+#   LLM_API_KEY / LLM_BASE_URL / LLM_MODEL … 未設定ならムード文なしで生成する
+#   （OpenAI互換なら提供元は問わない: OpenAI / OpenRouter / Groq など）
 name: Update Spotify snapshot
 
 on:
@@ -54,12 +55,14 @@ jobs:
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
         run: |
-          if [ -n "$GROQ_API_KEY" ]; then
+          if [ -n "$LLM_API_KEY" ]; then
             node dist/cli/index.js generate --out out --count 5 --theme both
           else
-            echo "GROQ_API_KEY が未設定のため、ムード文なしで生成します"
+            echo "LLM_API_KEY が未設定のため、ムード文なしで生成します"
             node dist/cli/index.js generate --out out --count 5 --theme both --no-mood
           fi
 
