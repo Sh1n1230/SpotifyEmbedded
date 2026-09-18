@@ -1,0 +1,82 @@
+# サーバー不要モード。
+#
+# 30分おきに Spotify を取得し、SVG / JSON / HTML を spotify-data ブランチへ
+# 公開する。GitHub Pages のソースにこのブランチを指定すると、README からも
+# 自分のサイトからも参照できるようになる。
+#
+# 必要な Secrets（`npm run setup` で自動登録できる）:
+#   SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET / SPOTIFY_REFRESH_TOKEN
+#   GROQ_API_KEY … 未設定ならムード文なしで生成する
+name: Update Spotify snapshot
+
+on:
+  schedule:
+    # GitHub のスケジュールは定刻に走らない（数分〜数十分遅れることがある）
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: spotify-snapshot
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      # 停止中は「最後に聴いた曲」を前回の観測から引き継ぐ。
+      # そのために公開ブランチの snapshot.json を復元しておく。
+      - name: Restore previous snapshot
+        run: |
+          mkdir -p out
+          if git fetch --depth=1 origin spotify-data 2>/dev/null; then
+            git show FETCH_HEAD:snapshot.json > out/snapshot.json 2>/dev/null \
+              && echo "前回のスナップショットを復元しました" \
+              || echo "スナップショットがないので新規作成します"
+          else
+            echo "spotify-data ブランチがまだありません"
+          fi
+
+      - name: Generate
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -n "$GROQ_API_KEY" ]; then
+            node dist/cli/index.js generate --out out --count 5 --theme both
+          else
+            echo "GROQ_API_KEY が未設定のため、ムード文なしで生成します"
+            node dist/cli/index.js generate --out out --count 5 --theme both --no-mood
+          fi
+
+      # 毎回1コミットに潰して force push する。
+      # 30分おきの更新で履歴が肥大化するのを防ぐため。
+      - name: Publish to spotify-data branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out
+          touch .nojekyll
+          git init -q
+          git checkout -q -b spotify-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Update Spotify snapshot ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+          git push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            spotify-data

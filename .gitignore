@@ -4,3 +4,9 @@ dist/
 *.log
 .DS_Store
 .claude/
+
+# spotify-embedded setup が書き出す認証情報（絶対にコミットしない）
+data/
+
+# 静的生成の出力（公開ブランチ側で管理する）
+out/

@@ -10,3 +10,7 @@ dist
 .claude
 README.md
 CLAUDE.md
+
+# 認証情報と静的生成物はイメージに含めない
+data
+out

@@ -1,7 +1,12 @@
 import Groq from 'groq-sdk';
 import { config } from '../config.js';
 
-const groq = new Groq({ apiKey: config.groq.apiKey });
+// config と同じ理由で遅延生成する（import しただけで GROQ_API_KEY を要求しない）
+let groqClient: Groq | null = null;
+function groq(): Groq {
+  groqClient ??= new Groq({ apiKey: config.groq.apiKey });
+  return groqClient;
+}
 
 const SYSTEM_INSTRUCTION = `あなたは個人のポートフォリオサイト向けの音楽ムード描写AIです。
 与えられた楽曲情報から、聴者の現在の気分を表す日本語の1文を生成してください。
@@ -40,7 +45,7 @@ export async function generateMood(params: {
 ジャンル: ${genreText}
 人気度: ${params.popularity}/100`;
 
-  const completion = await groq.chat.completions.create({
+  const completion = await groq().chat.completions.create({
     model: config.groq.model,
     messages: [
       { role: 'system', content: SYSTEM_INSTRUCTION },

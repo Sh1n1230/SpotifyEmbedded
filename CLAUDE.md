@@ -8,21 +8,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev        # development server with auto-restart (tsx watch)
 npm run build      # compile TypeScript → dist/
 npm start          # run compiled output
-npm run auth       # start server with OAuth routes enabled (one-time Spotify setup)
+npm run setup      # interactive OAuth setup (writes .env + data/auth.json, optionally gh secrets)
+npm run generate   # generate static artifacts into ./out
+npm run auth       # legacy: start server with OAuth routes enabled
 npm run typecheck  # TypeScript type check without emitting
 ```
 
+## Two delivery modes
+
+The same core powers both. This split is the product's core idea — don't collapse it.
+
+- **Static mode** (no server): `src/cli/generate.ts` → SVG / JSON / YAML / HTML, published by
+  `.github/workflows/update-spotify.yml` to the `spotify-data` branch. Emitted JSON uses the
+  *identical* schema as the live API so consumers can swap URLs.
+- **Live API mode**: the Express server in `src/index.ts`.
+
 ## Architecture
 
-Backend API server (Node.js + TypeScript + Express).
-
 - `src/types/index.ts` — canonical TypeScript interfaces; all modules import from here
-- `src/config.ts` — env validation; fails fast on startup if required vars are missing
-- `src/spotify/` — Spotify API client (native fetch), token auto-refresh, nowPlaying, topTracks
-- `src/llm/moodGenerator.ts` — Groq (default: llama-3.3-70b-versatile) generates Japanese mood strings from track metadata
-- `src/cache/index.ts` — three node-cache instances: nowPlaying (30s TTL), topTracks (1h TTL), mood (per trackId, 24h TTL, max 200 keys)
+- `src/authStore.ts` — credential resolution (env → `data/auth.json`) and persistence (0600)
+- `src/config.ts` — **lazy getters**. Secrets must not be evaluated at import time, or `setup`
+  breaks before it can write anything
+- `src/core/collect.ts` — the only data-collection path; used by both routes and CLI
+- `src/spotify/` — API client (native fetch), token auto-refresh, nowPlaying, topTracks, oauth
+- `src/llm/moodGenerator.ts` — Groq (default: llama-3.3-70b-versatile) generates Japanese mood strings
+- `src/render/` — pure data→string renderers (`card`, `ranking`, `page`, `text`, `theme`, `image`)
+- `src/cli/` — `spotify-embedded setup | generate`
+- `src/cache/index.ts` — node-cache instances: nowPlaying (30s), topTracks (1h), mood (24h, 200 keys),
+  art (24h, 100 keys)
 - `src/middleware/formatResponse.ts` — JSON/YAML content negotiation via `res.sendFormatted()`
-- `src/routes/` — Express routers for /api/now-playing, /api/top-tracks, /api/status, /auth/*
+- `src/routes/` — `/api/now-playing`, `/api/top-tracks`, `/api/status`, `/auth/*`, `/embed`,
+  `/badge.svg`, `/ranking.svg`
+- `public/embed.js` — one-tag embed; renders into a Shadow DOM so host CSS can't leak in
 
 ## Key constraints
 
@@ -30,7 +47,14 @@ Backend API server (Node.js + TypeScript + Express).
 - Mood inference uses: artist genres (from `/artists` batch endpoint), track popularity, track/artist/album names
 - Top tracks period is `short_term` only (~4 weeks)
 - `module: "Node16"` in tsconfig — imports must use `.js` extensions even for `.ts` source files
+- **SVG rendering**: GitHub's camo proxy does not render external `<image href>` or `<foreignObject>`.
+  Album art must be base64 data URIs (`src/render/image.ts`), and text must be wrapped manually
+  (`src/render/text.ts`). Always run track/artist strings through `escapeXml`.
+- **`X-Frame-Options`**: DENY everywhere except `/embed`, which exists to be iframed
+- Static mode carries `snapshot.json` forward so a paused Spotify doesn't produce empty cards
 
 ## Environment variables
 
-See `.env.example` for the full list. Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`, `GROQ_API_KEY`.
+See README for the full table. Required: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`,
+`SPOTIFY_REFRESH_TOKEN`, `GROQ_API_KEY`. Resolution order is env → `data/auth.json`, so existing
+env-only deployments are unaffected.

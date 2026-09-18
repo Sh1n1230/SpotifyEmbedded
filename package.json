@@ -1,13 +1,24 @@
 {
   "name": "spotify-embedded",
   "version": "1.0.0",
-  "description": "Self-hosted API exposing your Spotify listening activity for portfolio sites",
+  "description": "Spotifyの再生状況を、AIが生成した日本語のムード文つきでポートフォリオやREADMEに埋め込む。サーバー不要の静的生成にも対応。",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "spotify-embedded": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.json",
     "start": "node dist/index.js",
+    "setup": "tsx src/cli/index.ts setup",
+    "generate": "tsx src/cli/index.ts generate",
     "auth": "ENABLE_AUTH_ROUTES=true tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -15,8 +26,11 @@
     "spotify",
     "api",
     "portfolio",
-    "gemini",
-    "now-playing"
+    "now-playing",
+    "github-readme",
+    "svg",
+    "embed",
+    "groq"
   ],
   "author": "",
   "license": "MIT",
