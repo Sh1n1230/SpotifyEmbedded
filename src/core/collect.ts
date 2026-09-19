@@ -10,11 +10,15 @@ import { fetchTopTracks } from '../spotify/topTracks.js';
 import { generateMood } from '../llm/moodGenerator.js';
 import { hasLlmConfigured } from '../authStore.js';
 import { nowPlayingCache, topTracksCache, moodCache } from '../cache/index.js';
-import type {
-  NowPlayingResponse,
-  TopTracksResponse,
-  StatusResponse,
-  MoodResult,
+import {
+  DEFAULT_TOP_TRACKS_RANGE,
+  DEFAULT_TOP_TRACKS_LIMIT,
+  type NowPlayingResponse,
+  type TopTracksResponse,
+  type StatusResponse,
+  type MoodResult,
+  type TopTracksRange,
+  type TopTracksLimit,
 } from '../types/index.js';
 
 export interface CollectOptions {
@@ -22,6 +26,13 @@ export interface CollectOptions {
   bypassCache?: boolean;
   /** ムード生成を行わない。LLMキーが未設定の場合は指定しなくても自動で省く。 */
   skipMood?: boolean;
+}
+
+export interface TopTracksOptions extends CollectOptions {
+  /** 集計期間。既定は short_term（直近4週間）。 */
+  range?: TopTracksRange;
+  /** 取得件数（10 / 30 / 50）。既定は 50。 */
+  limit?: TopTracksLimit;
 }
 
 /** node-cache は maxKeys 超過時に set が throw する。保存失敗は致命的ではない。 */
@@ -84,25 +95,31 @@ export async function collectNowPlaying(
 }
 
 export async function collectTopTracks(
-  options: CollectOptions = {}
+  options: TopTracksOptions = {}
 ): Promise<TopTracksResponse> {
+  const range = options.range ?? DEFAULT_TOP_TRACKS_RANGE;
+  const limit = options.limit ?? DEFAULT_TOP_TRACKS_LIMIT;
+  // 期間・件数ごとに別物なのでキャッシュキーを分ける（組み合わせは最大9通り）。
+  const cacheKey = `top-tracks:${range}:${limit}`;
+
   if (!options.bypassCache) {
-    const cached = topTracksCache.get<TopTracksResponse>('top-tracks');
+    const cached = topTracksCache.get<TopTracksResponse>(cacheKey);
     if (cached) return cached;
   }
 
-  const tracks = await fetchTopTracks();
+  const tracks = await fetchTopTracks(range, limit);
   const response: TopTracksResponse = {
-    range: 'short_term',
+    range,
+    limit,
     fetched_at: new Date().toISOString(),
     tracks,
   };
 
-  if (!options.bypassCache) cacheSet(topTracksCache, 'top-tracks', response);
+  if (!options.bypassCache) cacheSet(topTracksCache, cacheKey, response);
   return response;
 }
 
-export async function collectStatus(options: CollectOptions = {}): Promise<StatusResponse> {
+export async function collectStatus(options: TopTracksOptions = {}): Promise<StatusResponse> {
   const [now_playing, top_tracks] = await Promise.all([
     collectNowPlaying(options),
     collectTopTracks(options),

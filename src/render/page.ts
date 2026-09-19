@@ -8,7 +8,14 @@
  * そのまま焼き込む。ライブAPIモードでは liveEndpoint を指定すると、
  * ページ側が定期的に取得し直す。
  */
-import type { NowPlayingResponse, TopTracksResponse } from '../types/index.js';
+import {
+  DEFAULT_RANKING_COUNT,
+  DEFAULT_TOP_TRACKS_RANGE,
+  MAX_RANKING_COUNT,
+  type NowPlayingResponse,
+  type TopTracksResponse,
+} from '../types/index.js';
+import { rangeLabelEn } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, relativeTimeJa, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
 import { albumArtAtSize } from './image.js';
@@ -27,6 +34,8 @@ export interface PageInput {
   liveEndpoint?: string | undefined;
   /** ライブ更新の間隔（秒）。既定30秒。 */
   refreshSeconds?: number | undefined;
+  /** ランキングの表示件数。1〜50、既定5。 */
+  rankingCount?: number | undefined;
 }
 
 export function renderEmbedPage(input: PageInput): string {
@@ -43,7 +52,7 @@ export function renderEmbedPage(input: PageInput): string {
       : 'NOTHING PLAYING';
 
   const rankingSection = topTracks && topTracks.tracks.length > 0
-    ? renderRanking(topTracks)
+    ? renderRanking(topTracks, input.rankingCount)
     : '';
 
   return `<!DOCTYPE html>
@@ -220,12 +229,14 @@ function renderCardMarkup(
 </a>`;
 }
 
-function renderRanking(topTracks: TopTracksResponse): string {
+function renderRanking(topTracks: TopTracksResponse, rankingCount?: number | undefined): string {
   const fetchedAt = new Date(topTracks.fetched_at);
   const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
+  const count = Math.min(Math.max(rankingCount ?? DEFAULT_RANKING_COUNT, 1), MAX_RANKING_COUNT);
+  const rangeLabel = rangeLabelEn(topTracks.range ?? DEFAULT_TOP_TRACKS_RANGE);
 
   const items = topTracks.tracks
-    .slice(0, 5)
+    .slice(0, count)
     .map(
       (track) => `    <li>
       <span class="rank">${track.rank}</span>
@@ -242,7 +253,7 @@ function renderRanking(topTracks: TopTracksResponse): string {
 
   return `<section class="ranking">
   <div class="ranking-head">
-    <span class="ranking-title">TOP TRACKS · 4 WEEKS</span>
+    <span class="ranking-title">TOP TRACKS · ${escapeXml(rangeLabel)}</span>
     <span class="ranking-date">${escapeXml(dateLabel)}</span>
   </div>
   <ol>

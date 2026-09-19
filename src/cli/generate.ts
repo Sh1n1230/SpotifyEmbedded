@@ -20,13 +20,19 @@ import type {
   MoodResult,
   NowPlayingResponse,
   TopTracksResponse,
+  TopTracksLimit,
+  TopTracksRange,
   TrackSummary,
 } from '../types/index.js';
 
 export interface GenerateOptions {
   outDir: string;
-  /** ランキングの表示件数（1〜10） */
+  /** ランキングの表示件数（1〜50） */
   count: number;
+  /** 集計期間（short_term | medium_term | long_term） */
+  range: TopTracksRange;
+  /** Spotify から取得する件数（10 / 30 / 50） */
+  limit: TopTracksLimit;
   /** 'dark' | 'light' | 'both' */
   theme: 'dark' | 'light' | 'both';
   /** ムード生成をスキップする（LLM設定なしで動かす） */
@@ -55,10 +61,17 @@ export async function generate(options: GenerateOptions): Promise<void> {
   const outDir = resolve(options.outDir);
   mkdirSync(outDir, { recursive: true });
 
+  if (options.count > options.limit) {
+    console.warn(
+      `[generate] --count ${options.count} は --limit ${options.limit} を超えています。` +
+        `表示されるのは最大 ${options.limit} 件です。`
+    );
+  }
+
   console.log('Spotify からデータを取得しています...');
   const [nowPlaying, topTracks] = await Promise.all([
     collectNowPlaying({ bypassCache: true, skipMood: options.skipMood }),
-    collectTopTracks({ bypassCache: true }),
+    collectTopTracks({ bypassCache: true, range: options.range, limit: options.limit }),
   ]);
 
   const snapshot = resolveSnapshot(nowPlaying, readSnapshot(outDir));
@@ -104,6 +117,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
       renderRankingCard({
         tracks: topTracks.tracks,
         fetchedAt: topTracks.fetched_at,
+        range: topTracks.range,
         count: options.count,
         artDataUris: rankingArts,
         theme,
@@ -127,6 +141,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
       state: snapshot.state,
       since: snapshot.observed_at,
       theme: options.theme === 'light' ? 'light' : 'dark',
+      rankingCount: options.count,
     })
   );
 

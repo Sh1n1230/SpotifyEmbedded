@@ -15,6 +15,16 @@ on:
     # GitHub のスケジュールは定刻に走らない（数分〜数十分遅れることがある）
     - cron: '*/30 * * * *'
   workflow_dispatch:
+    inputs:
+      range:
+        description: 'ランキングの集計期間'
+        type: choice
+        default: short_term
+        options: [short_term, medium_term, long_term]
+      count:
+        description: 'ランキングの表示件数（1〜50）'
+        type: string
+        default: '5'
 
 permissions:
   contents: write
@@ -58,12 +68,15 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          # 手動実行時のみ指定できる。スケジュール実行では既定値を使う。
+          RANGE: ${{ inputs.range || 'short_term' }}
+          COUNT: ${{ inputs.count || '5' }}
         run: |
           if [ -n "$LLM_API_KEY" ]; then
-            node dist/cli/index.js generate --out out --count 5 --theme both
+            node dist/cli/index.js generate --out out --range "$RANGE" --count "$COUNT" --theme both
           else
             echo "LLM_API_KEY が未設定のため、ムード文なしで生成します"
-            node dist/cli/index.js generate --out out --count 5 --theme both --no-mood
+            node dist/cli/index.js generate --out out --range "$RANGE" --count "$COUNT" --theme both --no-mood
           fi
 
       # 毎回1コミットに潰して force push する。

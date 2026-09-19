@@ -97,12 +97,29 @@
 
     #ranking-section.open { display: block; }
 
+    #ranking-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
     #ranking-section h2 {
       font-size: 0.85rem;
       font-weight: 600;
       color: #888;
       letter-spacing: 0.05em;
-      margin-bottom: 1rem;
+    }
+
+    #range-select {
+      background: #1a1a1a;
+      color: #ddd;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.8rem;
+      font-family: inherit;
     }
 
     #ranking-list {
@@ -164,14 +181,27 @@
   <button id="ranking-toggle" style="display:none">ランキングを見る ↓</button>
 
   <section id="ranking-section">
-    <h2>直近4週間の再生ランキング</h2>
+    <div id="ranking-head">
+      <h2 id="ranking-title">直近4週間の再生ランキング</h2>
+      <select id="range-select" aria-label="集計期間">
+        <option value="short_term">直近4週間</option>
+        <option value="medium_term">直近6か月</option>
+        <option value="long_term">直近1年</option>
+      </select>
+    </div>
     <ul id="ranking-list"></ul>
   </section>
 
   <script>
     const $ = id => document.getElementById(id);
 
-    let topTracksCache = null;
+    // 期間ごとに結果を持つ（Spotify が用意する集計期間は3つだけ）
+    const RANGE_LABELS = {
+      short_term: '直近4週間',
+      medium_term: '直近6か月',
+      long_term: '直近1年'
+    };
+    const topTracksCache = {};
     let rankingOpen = false;
 
     // ── Now Playing ───────────────────────────────
@@ -230,21 +260,29 @@
       if (rankingOpen) {
         section.classList.add('open');
         btn.textContent = 'ランキングを閉じる ↑';
-        if (!topTracksCache) {
-          try {
-            const res = await fetch('/api/top-tracks');
-            topTracksCache = await res.json();
-          } catch (e) {
-            $('ranking-list').innerHTML = '<li style="color:#aaa">取得できませんでした</li>';
-            return;
-          }
-        }
-        renderRanking(topTracksCache);
+        await loadRanking($('range-select').value);
       } else {
         section.classList.remove('open');
         btn.textContent = 'ランキングを見る ↓';
       }
     });
+
+    $('range-select').addEventListener('change', (e) => loadRanking(e.target.value));
+
+    async function loadRanking(range) {
+      $('ranking-title').textContent = RANGE_LABELS[range] + 'の再生ランキング';
+
+      if (!topTracksCache[range]) {
+        try {
+          const res = await fetch('/api/top-tracks?range=' + encodeURIComponent(range));
+          topTracksCache[range] = await res.json();
+        } catch (e) {
+          $('ranking-list').innerHTML = '<li style="color:#aaa">取得できませんでした</li>';
+          return;
+        }
+      }
+      renderRanking(topTracksCache[range]);
+    }
 
     function renderRanking(data) {
       const list = $('ranking-list');

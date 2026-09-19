@@ -1,11 +1,18 @@
 /**
  * top-tracks ランキングのSVG。
  *
- * top-tracks は short_term（約4週間の集計）なので、数時間古くても中身は
+ * top-tracks はどの期間でも数週間〜1年の集計なので、数時間古くても中身は
  * ほぼ変わらない。静的生成に向くのはこのため。ただしスナップショットで
- * あることが伝わるよう、ヘッダに取得日を必ず入れる。
+ * あることが伝わるよう、ヘッダに取得日と集計期間を必ず入れる。
  */
-import type { TopTrackEntry } from '../types/index.js';
+import {
+  DEFAULT_RANKING_COUNT,
+  DEFAULT_TOP_TRACKS_RANGE,
+  MAX_RANKING_COUNT,
+  type TopTrackEntry,
+  type TopTracksRange,
+} from '../types/index.js';
+import { rangeLabelEn, rangeLabelJa } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml, truncateToWidth } from './text.js';
 
@@ -13,7 +20,9 @@ export interface RankingInput {
   tracks: TopTrackEntry[];
   /** 取得時刻（ISO 8601）。ヘッダの「◯◯時点」に使う。 */
   fetchedAt: string;
-  /** 表示件数。1〜10。 */
+  /** 集計期間。見出しの「4 WEEKS」等に使う。既定は short_term。 */
+  range?: TopTracksRange | undefined;
+  /** 表示件数。1〜50。 */
   count?: number | undefined;
   /** ジャケ写の data URI。tracks と同じ並び順で、取得できなければ null。 */
   artDataUris?: (string | null)[] | undefined;
@@ -30,8 +39,9 @@ const TEXT_WIDTH = WIDTH - TEXT_X - 20;
 
 export function renderRankingCard(input: RankingInput): string {
   const theme = THEMES[input.theme ?? 'dark'];
-  const count = Math.min(Math.max(input.count ?? 5, 1), 10);
+  const count = Math.min(Math.max(input.count ?? DEFAULT_RANKING_COUNT, 1), MAX_RANKING_COUNT);
   const tracks = input.tracks.slice(0, count);
+  const range = input.range ?? DEFAULT_TOP_TRACKS_RANGE;
 
   const height = HEADER_HEIGHT + Math.max(tracks.length, 1) * ROW_HEIGHT + 12;
   const fetchedAt = new Date(input.fetchedAt);
@@ -43,7 +53,7 @@ export function renderRankingCard(input: RankingInput): string {
         .join('\n    ')
     : `<text x="${PAD}" y="${HEADER_HEIGHT + 30}" font-size="13" fill="${theme.muted}">データがありません</text>`;
 
-  const ariaLabel = `直近4週間のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}`;
+  const ariaLabel = `${rangeLabelJa(range)}のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
@@ -52,7 +62,7 @@ export function renderRankingCard(input: RankingInput): string {
   </defs>
   <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="12" fill="${theme.bg}" stroke="${theme.border}"/>
   <g font-family="${FONT_STACK}">
-    <text x="${PAD}" y="32" font-size="10" font-weight="600" letter-spacing="1.4" fill="${theme.accent}">TOP TRACKS · 4 WEEKS</text>
+    <text x="${PAD}" y="32" font-size="10" font-weight="600" letter-spacing="1.4" fill="${theme.accent}">TOP TRACKS · ${escapeXml(rangeLabelEn(range))}</text>
     <text x="${WIDTH - PAD}" y="32" font-size="10" fill="${theme.muted}" text-anchor="end">${escapeXml(dateLabel)}</text>
     <line x1="${PAD}" y1="${HEADER_HEIGHT - 8}" x2="${WIDTH - PAD}" y2="${HEADER_HEIGHT - 8}" stroke="${theme.border}"/>
     ${rows}

@@ -48,7 +48,10 @@ The same core powers both. This split is the product's core idea — don't colla
 - Spotify `/audio-features` is deprecated for new apps (post Nov 2024) — do not use it
 - Mood inference uses: artist genres (from `/artists` batch endpoint), track popularity, track/artist/album names
 - LLM is optional everywhere. `hasLlmConfigured()` gates it; never make it required to boot.
-- Top tracks period is `short_term` only (~4 weeks)
+- Top tracks period is one of Spotify's three presets — `short_term` (~4 weeks, default),
+  `medium_term` (~6 months), `long_term` (~1 year). Arbitrary month counts are not supported by
+  the API. Fetch size is fixed to `10 | 30 | 50`. Both are parsed in `src/core/topTracksParams.ts`
+  and keyed into the cache as `top-tracks:<range>:<limit>`
 - `module: "Node16"` in tsconfig — imports must use `.js` extensions even for `.ts` source files
 - **SVG rendering**: GitHub's camo proxy does not render external `<image href>` or `<foreignObject>`.
   Album art must be base64 data URIs (`src/render/image.ts`), and text must be wrapped manually

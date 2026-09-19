@@ -1,5 +1,13 @@
 import { spotifyFetch } from './client.js';
-import type { SpotifyTrack, SpotifyArtist, TopTrackEntry } from '../types/index.js';
+import {
+  DEFAULT_TOP_TRACKS_RANGE,
+  DEFAULT_TOP_TRACKS_LIMIT,
+  type SpotifyTrack,
+  type SpotifyArtist,
+  type TopTrackEntry,
+  type TopTracksRange,
+  type TopTracksLimit,
+} from '../types/index.js';
 
 function pickAlbumArt(images: { url: string; width: number | null }[]): string {
   const large = images
@@ -25,8 +33,15 @@ async function fetchArtistGenres(artistIds: string[]): Promise<Map<string, strin
   return genreMap;
 }
 
-export async function fetchTopTracks(): Promise<TopTrackEntry[]> {
-  const res = await spotifyFetch('/me/top/tracks?time_range=short_term&limit=50');
+/**
+ * 期間と件数を指定してトップトラックを取得する。
+ * 期間は Spotify が用意する3つのプリセットのみ（任意の月数は指定できない）。
+ */
+export async function fetchTopTracks(
+  range: TopTracksRange = DEFAULT_TOP_TRACKS_RANGE,
+  limit: TopTracksLimit = DEFAULT_TOP_TRACKS_LIMIT
+): Promise<TopTrackEntry[]> {
+  const res = await spotifyFetch(`/me/top/tracks?time_range=${range}&limit=${limit}`);
   if (!res) return [];
 
   const data = (await res.json()) as { items: SpotifyTrack[] };

@@ -3,7 +3,7 @@
  *
  *   GET /embed        iframe 用HTMLページ
  *   GET /badge.svg    now-playing カードのSVG（GitHub README にも貼れる）
- *   GET /ranking.svg  ランキングのSVG
+ *   GET /ranking.svg  ランキングのSVG（?range= で集計期間、?count= で表示件数）
  *
  * SVG は静的モードと同じレンダラを使う。違いは「リクエストのたびに
  * 最新を描く」ことだけ。
@@ -15,6 +15,7 @@ import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
 import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolveTheme } from '../render/theme.js';
+import { parseRange, parseLimit, parseCount } from '../core/topTracksParams.js';
 import { artCache } from '../cache/index.js';
 
 const router = Router();
@@ -69,7 +70,10 @@ router.get('/badge.svg', async (req, res, next) => {
 
 router.get('/ranking.svg', async (req, res, next) => {
   try {
-    const data = await collectTopTracks();
+    const data = await collectTopTracks({
+      range: parseRange(req.query['range']),
+      limit: parseLimit(req.query['limit']),
+    });
     const count = parseCount(req.query['count']);
     const arts = await Promise.all(
       data.tracks
@@ -82,6 +86,7 @@ router.get('/ranking.svg', async (req, res, next) => {
       renderRankingCard({
         tracks: data.tracks,
         fetchedAt: data.fetched_at,
+        range: data.range,
         count,
         artDataUris: arts,
         theme: resolveTheme(req.query['theme'] as string | undefined),
@@ -97,7 +102,12 @@ router.get('/embed', async (req, res, next) => {
     const withRanking = req.query['ranking'] === 'true';
     const [nowPlaying, topTracks] = await Promise.all([
       collectNowPlaying(),
-      withRanking ? collectTopTracks() : Promise.resolve(null),
+      withRanking
+        ? collectTopTracks({
+            range: parseRange(req.query['range']),
+            limit: parseLimit(req.query['limit']),
+          })
+        : Promise.resolve(null),
     ]);
 
     const state: PlaybackState =
@@ -115,18 +125,13 @@ router.get('/embed', async (req, res, next) => {
         // ページ自身が定期的に取得し直す。iframe を貼り替える必要はない。
         liveEndpoint: '/api/now-playing',
         refreshSeconds: parseRefresh(req.query['refresh']),
+        rankingCount: parseCount(req.query['count']),
       })
     );
   } catch (err) {
     next(err);
   }
 });
-
-function parseCount(raw: unknown): number {
-  const value = Number.parseInt(String(raw ?? ''), 10);
-  if (Number.isNaN(value)) return 5;
-  return Math.min(Math.max(value, 1), 10);
-}
 
 function parseRefresh(raw: unknown): number {
   const value = Number.parseInt(String(raw ?? ''), 10);

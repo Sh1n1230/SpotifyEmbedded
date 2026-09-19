@@ -94,7 +94,7 @@ const res = await fetch('https://<あなた>.github.io/SpotifyEmbedded/now-playi
 | ファイル | 内容 |
 |---|---|
 | `now-playing.svg` / `now-playing-light.svg` | ムード文つきカード |
-| `ranking.svg` / `ranking-light.svg` | 直近4週間のトップ5 |
+| `ranking.svg` / `ranking-light.svg` | トップトラック（既定: 直近4週間のトップ5） |
 | `now-playing.json` / `.yaml` | ライブAPIと同一スキーマ |
 | `top-tracks.json` / `.yaml` | 同上 |
 | `index.html` | iframe用ページ |
@@ -111,8 +111,31 @@ Actionsを使わず手元で生成することもできます。
 ```bash
 npm run generate                      # ./out に出力
 npm run generate -- --out ./public --count 10 --theme dark
+npm run generate -- --range medium_term --limit 30 --count 10
 npm run generate -- --no-mood         # LLM設定なしで実行
 ```
+
+| オプション | 既定値 | 説明 |
+|---|---|---|
+| `--out <dir>` | `./out` | 出力先ディレクトリ |
+| `--range <name>` | `short_term` | 集計期間（[ランキングの集計期間](#ランキングの集計期間)） |
+| `--limit <n>` | `50` | Spotify から取得する件数（`10` / `30` / `50`） |
+| `--count <n>` | `5` | ランキングの表示件数（1〜50） |
+| `--theme <name>` | `both` | `dark` / `light` / `both` |
+| `--no-mood` | — | AIムード文の生成をスキップ |
+
+出力ファイル名は期間によらず同じ（`ranking.svg` / `top-tracks.json`）です。どの期間で生成したかは
+JSON/YAML の `range` に入ります。GitHub Actions では手動実行（Run workflow）時に期間と件数を選べます。
+
+### ランキングの集計期間
+
+Spotify Web API が受け付けるのは次の3つのプリセットだけで、「3か月」のような任意の月数は指定できません。
+
+| 値 | 期間の目安 |
+|---|---|
+| `short_term` | 直近約4週間（既定） |
+| `medium_term` | 直近約6か月 |
+| `long_term` | 直近約1年 |
 
 ---
 
@@ -135,6 +158,8 @@ npm run dev        # http://localhost:3000
         data-target="#spotify"
         data-theme="dark"
         data-ranking="false"
+        data-range="short_term"
+        data-count="5"
         data-refresh="30"></script>
 ```
 
@@ -143,6 +168,9 @@ npm run dev        # http://localhost:3000
 | `data-target` | (スクリプトの直後) | 描画先のCSSセレクタ |
 | `data-theme` | `dark` | `dark` / `light` |
 | `data-ranking` | `false` | `true` でランキングも表示 |
+| `data-range` | `short_term` | 集計期間（`short_term` / `medium_term` / `long_term`） |
+| `data-limit` | `50` | 取得件数（`10` / `30` / `50`） |
+| `data-count` | `5` | ランキングの表示件数（1〜50） |
 | `data-transparent` | `false` | `true` で背景を透過 |
 | `data-refresh` | `30` | 更新間隔（秒、最小10） |
 
@@ -158,6 +186,7 @@ npm run dev        # http://localhost:3000
 ```markdown
 ![Now Playing](https://your-api.example.com/badge.svg)
 ![Top Tracks](https://your-api.example.com/ranking.svg?count=5)
+![Top Tracks 6ヶ月](https://your-api.example.com/ranking.svg?range=medium_term&count=10)
 ```
 
 **データ**
@@ -206,19 +235,30 @@ if (data.is_playing) {
 
 ### `GET /api/top-tracks`
 
-直近約4週間（`short_term`）の再生ランキングを最大50曲返します。各曲に `rank` と `genres` が付きます。
+再生ランキングを返します。各曲に `rank` と `genres` が付きます。
+
+| クエリ | 既定値 | 説明 |
+|---|---|---|
+| `range` | `short_term` | `short_term`（約4週間） / `medium_term`（約6か月） / `long_term`（約1年） |
+| `limit` | `50` | 取得件数。`10` / `30` / `50` のいずれか |
+
+不正な値は既定値に丸めます（エラーにはしません）。レスポンスの `range` / `limit` に実際に使われた値が入ります。
+
+```bash
+curl 'https://your-api.example.com/api/top-tracks?range=medium_term&limit=30'
+```
 
 ### `GET /api/status`
 
-now-playing と top-tracks をまとめて返します。
+now-playing と top-tracks をまとめて返します。`range` と `limit` は `/api/top-tracks` と同じものが使えます。
 
 ### 埋め込み用エンドポイント
 
 | パス | 内容 | クエリ |
 |---|---|---|
-| `GET /embed` | iframe用HTML | `theme` `ranking` `transparent` `refresh` |
+| `GET /embed` | iframe用HTML | `theme` `ranking` `range` `limit` `count` `transparent` `refresh` |
 | `GET /badge.svg` | now-playingカード | `theme` |
-| `GET /ranking.svg` | ランキング | `theme` `count` |
+| `GET /ranking.svg` | ランキング | `theme` `range` `limit` `count` |
 | `GET /embed.js` | ワンタグ埋め込み | — |
 
 ---

@@ -4,7 +4,9 @@
  *   <script src="https://your-api.example.com/embed.js"
  *           data-target="#spotify"
  *           data-theme="dark"
- *           data-ranking="false"></script>
+ *           data-ranking="false"
+ *           data-range="short_term"
+ *           data-count="5"></script>
  *
  * カードは Shadow DOM の中に作るので、貼り付け先サイトのCSSから
  * 影響を受けない（逆にこちらのCSSも漏れない）。
@@ -16,10 +18,37 @@
   if (!script) return;
 
   var base = script.src.replace(/\/embed\.js(?:\?.*)?$/, '');
+
+  // Spotify が用意する集計期間は3つだけ。見出しの文言もここで持つ。
+  var RANGE_LABELS = {
+    short_term: '4 WEEKS',
+    medium_term: '6 MONTHS',
+    long_term: '1 YEAR'
+  };
+  var LIMITS = [10, 30, 50];
+
+  function pickRange(value) {
+    return RANGE_LABELS[value] ? value : 'short_term';
+  }
+
+  function pickLimit(value) {
+    var n = parseInt(value, 10);
+    return LIMITS.indexOf(n) >= 0 ? n : 50;
+  }
+
+  function pickCount(value) {
+    var n = parseInt(value, 10);
+    if (isNaN(n)) return 5;
+    return Math.min(Math.max(n, 1), 50);
+  }
+
   var options = {
     target: script.getAttribute('data-target'),
     theme: script.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
     ranking: script.getAttribute('data-ranking') === 'true',
+    range: pickRange(script.getAttribute('data-range')),
+    limit: pickLimit(script.getAttribute('data-limit')),
+    count: pickCount(script.getAttribute('data-count')),
     transparent: script.getAttribute('data-transparent') === 'true',
     refresh: Math.max(parseInt(script.getAttribute('data-refresh') || '30', 10) || 30, 10)
   };
@@ -176,10 +205,11 @@
     if (!data || !data.tracks || !data.tracks.length) return null;
 
     var section = el('section', 'ranking');
-    section.appendChild(el('h3', null, 'TOP TRACKS · 4 WEEKS'));
+    var label = RANGE_LABELS[data.range] || RANGE_LABELS.short_term;
+    section.appendChild(el('h3', null, 'TOP TRACKS · ' + label));
 
     var list = el('ol');
-    data.tracks.slice(0, 5).forEach(function (track) {
+    data.tracks.slice(0, options.count).forEach(function (track) {
       var item = el('li');
       item.appendChild(el('span', 'rank', String(track.rank)));
 
@@ -235,7 +265,8 @@
 
   refresh().then(function () {
     if (!options.ranking) return;
-    return get('/api/top-tracks').then(function (data) {
+    var query = '?range=' + options.range + '&limit=' + options.limit;
+    return get('/api/top-tracks' + query).then(function (data) {
       rankingNode = renderRanking(data);
       if (rankingNode) container.appendChild(rankingNode);
     }).catch(function () {});

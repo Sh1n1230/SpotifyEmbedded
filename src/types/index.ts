@@ -110,6 +110,33 @@ export interface NowPlayingResponse {
   fetched_at: string;
 }
 
+// ── Top tracks の選択肢 ───────────────────────────────────────────────────────
+
+/**
+ * Spotify の `/me/top/*` が受け付ける集計期間。任意の月数は指定できず、
+ * この3つから選ぶ（Spotify Web API の仕様）。
+ *
+ * short_term  ≒ 直近4週間
+ * medium_term ≒ 直近6か月
+ * long_term   ≒ 直近1年（ほぼ全期間）
+ */
+export const TOP_TRACKS_RANGES = ['short_term', 'medium_term', 'long_term'] as const;
+export type TopTracksRange = (typeof TOP_TRACKS_RANGES)[number];
+
+/**
+ * 取得件数。Spotify 側は 1〜50 の任意値を許すが、キャッシュのキーが
+ * 無限に増えるのを避けるため3段階に固定する。
+ */
+export const TOP_TRACKS_LIMITS = [10, 30, 50] as const;
+export type TopTracksLimit = (typeof TOP_TRACKS_LIMITS)[number];
+
+export const DEFAULT_TOP_TRACKS_RANGE: TopTracksRange = 'short_term';
+export const DEFAULT_TOP_TRACKS_LIMIT: TopTracksLimit = 50;
+
+/** ランキングSVG / HTMLの表示件数の上限。取得件数の最大値と揃える。 */
+export const MAX_RANKING_COUNT = 50;
+export const DEFAULT_RANKING_COUNT = 5;
+
 /**
  * YAML schema for a top-track entry:
  *
@@ -133,7 +160,8 @@ export interface TopTrackEntry extends TrackSummary {
 /**
  * YAML schema for /api/top-tracks:
  *
- * range: "short_term"
+ * range: "short_term" | "medium_term" | "long_term"
+ * limit: 10 | 30 | 50     # リクエストした取得件数（実際の件数は tracks.length）
  * fetched_at: string
  * tracks:
  *   - rank: number
@@ -144,7 +172,8 @@ export interface TopTrackEntry extends TrackSummary {
  *     ...
  */
 export interface TopTracksResponse {
-  range: 'short_term';
+  range: TopTracksRange;
+  limit: TopTracksLimit;
   fetched_at: string;
   tracks: TopTrackEntry[];
 }
@@ -158,7 +187,8 @@ export interface TopTracksResponse {
  *   mood: ...
  *   fetched_at: string
  * top_tracks:
- *   range: "short_term"
+ *   range: "short_term" | "medium_term" | "long_term"
+ *   limit: 10 | 30 | 50
  *   fetched_at: string
  *   tracks: [...]
  * generated_at: string
