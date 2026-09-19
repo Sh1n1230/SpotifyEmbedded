@@ -5,6 +5,9 @@
 > ダークな気分に浸っているようです
 > — Armed And Dangerous / Juice WRLD
 
+[![CI](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml)
+[![Security Check](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml)
+
 2つのモードがあります。**サーバーを持たなくても使えます。**
 
 | | サーバー | リアルタイム性 | 向いている用途 |
@@ -289,3 +292,9 @@ now-playingをSVGにする先行プロジェクトは複数あります（[spoti
 ## ライセンス
 
 MIT
+
+## コントリビューション
+
+開発手順と脆弱性の報告方法は [`CONTRIBUTING.md`](CONTRIBUTING.md) と
+[`SECURITY.md`](SECURITY.md) を参照してください。リリースは
+`vX.Y.Z` 形式のタグを起点にGitHub Actionsが自動作成します。
