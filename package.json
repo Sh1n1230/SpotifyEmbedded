@@ -1,6 +1,6 @@
 {
   "name": "spotify-embedded",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Spotifyの再生状況を、AIが生成した日本語のムード文つきでポートフォリオやREADMEに埋め込む。サーバー不要の静的生成にも対応。",
   "type": "module",
   "main": "dist/index.js",
