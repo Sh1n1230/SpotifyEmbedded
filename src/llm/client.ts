@@ -40,8 +40,13 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
       body: JSON.stringify({
         model: params.model,
         messages: params.messages,
-        max_tokens: params.maxTokens ?? 80,
+        max_tokens: params.maxTokens ?? 160,
         temperature: params.temperature ?? 0.7,
+        // OpenRouterの推論モデルは短い上限を推論だけで使い切り、
+        // 本文を返さないことがある。ムード文は推論を必要としない。
+        ...(params.baseUrl.includes('openrouter.ai')
+          ? { reasoning: { effort: 'none' } }
+          : {}),
       }),
       signal: AbortSignal.timeout(params.timeoutMs ?? 15000),
     });
@@ -58,7 +63,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
 
   const data = (await res.json()) as ChatCompletionResponse;
   const text = data.choices?.[0]?.message?.content;
-  if (!text) {
+  if (!text?.trim()) {
     throw new Error(`LLMの応答が空でした（モデル: ${params.model}）`);
   }
 
