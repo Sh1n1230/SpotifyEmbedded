@@ -280,14 +280,13 @@ async function runOAuthFlow(app: OAuthApp): Promise<string> {
 }
 
 function openBrowser(url: string): void {
-  const command =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd.exe' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
 
   try {
-    const child = spawn(command, [url], {
+    const child = spawn(command, args, {
       stdio: 'ignore',
       detached: true,
-      shell: process.platform === 'win32',
     });
     child.on('error', () => {
       /* 手動で開いてもらう */
