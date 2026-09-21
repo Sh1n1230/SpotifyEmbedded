@@ -126,12 +126,17 @@ export function renderEmbedPage(input: PageInput): string {
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.14em;
-    color: ${state === 'playing' ? 'var(--accent)' : 'var(--muted)'};
+    color: var(--muted);
     margin-bottom: 10px;
   }
 
+  /* 再生中かどうかは #label の data-playing で表す。
+     ライブ更新のスクリプトが属性を付け外しするだけで済むようにしている。 */
+  .label[data-playing] { color: var(--accent); }
+
   /* 再生中インジケータ */
-  .eq { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
+  .eq { display: none; align-items: flex-end; gap: 2px; height: 12px; }
+  .label[data-playing] .eq { display: flex; }
   .eq span {
     width: 3px;
     border-radius: 1.5px;
@@ -185,7 +190,7 @@ export function renderEmbedPage(input: PageInput): string {
 <body>
 ${renderCardMarkup(track, mood, state, label)}
 ${rankingSection}
-${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30) : ''}
+${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null) : ''}
 </body>
 </html>
 `;
@@ -197,13 +202,16 @@ function renderCardMarkup(
   state: PlaybackState,
   label: string
 ): string {
-  const eq = state === 'playing' ? '<span class="eq"><span></span><span></span><span></span></span>' : '';
+  // イコライザは常に描き、表示・非表示は #label の data-playing に任せる。
+  // ライブ更新で再生が始まった/止まったときにDOMを作り直さずに済む。
+  const eq = '<span class="eq"><span></span><span></span><span></span></span>';
+  const playing = state === 'playing' ? ' data-playing' : '';
 
   if (!track) {
     return `<div class="card" id="card">
   <div class="art-placeholder">no art</div>
   <div class="body">
-    <div class="label" id="label">${eq}<span id="label-text">${escapeXml(label)}</span></div>
+    <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
     <p class="idle" id="mood">再生していません</p>
   </div>
 </div>`;
@@ -221,7 +229,7 @@ function renderCardMarkup(
   return `<a class="card" id="card"${mood?.text ? '' : ' data-no-mood'} href="${escapeXml(track.spotify_url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeXml(ariaLabel)}">
   ${art}
   <div class="body">
-    <div class="label" id="label">${eq}<span id="label-text">${escapeXml(label)}</span></div>
+    <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
     ${mood?.text ? `<p class="mood" id="mood">${escapeXml(mood.text)}</p>` : ''}
     <p class="track" id="track">${escapeXml(track.name)}</p>
     <p class="artist" id="artist">${escapeXml(track.artist)}</p>
@@ -266,13 +274,32 @@ ${items}
  * ライブ更新。DOMへの反映は textContent と setAttribute のみで行い、
  * APIレスポンス由来の文字列をHTMLとして解釈させない。
  */
-function renderLiveScript(endpoint: string, refreshSeconds: number): string {
+function renderLiveScript(
+  endpoint: string,
+  refreshSeconds: number,
+  hasTrack: boolean
+): string {
   const interval = Math.max(refreshSeconds, 10) * 1000;
 
   return `<script>
 (function () {
   var endpoint = ${JSON.stringify(endpoint)};
   var interval = ${interval};
+
+  // カードの骨組み（<a>＋<img> か、曲なしの <div>）はサーバー側で決まる。
+  // 曲の有無が入れ替わったときだけはDOMを組み直せないので読み込み直す。
+  var hadTrack = ${hasTrack ? 'true' : 'false'};
+
+  // ジャケ写URLのプレフィックスは画像サイズを表す。112pxで描くので
+  // 300px版に寄せる。640px版のままだと表示が目に見えて遅れる。
+  var ART_SIZES = ['ab67616d0000b273', 'ab67616d00001e02', 'ab67616d00004851'];
+
+  function artAt300(url) {
+    for (var i = 0; i < ART_SIZES.length; i++) {
+      if (url.indexOf(ART_SIZES[i]) !== -1) return url.replace(ART_SIZES[i], ART_SIZES[1]);
+    }
+    return url;
+  }
 
   function setText(id, value) {
     var el = document.getElementById(id);
@@ -281,16 +308,33 @@ function renderLiveScript(endpoint: string, refreshSeconds: number): string {
 
   function update(data) {
     var card = document.getElementById('card');
-    var track = data && data.track;
-    if (!card || !track) return;
+    if (!card) return;
 
-    setText('label-text', data.is_playing ? 'NOW PLAYING' : 'LAST PLAYED');
+    var track = data && data.track;
+    if (!!track !== hadTrack) {
+      location.reload();
+      return;
+    }
+    if (!track) return;
+
+    var playing = !!data.is_playing;
+    setText('label-text', playing ? 'NOW PLAYING' : 'LAST PLAYED');
+
+    // 再生が止まったらイコライザとアクセント色も戻す（CSSが属性を見ている）
+    var label = document.getElementById('label');
+    if (label) {
+      if (playing) label.setAttribute('data-playing', '');
+      else label.removeAttribute('data-playing');
+    }
+
     setText('track', track.name);
     setText('artist', track.artist);
     if (data.mood && data.mood.text) setText('mood', data.mood.text);
 
     var art = document.getElementById('art');
-    if (art && art.tagName === 'IMG' && track.album_art_url) art.setAttribute('src', track.album_art_url);
+    if (art && art.tagName === 'IMG' && track.album_art_url) {
+      art.setAttribute('src', artAt300(track.album_art_url));
+    }
     if (card.tagName === 'A' && track.spotify_url) card.setAttribute('href', track.spotify_url);
   }
 
