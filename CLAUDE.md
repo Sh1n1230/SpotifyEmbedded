@@ -30,10 +30,20 @@ The same core powers both. This split is the product's core idea — don't colla
 - `src/config.ts` — **lazy getters**. Secrets must not be evaluated at import time, or `setup`
   breaks before it can write anything
 - `src/core/collect.ts` — the only data-collection path; used by both routes and CLI
-- `src/spotify/` — API client (native fetch), token auto-refresh, nowPlaying, topTracks, oauth
+- `src/spotify/` — API client (native fetch), token auto-refresh, nowPlaying, topTracks, oauth,
+  and `artists.ts` (the single genre-lookup path, shared by both fetchers)
 - `src/llm/` — OpenAI-compatible chat client (`client.ts`), provider presets (`providers.ts`),
-  and the Japanese mood prompt (`moodGenerator.ts`). Any OpenAI-format endpoint works:
-  OpenAI, OpenRouter, Groq, Ollama. No provider SDK.
+  and the Japanese mood prompt (`moodGenerator.ts`). Any OpenAI-format endpoint works;
+  the presets are input helpers, not an integration list. No provider SDK.
+  - **Reasoning must be disabled.** A thinking model spends the small `max_tokens` budget on
+    reasoning and returns empty content with `finish_reason: length`. The parameter differs per
+    vendor, and sending the wrong one is a 400, so `noReasoningParams()` in `client.ts`
+    dispatches on the endpoint host: `reasoning: {effort}` for OpenRouter,
+    `reasoning_effort` for Gemini. Add a branch rather than sending it to everyone.
+  - Gemini's OpenAI-compatible base URL is `https://generativelanguage.googleapis.com/v1beta/openai`
+    — not `/v1beta`, not `/v1beta/interactions`.
+  - `client.ts` retries once on 5xx (Gemini's `gemini-3.x-flash` 503s under load; the
+    `-lite` models are markedly more reliable).
 - `src/render/` — pure data→string renderers (`card`, `ranking`, `page`, `text`, `theme`, `image`)
 - `src/cli/` — `spotify-embedded setup | generate`
 - `src/cache/index.ts` — node-cache instances: nowPlaying (30s), topTracks (1h), mood (24h, 200 keys),
@@ -46,7 +56,15 @@ The same core powers both. This split is the product's core idea — don't colla
 ## Key constraints
 
 - Spotify `/audio-features` is deprecated for new apps (post Nov 2024) — do not use it
-- Mood inference uses: artist genres (from `/artists` batch endpoint), track popularity, track/artist/album names
+- **The same restriction now covers more fields.** On a post-Nov-2024 app, `/artists?ids=`
+  returns 403, single-artist responses omit `genres`, and `popularity` / `preview_url` are
+  absent from both `/me/player/currently-playing` and `/me/top/tracks`. `src/spotify/artists.ts`
+  keeps the genre lookup for extended-quota apps but latches "unavailable" after the first 403
+  so it stops retrying. `TrackSummary.popularity` is `number | null`; the key always exists.
+- Mood inference therefore usually has only track/artist/album names. `moodGenerator` drops
+  absent signals from the prompt rather than writing "不明" — a stated-but-empty hint skews output.
+- `spotifyFetch` throws `SpotifyApiError` on any non-2xx other than the handled 401/429/204.
+  Callers must not assume a returned Response is `ok`.
 - LLM is optional everywhere. `hasLlmConfigured()` gates it; never make it required to boot.
 - Top tracks period is one of Spotify's three presets — `short_term` (~4 weeks, default),
   `medium_term` (~6 months), `long_term` (~1 year). Arbitrary month counts are not supported by

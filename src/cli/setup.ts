@@ -23,6 +23,7 @@ import {
 } from '../authStore.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
 import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
+import { chatCompletion } from '../llm/client.js';
 
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -126,7 +127,16 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
   if (existingKey) {
     const baseUrl = resolveAuthValue('llmBaseUrl') ?? DEFAULT_BASE_URL;
     console.log(`\n✓ LLM は設定済みです (${providerLabelForBaseUrl(baseUrl)})`);
-    return {};
+    console.log(`  モデル: ${resolveAuthValue('llmModel') ?? '(既定)'}`);
+
+    // 設定済みでも、キーの期限切れや失効はここでしか直せない。
+    // 黙って残すと「設定済みなのにムード文が出ない」状態から抜け出せない。
+    const again = (
+      await ask(rl, '  入れ替えますか？（期限切れ・失効した場合） (y/N): ', false)
+    ).trim().toLowerCase();
+
+    if (again !== 'y' && again !== 'yes') return {};
+    console.log('  → 新しい設定を入力してください。');
   }
 
   console.log('\nAIのムード文を生成するLLMを選びます。');
@@ -143,7 +153,8 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
 
   if (!Number.isInteger(index) || index < 0 || index >= PROVIDERS.length) {
     console.log('  → ムード文なしで進めます。');
-    return {};
+    // 入れ替えの途中でここに来た場合は、古いキーを残さず消す。
+    return existingKey ? { llmApiKey: '', llmBaseUrl: '', llmModel: '' } : {};
   }
 
   const preset = PROVIDERS[index];
@@ -177,7 +188,43 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
     return {};
   }
 
-  return { llmApiKey: apiKey, llmBaseUrl: baseUrl, llmModel: model };
+  const settings: StoredAuth = { llmApiKey: apiKey, llmBaseUrl: baseUrl, llmModel: model };
+
+  // ここで一度実際に叩いておく。設定ミス（URLのパス違い・モデル名の誤りなど）は
+  // 黙って mood: null になるだけで、あとから気づきにくい。
+  return (await verifyLlm(rl, settings)) ? settings : askLlm(rl);
+}
+
+/**
+ * 入力されたLLM設定で実際に1文生成してみる。
+ * 失敗したら原因を見せて、入力し直すか、このまま保存するかを選ばせる。
+ */
+async function verifyLlm(rl: Interface, settings: StoredAuth): Promise<boolean> {
+  console.log('\n  接続を確認しています...');
+
+  try {
+    const text = await chatCompletion({
+      baseUrl: settings.llmBaseUrl ?? DEFAULT_BASE_URL,
+      apiKey: settings.llmApiKey ?? '',
+      model: settings.llmModel ?? '',
+      messages: [
+        { role: 'system', content: '15〜30文字の日本語1文のみを出力する。説明やクォートは付けない。' },
+        { role: 'user', content: '曲名: Sunflower\nアーティスト: Post Malone' },
+      ],
+      maxTokens: 80,
+      temperature: 0.7,
+    });
+    console.log(`  ✓ 生成できました: ${text.trim()}`);
+    return true;
+  } catch (err) {
+    console.log(`  ✗ ${err instanceof Error ? err.message : String(err)}`);
+    const answer = (await ask(rl, '  入力し直しますか？ (Y/n): ', false)).trim().toLowerCase();
+    if (answer === 'n' || answer === 'no') {
+      console.log('  → このまま保存します（ムード文は出ないかもしれません）。');
+      return true;
+    }
+    return false;
+  }
 }
 
 function ask(rl: Interface, query: string, secret: boolean): Promise<string> {
@@ -310,18 +357,29 @@ function resultPage(message: string, ok: boolean): string {
 
 // ── 保存先 ───────────────────────────────────────────────────────────
 
-/** .env の該当行だけを差し替える。他の行やコメントは触らない。 */
+/**
+ * 設定ファイルの該当行だけを差し替える。他の行やコメントは触らない。
+ *
+ * 値が空文字の場合は「明示的に消す」という意味なので、行そのものを削除する。
+ * 環境変数は data/auth.json より優先されるため、ここを残すと入れ替えたはずの
+ * 古いキーが生き続けてしまう。
+ */
 function upsertEnvFile(path: string, values: StoredAuth): void {
   const lines = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
 
   for (const field of AUTH_FIELDS) {
     const value = values[field];
-    if (!value) continue;
+    if (value === undefined) continue;
 
     const key = AUTH_ENV[field];
-    const entry = `${key}=${value}`;
     const index = lines.findIndex((line) => line.trimStart().startsWith(`${key}=`));
 
+    if (value === '') {
+      if (index >= 0) lines.splice(index, 1);
+      continue;
+    }
+
+    const entry = `${key}=${value}`;
     if (index >= 0) lines[index] = entry;
     else lines.push(entry);
   }
@@ -351,12 +409,18 @@ async function offerGitHubSecrets(rl: Interface, values: StoredAuth): Promise<vo
 
   for (const field of AUTH_FIELDS) {
     const value = values[field];
-    if (!value) continue;
+    if (value === undefined) continue;
 
     const key = AUTH_ENV[field];
     try {
-      await setGitHubSecret(key, value);
-      console.log(`  ✓ ${key}`);
+      // 入れ替えで空にした項目は消す。残ると Actions だけが古いキーで動く。
+      if (value === '') {
+        await deleteGitHubSecret(key);
+        console.log(`  － ${key}（削除）`);
+      } else {
+        await setGitHubSecret(key, value);
+        console.log(`  ✓ ${key}`);
+      }
     } catch (err) {
       console.log(`  ✗ ${key}: ${(err as Error).message}`);
     }
@@ -403,6 +467,11 @@ function setGitHubSecret(key: string, value: string): Promise<void> {
   });
 }
 
+/** 不要になったシークレットを消す。元から無い場合も成功扱いにする。 */
+async function deleteGitHubSecret(key: string): Promise<void> {
+  await run('gh', ['secret', 'delete', key]);
+}
+
 function run(command: string, args: string[]): Promise<{ code: number; stdout: string }> {
   return new Promise((done, fail) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -419,6 +488,7 @@ function printEnvBlock(values: StoredAuth): void {
   for (const field of AUTH_FIELDS) {
     const value = values[field];
     if (value) console.log(`  ${AUTH_ENV[field]}=${value}`);
+    else if (value === '') console.log(`  ${AUTH_ENV[field]} … 登録済みなら削除してください`);
   }
   console.log('');
 }

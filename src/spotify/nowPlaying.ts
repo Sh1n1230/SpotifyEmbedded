@@ -1,29 +1,12 @@
 import { spotifyFetch } from './client.js';
-import type { SpotifyPlaybackState, SpotifyArtist, TrackSummary } from '../types/index.js';
+import { fetchArtistGenres } from './artists.js';
+import type { SpotifyPlaybackState, TrackSummary } from '../types/index.js';
 
 function pickAlbumArt(images: { url: string; width: number | null }[]): string {
   const large = images
     .filter((img) => img.width !== null && img.width >= 300)
     .sort((a, b) => (b.width ?? 0) - (a.width ?? 0));
   return (large[0] ?? images[0])?.url ?? '';
-}
-
-async function fetchArtistGenres(artistIds: string[]): Promise<Map<string, string[]>> {
-  const genreMap = new Map<string, string[]>();
-  if (artistIds.length === 0) return genreMap;
-
-  // Batch up to 50 ids per request (Spotify limit)
-  for (let i = 0; i < artistIds.length; i += 50) {
-    const ids = artistIds.slice(i, i + 50).join(',');
-    const res = await spotifyFetch(`/artists?ids=${ids}`);
-    if (!res) continue;
-    const data = (await res.json()) as { artists?: SpotifyArtist[] };
-    if (!Array.isArray(data.artists)) continue;
-    for (const artist of data.artists) {
-      if (artist) genreMap.set(artist.id, artist.genres);
-    }
-  }
-  return genreMap;
 }
 
 export interface NowPlayingData {
@@ -58,9 +41,11 @@ export async function fetchNowPlaying(): Promise<NowPlayingData> {
     album: item.album.name,
     album_art_url: pickAlbumArt(item.album.images),
     duration_ms: item.duration_ms,
-    popularity: item.popularity,
+    // popularity は 2024年11月以降のアプリでは返らない。欠けていても
+    // キー自体はスキーマに残す（利用側の分岐を増やさないため）。
+    popularity: item.popularity ?? null,
     spotify_url: item.external_urls.spotify,
-    preview_url: item.preview_url,
+    preview_url: item.preview_url ?? null,
   };
 
   return { isPlaying: true, track, genres, trackId: item.id };

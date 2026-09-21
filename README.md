@@ -12,7 +12,7 @@
 
 | | サーバー | リアルタイム性 | 向いている用途 |
 |---|---|---|---|
-| **静的モード** | **不要** | 30分ごとの更新 | GitHub README、ブログ、まず試したいとき |
+| **静的モード** | **不要** | 数十分〜数時間ごと（※） | GitHub README、ブログ、まず試したいとき |
 | **ライブAPIモード** | 必要 | 秒単位 | ポートフォリオで「今まさに」を出したいとき |
 
 どちらも出力するJSONのスキーマは同じなので、あとから移行するときは **fetch先のURLを差し替えるだけ**です。
@@ -39,14 +39,19 @@ npm install
 http://127.0.0.1:3000/auth/callback
 ```
 
-ムード文の生成にはLLMを使いますが、**特定のサービスに縛られません。** OpenAIのChat Completions形式を話すエンドポイントなら何でも使えます。
+ムード文の生成にはLLMを使いますが、**特定のサービスに縛られません。** OpenAIのChat Completions形式（`POST {baseUrl}/chat/completions`）を話すエンドポイントなら何でも使えます。下の表はURLを毎回調べなくて済むようにした入力補助で、ここに無いサービスも「その他」からURLを直接指定すれば同じように動きます。
 
-| | エンドポイント | 備考 |
-|---|---|---|
-| Groq | `https://api.groq.com/openai/v1` | 無料枠あり・カード不要 |
-| OpenAI | `https://api.openai.com/v1` | 従量課金 |
-| OpenRouter | `https://openrouter.ai/api/v1` | 1つのキーで多数のモデル |
-| Ollama / LM Studio | `http://localhost:11434/v1` など | ローカル実行 |
+| | エンドポイント | 既定モデル | 備考 |
+|---|---|---|---|
+| **Groq（推奨）** | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | 無料枠あり・カード不要 |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.1-flash-lite` | 無料枠あり |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | 従量課金 |
+| その他 | 任意のOpenAI互換URL | — | — |
+
+> **Gemini を使う場合の注意**
+> OpenAI互換の口は **`/v1beta/openai`** です。`/v1beta` や `/v1beta/interactions` を指定すると 401/404 になります。
+> また Gemini は推論モデルなので、そのままだと短い出力上限を推論だけで使い切って本文が空になります。
+> 本プロジェクトは Gemini 宛に `reasoning_effort: "none"` を自動で付けるため、この設定は不要です。
 
 次のステップで対話的に選べます。**設定しなくても構いません**（曲情報だけが表示されます）。
 
@@ -60,11 +65,14 @@ npm run setup
 
 - `refresh_token` の取得
 - `.env` と `data/auth.json` への保存
+- **LLMの接続テスト**（実際に1文生成してみて、URLやモデル名の誤りをその場で知らせます）
 - `gh` CLI があれば **GitHub Secrets への登録**（`gh` が無い場合はコピー用の値を表示します）
+
+すでに設定済みの状態で再実行すると、LLMの設定を**入れ替えるか**聞かれます。APIキーが期限切れになったときはここで差し替えてください（設定ファイルの行とGitHub Secretsも連動して更新されます）。
 
 ### 3. 有効化
 
-フォーク先で **Settings → Pages → Source** に `spotify-data` ブランチを指定します。あとは30分おきに自動更新されます。
+フォーク先で **Settings → Pages → Source** に `spotify-data` ブランチを指定します。あとはGitHub Actionsが定期的に更新します（間隔は下の「更新の間隔について」を参照）。
 
 すぐ試したいときは **Actions → Update Spotify snapshot → Run workflow** を実行してください。
 
@@ -102,7 +110,8 @@ const res = await fetch('https://<あなた>.github.io/SpotifyEmbedded/now-playi
 **停止中でも「最後に聴いていた曲」を表示します。** 前回の観測結果を `snapshot.json` に持ち越しているので、カードが「再生していません」で埋まりません。
 
 > **更新の間隔について**
-> GitHubのスケジュール実行は定刻に走らず、数分から数十分ずれます。さらにGitHubは画像をキャッシュする（camoプロキシ）ため、README上の反映はもう少し遅れます。秒単位で追いたい場合は次のライブAPIモードを使ってください。
+> ワークフローは30分おきの実行を*要求*しますが、GitHubのスケジュール実行は定刻に走らず、混雑時には間引かれます。実測では**2〜5時間あくこともあります**（`schedule` イベントの仕様で、こちら側では制御できません）。さらにGitHubは画像をキャッシュする（camoプロキシ）ため、README上の反映はもう少し遅れます。
+> 確実に今すぐ更新したいときは **Actions → Update Spotify snapshot → Run workflow** を実行してください。秒単位で追いたい場合は次のライブAPIモードを使ってください。
 
 ### ローカルで生成する
 
@@ -219,7 +228,7 @@ if (data.is_playing) {
     "album": "Goodbye & Good Riddance",
     "album_art_url": "https://i.scdn.co/image/...",
     "duration_ms": 169999,
-    "popularity": 78,
+    "popularity": null,
     "spotify_url": "https://open.spotify.com/track/...",
     "preview_url": null
   },
@@ -232,6 +241,11 @@ if (data.is_playing) {
 ```
 
 再生していない場合は `is_playing: false`、`track: null`、`mood: null` を返します。
+
+> **`popularity` / `preview_url` / `genres` について**
+> 2024年11月以降に作成されたSpotifyアプリでは、これらをAPIが返しません（`/artists?ids=` は 403 になります）。
+> キー自体はスキーマに残したまま、`popularity` と `preview_url` は `null`、`genres` は空配列になります。
+> 詳しくは[設計メモ](#audio-features-を使わない理由)を参照してください。
 
 ### `GET /api/top-tracks`
 
@@ -299,7 +313,7 @@ docker run -p 3000:3000 \
 | `SPOTIFY_CLIENT_SECRET` | ✓ | — | Spotifyアプリの Client Secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得 |
 | `LLM_API_KEY` | | — | **未設定ならムード文なしで動作します** |
-| `LLM_BASE_URL` | | `https://api.groq.com/openai/v1` | OpenAI互換のエンドポイント |
+| `LLM_BASE_URL` | | `https://api.groq.com/openai/v1` | OpenAI互換のエンドポイント（Geminiは `.../v1beta/openai`） |
 | `LLM_MODEL` | | `llama-3.3-70b-versatile` | 使用モデル |
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
 | `PORT` | | `3000` | — |
@@ -308,7 +322,7 @@ docker run -p 3000:3000 \
 
 設定は **環境変数 → `data/auth.json`** の順に解決されます。環境変数が優先なので、すでに `.env` だけで運用している場合は何も変わりません。
 
-`LLM_API_KEY` は `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `GROQ_API_KEY` という名前でも読み取ります。すでにどれかを設定していれば、そのままで動きます。
+`LLM_API_KEY` は `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `GROQ_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` という名前でも読み取ります。すでにどれかを設定していれば、そのままで動きます。
 
 ---
 
@@ -316,7 +330,11 @@ docker run -p 3000:3000 \
 
 ### audio-features を使わない理由
 
-Spotifyは2024年11月以降に作成されたアプリで `/audio-features`（テンポ・エネルギー等）を廃止しました。本プロジェクトは代わりに、**アーティストのジャンルタグ**（`/artists`）・**人気度**・**曲名/アーティスト名/アルバム名** をLLMに渡してムードを推論しています。
+Spotifyは2024年11月以降に作成されたアプリで `/audio-features`（テンポ・エネルギー等）を廃止しました。本プロジェクトは代わりに、**アーティストのジャンルタグ**（`/artists`）・**人気度**・**曲名/アーティスト名/アルバム名** をLLMに渡してムードを推論する設計です。
+
+ただし制限はその後も広がっており、**新しく作成したアプリでは現在 `genres` と `popularity` も取得できません**（`/artists?ids=` はバッチ取得自体が 403、単体取得でも `genres` フィールドが省かれます）。extended quota mode が承認されたアプリでは今も返るため、機能は残したうえで、**403 を一度観測したらそのプロセスでは以降呼ばない**ようにしています（毎回失敗する往復を増やさないため）。
+
+したがって多くの環境で、ムード推論に実際に使われるのは**曲名・アーティスト名・アルバム名**の3つです。取得できなかった項目はプロンプトから行ごと落としています（「不明」と書くと、モデルがその語に引きずられるため）。
 
 ### 似たプロジェクトとの違い
 

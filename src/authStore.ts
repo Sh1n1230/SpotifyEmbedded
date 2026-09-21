@@ -34,7 +34,14 @@ const AUTH_ENV_NAMES: Record<AuthField, string[]> = {
   spotifyClientId: ['SPOTIFY_CLIENT_ID'],
   spotifyClientSecret: ['SPOTIFY_CLIENT_SECRET'],
   spotifyRefreshToken: ['SPOTIFY_REFRESH_TOKEN'],
-  llmApiKey: ['LLM_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY'],
+  llmApiKey: [
+    'LLM_API_KEY',
+    'OPENAI_API_KEY',
+    'OPENROUTER_API_KEY',
+    'GROQ_API_KEY',
+    'GEMINI_API_KEY',
+    'GOOGLE_API_KEY',
+  ],
   llmBaseUrl: ['LLM_BASE_URL', 'OPENAI_BASE_URL'],
   llmModel: ['LLM_MODEL', 'GROQ_MODEL'],
 };

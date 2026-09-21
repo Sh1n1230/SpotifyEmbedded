@@ -25,18 +25,26 @@ export async function generateMood(params: {
   trackName: string;
   artistName: string;
   albumName: string;
+  /** 取得できない環境では空配列。 */
   genres: string[];
-  popularity: number;
+  /** 取得できない環境では null。 */
+  popularity: number | null;
 }): Promise<string> {
-  // 各フィールドを制限してプロンプトインジェクションを軽減
-  const genreText = params.genres.length > 0
-    ? truncate(params.genres.join(', '), 100)
-    : '不明';
-  const prompt = `曲名: ${truncate(params.trackName, 100)}
-アーティスト: ${truncate(params.artistName, 100)}
-アルバム: ${truncate(params.albumName, 100)}
-ジャンル: ${genreText}
-人気度: ${params.popularity}/100`;
+  // 各フィールドを制限してプロンプトインジェクションを軽減。
+  // 取得できなかった項目は「不明」と書くのではなく行そのものを省く。
+  // 存在しない手がかりをモデルに示すと、そこに引きずられた文が出る。
+  const lines = [
+    `曲名: ${truncate(params.trackName, 100)}`,
+    `アーティスト: ${truncate(params.artistName, 100)}`,
+    `アルバム: ${truncate(params.albumName, 100)}`,
+  ];
+  if (params.genres.length > 0) {
+    lines.push(`ジャンル: ${truncate(params.genres.join(', '), 100)}`);
+  }
+  if (typeof params.popularity === 'number') {
+    lines.push(`人気度: ${params.popularity}/100`);
+  }
+  const prompt = lines.join('\n');
 
   const text = await chatCompletion({
     baseUrl: config.llm.baseUrl,
@@ -50,5 +58,13 @@ export async function generateMood(params: {
     temperature: 0.7,
   });
 
-  return text.trim().replace(/^["「]|["」]$/g, '');
+  return (
+    text
+      .trim()
+      // 1文しか出さないので句点は要らない。プロンプトの文例にも付けていないが、
+      // モデルによっては付けてくる（Gemini など）ので、ここで揃える。
+      .replace(/[。．]$/, '')
+      .replace(/^["「]|["」]$/g, '')
+      .trim()
+  );
 }

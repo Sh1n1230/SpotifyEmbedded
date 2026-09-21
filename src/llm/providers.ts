@@ -1,12 +1,11 @@
 /**
  * LLMプロバイダのプリセット。
  *
- * どれも OpenAI の Chat Completions 形式（`POST {baseUrl}/chat/completions`）を
- * 話すので、コード側はエンドポイントとモデル名が違うだけ。Groq も OpenAI 互換の
- * エンドポイントを公開しているため、専用SDKは不要になった。
- *
- * ここに無いサービスや、Ollama / LM Studio のようなローカルのサーバーも、
- * LLM_BASE_URL を指定すればそのまま使える。
+ * このプロジェクトが「対応」しているのは特定のサービスではなく、
+ * OpenAI の Chat Completions 形式（`POST {baseUrl}/chat/completions`）
+ * そのものである。下の一覧は、そのURLとモデル名を毎回調べなくて済むよう
+ * 用意した入力補助にすぎない。ここに無いサービスでも、URLさえ分かれば
+ * 「その他」から同じように使える。
  */
 
 export interface ProviderPreset {
@@ -22,11 +21,21 @@ export interface ProviderPreset {
 export const PROVIDERS: ProviderPreset[] = [
   {
     id: 'groq',
-    label: 'Groq',
+    label: 'Groq（推奨）',
     baseUrl: 'https://api.groq.com/openai/v1',
     defaultModel: 'llama-3.3-70b-versatile',
     signupUrl: 'https://console.groq.com/keys',
     note: '無料枠あり・クレジットカード不要',
+  },
+  {
+    id: 'gemini',
+    // Gemini は OpenAI 互換の口を `/v1beta/openai` に持っている。
+    // 素の `/v1beta` や `/v1beta/interactions` ではないので注意。
+    label: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-3.1-flash-lite',
+    signupUrl: 'https://aistudio.google.com/apikey',
+    note: '無料枠あり',
   },
   {
     id: 'openai',
@@ -37,20 +46,11 @@ export const PROVIDERS: ProviderPreset[] = [
     note: '従量課金',
   },
   {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'openai/gpt-4o-mini',
-    signupUrl: 'https://openrouter.ai/keys',
-    note: '1つのキーで多数のモデルを切り替えられる',
-  },
-  {
     id: 'custom',
-    label: 'その他（OpenAI互換のエンドポイント）',
+    label: 'その他（OpenAI互換のエンドポイントURLを直接入力）',
     baseUrl: '',
     defaultModel: '',
     signupUrl: '',
-    note: 'Ollama や LM Studio などローカルのサーバーも指定できる',
   },
 ];
 
