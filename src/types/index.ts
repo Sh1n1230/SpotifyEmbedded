@@ -18,9 +18,13 @@ export interface SpotifyArtistRef {
   external_urls: { spotify: string };
 }
 
+/**
+ * `/artists` の応答。2024年11月以降に作成されたアプリでは `genres` /
+ * `popularity` が省略されるため、いずれも optional。
+ */
 export interface SpotifyArtist extends SpotifyArtistRef {
-  genres: string[];
-  popularity: number;
+  genres?: string[];
+  popularity?: number;
 }
 
 export interface SpotifyTrack {
@@ -33,10 +37,12 @@ export interface SpotifyTrack {
     release_date: string;
   };
   duration_ms: number;
-  popularity: number;
+  /** 2024年11月以降に作成されたアプリでは返らない。 */
+  popularity?: number;
   explicit: boolean;
   external_urls: { spotify: string };
-  preview_url: string | null;
+  /** 同上。30秒プレビューも新しいアプリでは配信されない。 */
+  preview_url?: string | null;
 }
 
 export interface SpotifyPlaybackState {
@@ -57,7 +63,7 @@ export interface SpotifyPlaybackState {
  * album: string
  * album_art_url: string  # ジャケ写URL (300px以上の最大サイズ)
  * duration_ms: number
- * popularity: number     # 0–100
+ * popularity: number | null   # 0–100。Spotifyが返さない場合は null
  * spotify_url: string
  * preview_url: string | null
  */
@@ -68,8 +74,13 @@ export interface TrackSummary {
   album: string;
   album_art_url: string;
   duration_ms: number;
-  popularity: number;
+  /**
+   * 0–100。2024年11月以降に作成されたSpotifyアプリでは API が返さないため
+   * null になる。キー自体は常に存在させ、利用側の分岐を増やさない。
+   */
+  popularity: number | null;
   spotify_url: string;
+  /** 30秒プレビュー。新しいアプリでは常に null。 */
   preview_url: string | null;
 }
 
@@ -147,13 +158,17 @@ export const DEFAULT_RANKING_COUNT = 5;
  * album: string
  * album_art_url: string
  * duration_ms: number
- * popularity: number
- * genres: string[]
+ * popularity: number | null
+ * genres: string[]          # アプリの権限で取得できない場合は空配列
  * spotify_url: string
  * preview_url: string | null
  */
 export interface TopTrackEntry extends TrackSummary {
   rank: number;
+  /**
+   * アーティストのジャンルタグ。2024年11月以降に作成されたアプリでは
+   * Spotify が返さないため空配列になる。
+   */
   genres: string[];
 }
 
