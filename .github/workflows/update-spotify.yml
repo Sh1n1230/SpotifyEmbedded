@@ -12,7 +12,9 @@ name: Update Spotify snapshot
 
 on:
   schedule:
-    # GitHub のスケジュールは定刻に走らない（数分〜数十分遅れることがある）
+    # 30分おきを「要求」するが、実際にこの通り走るとは限らない。
+    # GitHub のスケジュール実行は混雑時に遅延・間引きされ、実測では
+    # 2〜5時間あくこともある。秒単位の鮮度が要るならライブAPIモードを使う。
     - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
@@ -31,17 +33,19 @@ permissions:
 
 concurrency:
   group: spotify-snapshot
-  cancel-in-progress: true
+  # 実行中のものは止めない。公開ブランチへの push の途中で殺されると
+  # 中途半端な状態が残りうる。20秒程度で終わるので待たせるだけで足りる。
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       - run: npm ci
