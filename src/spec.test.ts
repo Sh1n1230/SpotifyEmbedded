@@ -806,11 +806,7 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(result.mood?.text).toBe('今ノリノリなようです');
   });
 
-  // 【既知の不具合】クォートと句点が重なると閉じ括弧が残る。
-  // moodGenerator の後処理がクォート除去 → 句点除去の順なので、
-  // 「…」。 では末尾が 。 のうちに ["」]$ を試してしまい 」 を取り逃す。
-  // 順序を入れ替えれば直る。直したらこのテストを it に戻すこと。
-  it.fails('「…」。 の形でも閉じ括弧まで取り除く', async () => {
+  it('「…」。 の形でも閉じ括弧まで取り除く', async () => {
     givenLlmConfigured();
     givenLlmReplies('「今ノリノリなようです」。');
     givenNowPlaying(aSpotifyTrack());

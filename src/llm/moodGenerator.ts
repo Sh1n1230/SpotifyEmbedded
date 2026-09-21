@@ -61,10 +61,10 @@ export async function generateMood(params: {
   return (
     text
       .trim()
-      .replace(/^["「]|["」]$/g, '')
       // 1文しか出さないので句点は要らない。プロンプトの文例にも付けていないが、
       // モデルによっては付けてくる（Gemini など）ので、ここで揃える。
       .replace(/[。．]$/, '')
+      .replace(/^["「]|["」]$/g, '')
       .trim()
   );
 }
