@@ -87,6 +87,7 @@ router.get('/ranking.svg', async (req, res, next) => {
         tracks: data.tracks,
         fetchedAt: data.fetched_at,
         range: data.range,
+        mood: data.mood,
         count,
         artDataUris: arts,
         theme: resolveTheme(req.query['theme'] as string | undefined),

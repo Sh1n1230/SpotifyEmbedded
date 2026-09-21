@@ -44,10 +44,15 @@ The same core powers both. This split is the product's core idea — don't colla
     — not `/v1beta`, not `/v1beta/interactions`.
   - `client.ts` retries once on 5xx (Gemini's `gemini-3.x-flash` 503s under load; the
     `-lite` models are markedly more reliable).
+- `src/core/rankingMood.ts` — ranking-wide mood. **Invalidated by content, not time**: the
+  record stores the top-10 track IDs it was generated from, and is regenerated only when ≥4 of
+  the current top 10 are absent from that basis (order ignored). Don't replace this with a TTL.
+  Live mode keeps the record in `rankingMoodCache` (per range, no TTL); static mode carries it in
+  `snapshot.json` as `ranking_mood`. On LLM failure the previous record is kept, basis unchanged.
 - `src/render/` — pure data→string renderers (`card`, `ranking`, `page`, `text`, `theme`, `image`)
 - `src/cli/` — `spotify-embedded setup | generate`
 - `src/cache/index.ts` — node-cache instances: nowPlaying (30s), topTracks (1h), mood (24h, 200 keys),
-  art (24h, 100 keys)
+  art (24h, 100 keys), rankingMood (no TTL, keyed by range)
 - `src/middleware/formatResponse.ts` — JSON/YAML content negotiation via `res.sendFormatted()`
 - `src/routes/` — `/api/now-playing`, `/api/top-tracks`, `/api/status`, `/auth/*`, `/embed`,
   `/badge.svg`, `/ranking.svg`

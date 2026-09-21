@@ -178,6 +178,9 @@ export interface TopTrackEntry extends TrackSummary {
  * range: "short_term" | "medium_term" | "long_term"
  * limit: 10 | 30 | 50     # リクエストした取得件数（実際の件数は tracks.length）
  * fetched_at: string
+ * mood:                    # ランキング全体の傾向を表すムード文。LLM未設定なら null
+ *   text: string
+ *   generated_at: string   # 上位曲の顔ぶれが変わらない限り古いまま（再生成しない）
  * tracks:
  *   - rank: number
  *     name: string
@@ -190,6 +193,11 @@ export interface TopTracksResponse {
   range: TopTracksRange;
   limit: TopTracksLimit;
   fetched_at: string;
+  /**
+   * ランキング全体のムード文。ランキングの中身から決まるもので、取得時刻とは
+   * 無関係。したがって generated_at は fetched_at より古いことが普通にある。
+   */
+  mood: MoodResult | null;
   tracks: TopTrackEntry[];
 }
 
@@ -205,6 +213,7 @@ export interface TopTracksResponse {
  *   range: "short_term" | "medium_term" | "long_term"
  *   limit: 10 | 30 | 50
  *   fetched_at: string
+ *   mood: ...
  *   tracks: [...]
  * generated_at: string
  */

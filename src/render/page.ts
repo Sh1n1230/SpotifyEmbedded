@@ -171,7 +171,9 @@ export function renderEmbedPage(input: PageInput): string {
   .idle { font-size: 17px; font-weight: 700; color: var(--muted); }
 
   .ranking { max-width: 460px; margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
-  .ranking-head { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .ranking-head { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .ranking-head-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ranking-mood { font-size: 15px; font-weight: 700; line-height: 1.4; margin-top: 8px; overflow-wrap: anywhere; }
   .ranking-title { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--accent); }
   .ranking-date { font-size: 10px; color: var(--muted); }
   .ranking ol { list-style: none; }
@@ -261,8 +263,10 @@ function renderRanking(topTracks: TopTracksResponse, rankingCount?: number | und
 
   return `<section class="ranking">
   <div class="ranking-head">
-    <span class="ranking-title">TOP TRACKS · ${escapeXml(rangeLabel)}</span>
-    <span class="ranking-date">${escapeXml(dateLabel)}</span>
+    <div class="ranking-head-row">
+      <span class="ranking-title">TOP TRACKS · ${escapeXml(rangeLabel)}</span>
+      <span class="ranking-date">${escapeXml(dateLabel)}</span>
+    </div>${topTracks.mood?.text ? `\n    <p class="ranking-mood">${escapeXml(topTracks.mood.text)}</p>` : ''}
   </div>
   <ol>
 ${items}

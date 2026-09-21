@@ -9,12 +9,13 @@ import {
   DEFAULT_RANKING_COUNT,
   DEFAULT_TOP_TRACKS_RANGE,
   MAX_RANKING_COUNT,
+  type MoodResult,
   type TopTrackEntry,
   type TopTracksRange,
 } from '../types/index.js';
 import { rangeLabelEn, rangeLabelJa } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
-import { escapeXml, truncateToWidth } from './text.js';
+import { escapeXml, truncateToWidth, wrapToWidth } from './text.js';
 
 export interface RankingInput {
   tracks: TopTrackEntry[];
@@ -22,6 +23,8 @@ export interface RankingInput {
   fetchedAt: string;
   /** 集計期間。見出しの「4 WEEKS」等に使う。既定は short_term。 */
   range?: TopTracksRange | undefined;
+  /** ランキング全体のムード文。あれば見出しの下に出す。 */
+  mood?: MoodResult | null | undefined;
   /** 表示件数。1〜50。 */
   count?: number | undefined;
   /** ジャケ写の data URI。tracks と同じ並び順で、取得できなければ null。 */
@@ -34,6 +37,8 @@ export interface RankingInput {
 const WIDTH = 460;
 const PAD = 18;
 const HEADER_HEIGHT = 50;
+const MOOD_SIZE = 15;
+const MOOD_LINE_HEIGHT = 22;
 const ROW_HEIGHT = 56;
 const ART_SIZE = 44;
 const TEXT_X = 100;
@@ -48,17 +53,31 @@ export function renderRankingCard(input: RankingInput): string {
   const tracks = input.tracks.slice(0, count);
   const range = input.range ?? DEFAULT_TOP_TRACKS_RANGE;
 
-  const height = HEADER_HEIGHT + Math.max(tracks.length, 1) * ROW_HEIGHT + 12;
+  const moodLines = input.mood?.text
+    ? wrapToWidth(input.mood.text, (WIDTH - PAD * 2) / MOOD_SIZE, 2)
+    : [];
+  // ムード文の行数だけ見出しを伸ばし、区切り線と各行をその下へずらす。
+  const headerHeight = HEADER_HEIGHT + (moodLines.length ? moodLines.length * MOOD_LINE_HEIGHT + 6 : 0);
+  const moodSvg = moodLines
+    .map(
+      (line, i) =>
+        `<text x="${PAD}" y="${58 + i * MOOD_LINE_HEIGHT}" font-size="${MOOD_SIZE}" font-weight="700" fill="${theme.fg}">${escapeXml(line)}</text>`
+    )
+    .join('\n    ');
+
+  const height = headerHeight + Math.max(tracks.length, 1) * ROW_HEIGHT + 12;
   const fetchedAt = new Date(input.fetchedAt);
   const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
 
   const rows = tracks.length
     ? tracks
-        .map((track, i) => renderRow(track, i, input.artDataUris?.[i] ?? null, theme))
+        .map((track, i) =>
+          renderRow(track, i, headerHeight, input.artDataUris?.[i] ?? null, theme)
+        )
         .join('\n    ')
-    : `<text x="${PAD}" y="${HEADER_HEIGHT + 30}" font-size="13" fill="${theme.muted}">データがありません</text>`;
+    : `<text x="${PAD}" y="${headerHeight + 30}" font-size="13" fill="${theme.muted}">データがありません</text>`;
 
-  const ariaLabel = `${rangeLabelJa(range)}のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}`;
+  const ariaLabel = `${rangeLabelJa(range)}のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}${input.mood?.text ? `: ${input.mood.text}` : ''}`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
@@ -69,7 +88,8 @@ export function renderRankingCard(input: RankingInput): string {
   <g font-family="${FONT_STACK}">
     <text x="${PAD}" y="32" font-size="10" font-weight="600" letter-spacing="1.4" fill="${theme.accent}">TOP TRACKS · ${escapeXml(rangeLabelEn(range))}</text>
     <text x="${WIDTH - PAD}" y="32" font-size="10" fill="${theme.muted}" text-anchor="end">${escapeXml(dateLabel)}</text>
-    <line x1="${PAD}" y1="${HEADER_HEIGHT - 8}" x2="${WIDTH - PAD}" y2="${HEADER_HEIGHT - 8}" stroke="${theme.border}"/>
+    ${moodSvg}
+    <line x1="${PAD}" y1="${headerHeight - 8}" x2="${WIDTH - PAD}" y2="${headerHeight - 8}" stroke="${theme.border}"/>
     ${rows}
   </g>
 </svg>
@@ -79,10 +99,11 @@ export function renderRankingCard(input: RankingInput): string {
 function renderRow(
   track: TopTrackEntry,
   index: number,
+  headerHeight: number,
   artDataUri: string | null,
   theme: (typeof THEMES)[ThemeName]
 ): string {
-  const top = HEADER_HEIGHT + index * ROW_HEIGHT;
+  const top = headerHeight + index * ROW_HEIGHT;
   const artY = top + 6;
 
   const art = artDataUri

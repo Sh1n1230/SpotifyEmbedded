@@ -18,14 +18,20 @@
  *   スキーマ契約が既定ケースで検証される。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { XMLValidator } from 'fast-xml-parser';
 import yaml from 'js-yaml';
 
 import { loadStoredAuth } from './authStore.js';
-import { artCache, moodCache, nowPlayingCache, topTracksCache } from './cache/index.js';
+import {
+  artCache,
+  moodCache,
+  nowPlayingCache,
+  rankingMoodCache,
+  topTracksCache,
+} from './cache/index.js';
 import { collectNowPlaying, collectTopTracks } from './core/collect.js';
 import { parseCount, parseLimit, parseRange } from './core/topTracksParams.js';
 import { generate } from './cli/generate.js';
@@ -252,7 +258,9 @@ beforeEach(() => {
   loadStoredAuth(true);
 
   // node-cache のインスタンスはモジュール共有。消さないとテスト順序で結果が変わる。
-  for (const cache of [nowPlayingCache, topTracksCache, moodCache, artCache]) cache.flushAll();
+  for (const cache of [nowPlayingCache, topTracksCache, moodCache, rankingMoodCache, artCache]) {
+    cache.flushAll();
+  }
   // /artists の 403 latch はプロセス単位の状態。
   resetArtistGenreAvailability();
 
@@ -966,6 +974,290 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
 // ─────────────────────────────────────────────────────────────────────────────
 // 土台となる契約
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('要件6: ランキングにもムード文が付くが、顔ぶれが変わらない限り LLM は呼ばない', () => {
+  // ランキングは数週間〜1年の集計で、そうそう変わらない。ムード文は時刻ではなく
+  // 「生成時点の上位10曲の顔ぶれ」に結びつけ、十分に入れ替わったときだけ作り直す。
+
+  /** id が track-<n> の曲を並べる（順位はこの並び順）。 */
+  function ranking(...ns: number[]): SpotifyTrack[] {
+    return ns.map((n) => aSpotifyTrack({ id: `track-${n}`, name: `Song ${n}` }));
+  }
+
+  /** ランキング用のプロンプトで呼ばれた回数（now-playing のムードと区別する）。 */
+  function rankingMoodCalls(): RecordedCall[] {
+    return callsTo('/chat/completions').filter((call) =>
+      (bodyOf(call)['messages'] as { content: string }[])[1]!.content.includes('上位曲:')
+    );
+  }
+
+  /** ライブAPIで「1時間後」に相当する状況。ランキング本体のキャッシュだけが切れる。 */
+  async function fetchAgainLater(items: SpotifyTrack[], range: TopTracksRange = 'short_term') {
+    topTracksCache.flushAll();
+    handlers = [];
+    installDefaultHandlers();
+    givenLlmReplies('二回目の文');
+    givenTopTracks(items);
+    return collectTopTracks({ range });
+  }
+
+  const TOP10 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+  it('LLM が未設定なら、呼びに行かず mood: null', async () => {
+    givenTopTracks(ranking(...TOP10));
+
+    const result = await collectTopTracks();
+
+    expect(result.mood).toBeNull();
+    expect(callsTo('/chat/completions')).toHaveLength(0);
+  });
+
+  it('LLM が設定されていれば、上位曲と集計期間からムード文を作る', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('「最近は夜に似合う曲ばかり聴いているようです」。');
+    givenTopTracks(ranking(...TOP10, 11, 12));
+
+    const result = await collectTopTracks({ range: 'medium_term' });
+
+    expect(result.mood).toEqual({
+      text: '最近は夜に似合う曲ばかり聴いているようです',
+      generated_at: NOW_ISO,
+    });
+    const prompt = (bodyOf(rankingMoodCalls()[0]!)['messages'] as { content: string }[])[1]!
+      .content;
+    expect(prompt).toContain('集計期間: 直近6か月');
+    expect(prompt).toContain('1. Song 1 / Neon District');
+    expect(prompt).toContain('10. Song 10');
+    // 根拠は上位10曲まで。それより下は渡さない。
+    expect(prompt).not.toContain('Song 11');
+    expect(prompt).not.toContain('ジャンル');
+  });
+
+  it('ランキングを取り直しても、顔ぶれが同じなら呼び直さない（generated_at も古いまま）', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+    await collectTopTracks();
+
+    vi.setSystemTime(new Date(NOW.getTime() + 3 * 60 * 60 * 1000));
+    const again = await fetchAgainLater(ranking(...TOP10));
+
+    expect(rankingMoodCalls()).toHaveLength(1);
+    expect(again.mood).toEqual({ text: '一回目の文', generated_at: NOW_ISO });
+    expect(again.fetched_at).not.toBe(NOW_ISO);
+  });
+
+  it('取得件数（limit）が違っても同じ期間なら同じ文を共有する', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+
+    await Promise.all([
+      collectTopTracks({ limit: 10 }),
+      collectTopTracks({ limit: 30 }),
+      collectTopTracks({ limit: 50 }),
+    ]);
+
+    // 同時に来ても二重には呼ばない
+    expect(rankingMoodCalls()).toHaveLength(1);
+  });
+
+  it('順位が入れ替わっただけなら呼び直さない', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+    await collectTopTracks();
+
+    const again = await fetchAgainLater(ranking(...[...TOP10].reverse()));
+
+    expect(rankingMoodCalls()).toHaveLength(1);
+    expect(again.mood?.text).toBe('一回目の文');
+  });
+
+  it('新顔が3曲までなら使い回し、4曲目で作り直す', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+    await collectTopTracks();
+
+    const three = await fetchAgainLater(ranking(1, 2, 3, 4, 5, 6, 7, 21, 22, 23));
+    expect(three.mood?.text).toBe('一回目の文');
+
+    const four = await fetchAgainLater(ranking(1, 2, 3, 4, 5, 6, 21, 22, 23, 24));
+    expect(four.mood?.text).toBe('二回目の文');
+    expect(rankingMoodCalls()).toHaveLength(2);
+  });
+
+  it('比べる相手は生成時点の顔ぶれなので、少しずつの入れ替わりも積み重なれば作り直す', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+    await collectTopTracks();
+
+    // 1曲ずつ入れ替わる。直前との差は常に1曲だが、生成時点からは4曲目で閾値を超える。
+    const r1 = await fetchAgainLater(ranking(1, 2, 3, 4, 5, 6, 7, 8, 9, 21));
+    const r2 = await fetchAgainLater(ranking(1, 2, 3, 4, 5, 6, 7, 8, 21, 22));
+    const r3 = await fetchAgainLater(ranking(1, 2, 3, 4, 5, 6, 7, 21, 22, 23));
+    const r4 = await fetchAgainLater(ranking(1, 2, 3, 4, 5, 6, 21, 22, 23, 24));
+
+    expect([r1, r2, r3].map((r) => r.mood?.text)).toEqual(['一回目の文', '一回目の文', '一回目の文']);
+    expect(r4.mood?.text).toBe('二回目の文');
+  });
+
+  it('期間ごとに別のムード文を持つ', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+    await collectTopTracks({ range: 'short_term' });
+
+    const longTerm = await fetchAgainLater(ranking(...TOP10), 'long_term');
+
+    expect(longTerm.mood?.text).toBe('二回目の文');
+    expect(rankingMoodCalls()).toHaveLength(2);
+  });
+
+  it('作り直しに失敗したら古い文を出し続け、次の取得でまた作り直しを試みる', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('一回目の文');
+    givenTopTracks(ranking(...TOP10));
+    await collectTopTracks();
+
+    topTracksCache.flushAll();
+    handlers = [];
+    installDefaultHandlers();
+    respondWith((url) =>
+      url.includes('/chat/completions') ? new Response('bad key', { status: 401 }) : null
+    );
+    givenTopTracks(ranking(21, 22, 23, 24, 25, 26, 27, 28, 29, 30));
+    const failed = await collectTopTracks();
+    expect(failed.mood?.text).toBe('一回目の文');
+    expect(failed.tracks).toHaveLength(10);
+
+    const recovered = await fetchAgainLater(ranking(21, 22, 23, 24, 25, 26, 27, 28, 29, 30));
+    expect(recovered.mood?.text).toBe('二回目の文');
+  });
+
+  it('ランキングSVGの見出しの下にムード文が出る', () => {
+    const svg = renderRankingCard({
+      tracks: [aTopTrackEntry()],
+      fetchedAt: NOW_ISO,
+      mood: { text: '夜に似合う曲 & <深夜> ばかり聴いているようです', generated_at: NOW_ISO },
+    });
+
+    expect(XMLValidator.validate(svg)).toBe(true);
+    expect(svg).toContain('&amp; &lt;深夜&gt;');
+  });
+
+  describe('静的モード（GitHub Actions）では snapshot.json を根拠に持ち越す', () => {
+    let outDir: string;
+
+    beforeEach(() => {
+      outDir = mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-ranking-mood-'));
+      givenLlmConfigured();
+    });
+
+    afterEach(() => {
+      rmSync(outDir, { recursive: true, force: true });
+    });
+
+    function runGenerate(): Promise<void> {
+      return generate({
+        outDir,
+        count: 5,
+        range: 'short_term',
+        limit: 50,
+        theme: 'dark',
+        skipMood: false,
+      });
+    }
+
+    function read(name: string): string {
+      return readFileSync(join(outDir, name), 'utf8');
+    }
+
+    /** Actions の次の実行。プロセスはまっさらで、メモリには何も残っていない。 */
+    function nextRun(items: SpotifyTrack[]): void {
+      for (const cache of [nowPlayingCache, topTracksCache, moodCache, rankingMoodCache]) {
+        cache.flushAll();
+      }
+      handlers = [];
+      installDefaultHandlers();
+      givenLlmReplies('二回目の文');
+      givenNowPlaying(null);
+      givenTopTracks(items);
+    }
+
+    it('生成物（JSON / SVG / HTML）にムード文が入り、根拠が snapshot.json に残る', async () => {
+      givenLlmReplies('一回目の文');
+      givenNowPlaying(null);
+      givenTopTracks(ranking(...TOP10));
+
+      await runGenerate();
+
+      const json = JSON.parse(read('top-tracks.json')) as { mood: unknown };
+      expect(json.mood).toEqual({ text: '一回目の文', generated_at: NOW_ISO });
+      expect(read('ranking.svg')).toContain('一回目の文');
+      expect(read('index.html')).toContain('一回目の文');
+
+      const snapshot = JSON.parse(read('snapshot.json')) as { ranking_mood: unknown };
+      expect(snapshot.ranking_mood).toEqual({
+        range: 'short_term',
+        track_ids: TOP10.map((n) => `track-${n}`),
+        mood: { text: '一回目の文', generated_at: NOW_ISO },
+      });
+    });
+
+    it('次の実行で顔ぶれが同じなら、LLM を呼ばずに前回の文を使う', async () => {
+      givenLlmReplies('一回目の文');
+      givenNowPlaying(null);
+      givenTopTracks(ranking(...TOP10));
+      await runGenerate();
+
+      vi.setSystemTime(new Date(NOW.getTime() + 30 * 60 * 1000));
+      nextRun(ranking(...TOP10));
+      calls = [];
+      await runGenerate();
+
+      expect(rankingMoodCalls()).toHaveLength(0);
+      expect((JSON.parse(read('top-tracks.json')) as { mood: { text: string } }).mood.text).toBe(
+        '一回目の文'
+      );
+    });
+
+    it('顔ぶれが入れ替わっていれば作り直して snapshot.json も更新する', async () => {
+      givenLlmReplies('一回目の文');
+      givenNowPlaying(null);
+      givenTopTracks(ranking(...TOP10));
+      await runGenerate();
+
+      nextRun(ranking(1, 2, 3, 4, 5, 6, 21, 22, 23, 24));
+      await runGenerate();
+
+      const snapshot = JSON.parse(read('snapshot.json')) as {
+        ranking_mood: { track_ids: string[]; mood: { text: string } };
+      };
+      expect(snapshot.ranking_mood.mood.text).toBe('二回目の文');
+      expect(snapshot.ranking_mood.track_ids).toContain('track-24');
+    });
+
+    it('ranking_mood の無い旧形式の snapshot.json でもそのまま動く', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks(ranking(...TOP10));
+      givenLlmReplies('一回目の文');
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: true });
+      const legacy = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+      delete legacy['ranking_mood'];
+      writeFileSync(join(outDir, 'snapshot.json'), JSON.stringify(legacy));
+
+      nextRun(ranking(...TOP10));
+      await runGenerate();
+
+      expect((JSON.parse(read('top-tracks.json')) as { mood: { text: string } }).mood.text).toBe(
+        '二回目の文'
+      );
+    });
+  });
+});
 
 describe('spotifyFetch の契約（要件1・2の土台）', () => {
   it('401 ならトークンを取り直して一度だけ再試行する', async () => {

@@ -107,6 +107,7 @@
     '.ranking { max-width: 460px; margin-top: 14px; padding: 14px; border: 1px solid ' + theme.border + '; border-radius: 12px;',
     "  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }",
     '.ranking h3 { font-size: 10px; font-weight: 600; letter-spacing: .14em; color: ' + theme.accent + '; margin: 0 0 10px; }',
+    '.ranking .ranking-mood { font-size: 15px; font-weight: 700; line-height: 1.4; color: ' + theme.fg + '; margin: -2px 0 10px; overflow-wrap: anywhere; }',
     '.ranking ol { list-style: none; margin: 0; padding: 0; }',
     '.ranking li { display: flex; align-items: center; gap: 12px; padding: 8px 0; }',
     '.ranking li + li { border-top: 1px solid ' + theme.border + '; }',
@@ -207,6 +208,7 @@
     var section = el('section', 'ranking');
     var label = RANGE_LABELS[data.range] || RANGE_LABELS.short_term;
     section.appendChild(el('h3', null, 'TOP TRACKS · ' + label));
+    if (data.mood && data.mood.text) section.appendChild(el('p', 'ranking-mood', data.mood.text));
 
     var list = el('ol');
     data.tracks.slice(0, options.count).forEach(function (track) {
