@@ -27,6 +27,8 @@ export interface RankingInput {
   /** ジャケ写の data URI。tracks と同じ並び順で、取得できなければ null。 */
   artDataUris?: (string | null)[] | undefined;
   theme?: ThemeName | undefined;
+  /** 背景を透過するかどうか。既定値は true */
+  transparent?: boolean | undefined;
 }
 
 const WIDTH = 460;
@@ -39,6 +41,9 @@ const TEXT_WIDTH = WIDTH - TEXT_X - 20;
 
 export function renderRankingCard(input: RankingInput): string {
   const theme = THEMES[input.theme ?? 'dark'];
+  const isTransparent = input.transparent ?? true;
+  const bgFill = isTransparent ? 'none' : theme.bg;
+
   const count = Math.min(Math.max(input.count ?? DEFAULT_RANKING_COUNT, 1), MAX_RANKING_COUNT);
   const tracks = input.tracks.slice(0, count);
   const range = input.range ?? DEFAULT_TOP_TRACKS_RANGE;
@@ -60,7 +65,7 @@ export function renderRankingCard(input: RankingInput): string {
   <defs>
     <clipPath id="rank-art"><rect x="0" y="0" width="${ART_SIZE}" height="${ART_SIZE}" rx="5"/></clipPath>
   </defs>
-  <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="12" fill="${theme.bg}" stroke="${theme.border}"/>
+  <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="12" fill="${bgFill}" stroke="${theme.border}"/>
   <g font-family="${FONT_STACK}">
     <text x="${PAD}" y="32" font-size="10" font-weight="600" letter-spacing="1.4" fill="${theme.accent}">TOP TRACKS · ${escapeXml(rangeLabelEn(range))}</text>
     <text x="${WIDTH - PAD}" y="32" font-size="10" fill="${theme.muted}" text-anchor="end">${escapeXml(dateLabel)}</text>

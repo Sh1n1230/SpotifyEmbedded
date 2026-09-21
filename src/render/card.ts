@@ -26,6 +26,8 @@ export interface CardInput {
   /** ジャケ写の data URI。null ならプレースホルダを描く。 */
   artDataUri?: string | null | undefined;
   theme?: ThemeName | undefined;
+  /** 背景を透過するかどうか。既定値は true */
+  transparent?: boolean | undefined;
 }
 
 const WIDTH = 460;
@@ -38,6 +40,8 @@ const TEXT_WIDTH = WIDTH - TEXT_X - 20;
 export function renderNowPlayingCard(input: CardInput): string {
   const theme = THEMES[input.theme ?? 'dark'];
   const { state, track, mood } = input;
+  const isTransparent = input.transparent ?? true;
+  const bgFill = isTransparent ? 'none' : theme.bg;
 
   const label = labelFor(state, input.since);
   const hasArt = state !== 'idle';
@@ -50,7 +54,7 @@ export function renderNowPlayingCard(input: CardInput): string {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
-  <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${HEIGHT - 1}" rx="12" fill="${theme.bg}" stroke="${theme.border}"/>
+  <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${HEIGHT - 1}" rx="12" fill="${bgFill}" stroke="${theme.border}"/>
   ${hasArt ? renderArt(input.artDataUri ?? null, theme.placeholder, theme.muted) : ''}
   <g font-family="${FONT_STACK}">
     ${renderLabel(label, state, theme.accent, theme.muted, hasArt ? TEXT_X : PAD)}
