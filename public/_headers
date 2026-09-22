@@ -1,0 +1,6 @@
+# Cloudflare Workers の Static Assets 用。Worker を通らない静的ファイルにも
+# src/app.ts と同じセキュリティヘッダーを付ける。
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer

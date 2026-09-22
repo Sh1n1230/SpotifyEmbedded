@@ -1,14 +1,9 @@
-import { Router } from 'express';
+import { Hono } from 'hono';
 import { collectNowPlaying } from '../core/collect.js';
+import { sendFormatted } from '../http/respond.js';
 
-const router = Router();
+const router = new Hono();
 
-router.get('/', async (_req, res, next) => {
-  try {
-    res.sendFormatted(await collectNowPlaying());
-  } catch (err) {
-    next(err);
-  }
-});
+router.get('/', async (c) => sendFormatted(c, await collectNowPlaying()));
 
 export default router;

@@ -79,14 +79,8 @@ export async function generate(options: GenerateOptions): Promise<void> {
   console.log('Spotify からデータを取得しています...');
   const [nowPlaying, topTracks] = await Promise.all([
     collectNowPlaying({ bypassCache: true, skipMood: options.skipMood }),
-    // ランキングのムード文はメモリではなく snapshot.json を根拠に決めるので、
-    // ここでは生成させない（プロセスは毎回まっさらで、メモリは持ち越せない）。
-    collectTopTracks({
-      bypassCache: true,
-      skipMood: true,
-      range: options.range,
-      limit: options.limit,
-    }),
+    // ランキングのムード文は snapshot.json を根拠に下で決める
+    collectTopTracks({ range: options.range, limit: options.limit }),
   ]);
 
   const previous = readSnapshot(outDir);

@@ -10,3 +10,7 @@ data/
 
 # 静的生成の出力（公開ブランチ側で管理する）
 out/
+
+# Cloudflare Workers
+.dev.vars
+.wrangler/

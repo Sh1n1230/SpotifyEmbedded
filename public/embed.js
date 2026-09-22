@@ -3,10 +3,7 @@
  *
  *   <script src="https://your-api.example.com/embed.js"
  *           data-target="#spotify"
- *           data-theme="dark"
- *           data-ranking="false"
- *           data-range="short_term"
- *           data-count="5"></script>
+ *           data-theme="dark"></script>
  *
  * カードは Shadow DOM の中に作るので、貼り付け先サイトのCSSから
  * 影響を受けない（逆にこちらのCSSも漏れない）。
@@ -19,36 +16,9 @@
 
   var base = script.src.replace(/\/embed\.js(?:\?.*)?$/, '');
 
-  // Spotify が用意する集計期間は3つだけ。見出しの文言もここで持つ。
-  var RANGE_LABELS = {
-    short_term: '4 WEEKS',
-    medium_term: '6 MONTHS',
-    long_term: '1 YEAR'
-  };
-  var LIMITS = [10, 30, 50];
-
-  function pickRange(value) {
-    return RANGE_LABELS[value] ? value : 'short_term';
-  }
-
-  function pickLimit(value) {
-    var n = parseInt(value, 10);
-    return LIMITS.indexOf(n) >= 0 ? n : 50;
-  }
-
-  function pickCount(value) {
-    var n = parseInt(value, 10);
-    if (isNaN(n)) return 5;
-    return Math.min(Math.max(n, 1), 50);
-  }
-
   var options = {
     target: script.getAttribute('data-target'),
     theme: script.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
-    ranking: script.getAttribute('data-ranking') === 'true',
-    range: pickRange(script.getAttribute('data-range')),
-    limit: pickLimit(script.getAttribute('data-limit')),
-    count: pickCount(script.getAttribute('data-count')),
     transparent: script.getAttribute('data-transparent') === 'true',
     refresh: Math.max(parseInt(script.getAttribute('data-refresh') || '30', 10) || 30, 10)
   };
@@ -104,19 +74,6 @@
     '.track, .artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
     '.card.no-mood .track { font-size: 17px; font-weight: 700; color: ' + theme.fg + '; margin-top: 0; white-space: normal; }',
     '.idle { font-size: 17px; font-weight: 700; color: ' + theme.muted + '; margin: 0; }',
-    '.ranking { max-width: 460px; margin-top: 14px; padding: 14px; border: 1px solid ' + theme.border + '; border-radius: 12px;',
-    "  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif; }",
-    '.ranking h3 { font-size: 10px; font-weight: 600; letter-spacing: .14em; color: ' + theme.accent + '; margin: 0 0 10px; }',
-    '.ranking .ranking-mood { font-size: 15px; font-weight: 700; line-height: 1.4; color: ' + theme.fg + '; margin: -2px 0 10px; overflow-wrap: anywhere; }',
-    '.ranking ol { list-style: none; margin: 0; padding: 0; }',
-    '.ranking li { display: flex; align-items: center; gap: 12px; padding: 8px 0; }',
-    '.ranking li + li { border-top: 1px solid ' + theme.border + '; }',
-    '.ranking .rank { font-size: 13px; font-weight: 700; color: ' + theme.muted + '; width: 16px; text-align: right; flex: none; }',
-    '.ranking img { width: 40px; height: 40px; border-radius: 5px; flex: none; background: ' + theme.placeholder + '; }',
-    '.ranking .meta { min-width: 0; }',
-    '.ranking .name { font-size: 13px; font-weight: 600; color: ' + theme.fg + '; }',
-    '.ranking .by { font-size: 11px; color: ' + theme.muted + '; margin-top: 2px; }',
-    '.ranking .name, .ranking .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
     '@media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 8px; } a.card:hover { transform: none; } }'
   ].join('\n');
   root.appendChild(style);
@@ -202,52 +159,12 @@
     return card;
   }
 
-  function renderRanking(data) {
-    if (!data || !data.tracks || !data.tracks.length) return null;
-
-    var section = el('section', 'ranking');
-    var label = RANGE_LABELS[data.range] || RANGE_LABELS.short_term;
-    section.appendChild(el('h3', null, 'TOP TRACKS · ' + label));
-    if (data.mood && data.mood.text) section.appendChild(el('p', 'ranking-mood', data.mood.text));
-
-    var list = el('ol');
-    data.tracks.slice(0, options.count).forEach(function (track) {
-      var item = el('li');
-      item.appendChild(el('span', 'rank', String(track.rank)));
-
-      var link = el('a');
-      link.href = track.spotify_url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.style.cssText = 'display:flex;gap:12px;align-items:center;min-width:0;text-decoration:none;color:inherit';
-
-      var img = el('img');
-      img.src = artAtSize(track.album_art_url, 64);
-      img.alt = '';
-      img.decoding = 'async';
-      link.appendChild(img);
-
-      var meta = el('div', 'meta');
-      meta.appendChild(el('div', 'name', track.name));
-      meta.appendChild(el('div', 'by', track.artist));
-      link.appendChild(meta);
-
-      item.appendChild(link);
-      list.appendChild(item);
-    });
-
-    section.appendChild(list);
-    return section;
-  }
-
   function get(path) {
     return fetch(base + path, { headers: { Accept: 'application/json' } }).then(function (res) {
       if (!res.ok) throw new Error('request failed: ' + res.status);
       return res.json();
     });
   }
-
-  var rankingNode = null;
 
   function clear(node) {
     while (node.firstChild) node.removeChild(node.firstChild);
@@ -258,22 +175,13 @@
       .then(function (data) {
         clear(container);
         container.appendChild(renderCard(data));
-        if (rankingNode) container.appendChild(rankingNode);
       })
       .catch(function () {
         /* 一時的な失敗は次の更新に任せる */
       });
   }
 
-  refresh().then(function () {
-    if (!options.ranking) return;
-    var query = '?range=' + options.range + '&limit=' + options.limit;
-    return get('/api/top-tracks' + query).then(function (data) {
-      rankingNode = renderRanking(data);
-      if (rankingNode) container.appendChild(rankingNode);
-    }).catch(function () {});
-  });
-
+  refresh();
   setInterval(refresh, options.refresh * 1000);
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) refresh();

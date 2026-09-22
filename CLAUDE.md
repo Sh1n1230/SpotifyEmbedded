@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run dev        # development server with auto-restart (tsx watch)
+npm run dev:worker # run as a Cloudflare Worker locally (secrets from .dev.vars)
+npm run deploy     # deploy to Cloudflare Workers
 npm run build      # compile TypeScript → dist/
 npm start          # run compiled output
 npm run setup      # interactive OAuth setup (writes .env + data/auth.json, optionally gh secrets)
@@ -19,9 +21,15 @@ npm run typecheck  # TypeScript type check without emitting
 The same core powers both. This split is the product's core idea — don't collapse it.
 
 - **Static mode** (no server): `src/cli/generate.ts` → SVG / JSON / YAML / HTML, published by
-  `.github/workflows/update-spotify.yml` to the `spotify-data` branch. Emitted JSON uses the
-  *identical* schema as the live API so consumers can swap URLs.
-- **Live API mode**: the Express server in `src/index.ts`.
+  `.github/workflows/update-spotify.yml` to the `spotify-data` branch. `now-playing.json` uses
+  the *identical* schema as the live API so consumers can swap URLs.
+- **Live API mode is now-playing only** (`/api/now-playing`, `/badge.svg`, `/embed`, `embed.js`).
+  Rankings are static-only by design: they aggregate weeks-to-a-year, so they don't need
+  per-second freshness. Don't add ranking routes back to the live API.
+- **Live API mode**: the Hono app in `src/app.ts`, run by two entries — `src/index.ts` (Node:
+  `npm run dev`, Docker) and `src/worker.ts` (Cloudflare Workers, the recommended host; config in
+  `wrangler.jsonc`, `npm run deploy`). Runtime differences (static files, rate limiter, KV) are
+  injected by the entry; routes must stay runtime-neutral.
 
 ## Architecture
 
@@ -47,15 +55,18 @@ The same core powers both. This split is the product's core idea — don't colla
 - `src/core/rankingMood.ts` — ranking-wide mood. **Invalidated by content, not time**: the
   record stores the top-10 track IDs it was generated from, and is regenerated only when ≥4 of
   the current top 10 are absent from that basis (order ignored). Don't replace this with a TTL.
-  Live mode keeps the record in `rankingMoodCache` (per range, no TTL); static mode carries it in
-  `snapshot.json` as `ranking_mood`. On LLM failure the previous record is kept, basis unchanged.
+  Only static mode uses it: `generate` carries the record in `snapshot.json` as `ranking_mood`.
+  On LLM failure the previous record is kept, basis unchanged.
 - `src/render/` — pure data→string renderers (`card`, `ranking`, `page`, `text`, `theme`, `image`)
 - `src/cli/` — `spotify-embedded setup | generate`
-- `src/cache/index.ts` — node-cache instances: nowPlaying (30s), topTracks (1h), mood (24h, 200 keys),
-  art (24h, 100 keys), rankingMood (no TTL, keyed by range)
-- `src/middleware/formatResponse.ts` — JSON/YAML content negotiation via `res.sendFormatted()`
-- `src/routes/` — `/api/now-playing`, `/api/top-tracks`, `/api/status`, `/auth/*`, `/embed`,
-  `/badge.svg`, `/ranking.svg`
+- `src/cache/index.ts` — in-memory `TtlCache` instances for the live API: nowPlaying (30s), mood
+  (24h, 200 keys), art (24h, 100 keys). Not node-cache: it starts a timer at construction, which
+  Workers forbids in global scope. Also an optional `DurableStore` (Workers KV binding `MOODS`)
+  that `collect.ts` reads/writes through for per-track moods, because Workers isolates drop
+  memory often (KV free tier: 1,000 writes/day).
+- `src/http/respond.ts` — JSON/YAML content negotiation (`sendFormatted(c, data)`) and the error
+  handler
+- `src/routes/` — `/api/now-playing`, `/auth/*`, `/embed`, `/badge.svg`
 - `public/embed.js` — one-tag embed; renders into a Shadow DOM so host CSS can't leak in
 
 ## Key constraints
@@ -73,13 +84,18 @@ The same core powers both. This split is the product's core idea — don't colla
 - LLM is optional everywhere. `hasLlmConfigured()` gates it; never make it required to boot.
 - Top tracks period is one of Spotify's three presets — `short_term` (~4 weeks, default),
   `medium_term` (~6 months), `long_term` (~1 year). Arbitrary month counts are not supported by
-  the API. Fetch size is fixed to `10 | 30 | 50`. Both are parsed in `src/core/topTracksParams.ts`
-  and keyed into the cache as `top-tracks:<range>:<limit>`
+  the API. Fetch size is fixed to `10 | 30 | 50`. Both are validated in `src/core/topTracksParams.ts`
+  (the CLI rejects anything else)
 - `module: "Node16"` in tsconfig — imports must use `.js` extensions even for `.ts` source files
 - **SVG rendering**: GitHub's camo proxy does not render external `<image href>` or `<foreignObject>`.
   Album art must be base64 data URIs (`src/render/image.ts`), and text must be wrapped manually
   (`src/render/text.ts`). Always run track/artist strings through `escapeXml`.
-- **`X-Frame-Options`**: DENY everywhere except `/embed`, which exists to be iframed
+- **`X-Frame-Options`**: DENY everywhere except `/embed`, which exists to be iframed. On Workers,
+  `public/` is served by Static Assets before the Worker runs, so its headers live in
+  `public/_headers`
+- **Workers**: secrets reach `process.env` via `nodejs_compat`, so `config.ts` works unchanged;
+  `data/auth.json` is unavailable there. Import `dotenv` only in the Node entries
+  (`src/index.ts`, `src/cli/index.ts`)
 - Static mode carries `snapshot.json` forward so a paused Spotify doesn't produce empty cards
 
 ## Environment variables

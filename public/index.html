@@ -74,96 +74,6 @@
       font-size: 0.85rem;
       color: #aaa;
     }
-
-    /* ── Ranking ─────────────────────────────────── */
-    #ranking-toggle {
-      margin-top: 1.5rem;
-      padding: 0.5rem 1rem;
-      font-size: 0.9rem;
-      cursor: pointer;
-      background: #111;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-    }
-
-    #ranking-toggle:hover { background: #333; }
-
-    #ranking-section {
-      display: none;
-      margin-top: 1.5rem;
-      max-width: 480px;
-    }
-
-    #ranking-section.open { display: block; }
-
-    #ranking-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-
-    #ranking-section h2 {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #888;
-      letter-spacing: 0.05em;
-    }
-
-    #range-select {
-      background: #1a1a1a;
-      color: #ddd;
-      border: 1px solid #333;
-      border-radius: 6px;
-      padding: 0.3rem 0.5rem;
-      font-size: 0.8rem;
-      font-family: inherit;
-    }
-
-    #ranking-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-
-    .ranking-item {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .ranking-item .rank {
-      width: 1.5rem;
-      font-size: 0.85rem;
-      color: #aaa;
-      text-align: right;
-      flex-shrink: 0;
-    }
-
-    .ranking-item img {
-      width: 40px;
-      height: 40px;
-      object-fit: cover;
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
-
-    .ranking-item .info .name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 320px;
-    }
-
-    .ranking-item .info .artist {
-      font-size: 0.8rem;
-      color: #777;
-    }
   </style>
 </head>
 <body>
@@ -178,31 +88,8 @@
     <p id="status-msg"></p>
   </section>
 
-  <button id="ranking-toggle" style="display:none">ランキングを見る ↓</button>
-
-  <section id="ranking-section">
-    <div id="ranking-head">
-      <h2 id="ranking-title">直近4週間の再生ランキング</h2>
-      <select id="range-select" aria-label="集計期間">
-        <option value="short_term">直近4週間</option>
-        <option value="medium_term">直近6か月</option>
-        <option value="long_term">直近1年</option>
-      </select>
-    </div>
-    <ul id="ranking-list"></ul>
-  </section>
-
   <script>
     const $ = id => document.getElementById(id);
-
-    // 期間ごとに結果を持つ（Spotify が用意する集計期間は3つだけ）
-    const RANGE_LABELS = {
-      short_term: '直近4週間',
-      medium_term: '直近6か月',
-      long_term: '直近1年'
-    };
-    const topTracksCache = {};
-    let rankingOpen = false;
 
     // ── Now Playing ───────────────────────────────
     async function fetchNowPlaying() {
@@ -248,62 +135,6 @@
       $('artist-name').textContent = t.artist;
       $('mood-text').textContent = data.mood ? data.mood.text : '';
       $('status-msg').textContent = '再生中';
-      $('ranking-toggle').style.display = 'inline-block';
-    }
-
-    // ── Ranking ───────────────────────────────────
-    $('ranking-toggle').addEventListener('click', async () => {
-      rankingOpen = !rankingOpen;
-      const section = $('ranking-section');
-      const btn = $('ranking-toggle');
-
-      if (rankingOpen) {
-        section.classList.add('open');
-        btn.textContent = 'ランキングを閉じる ↑';
-        await loadRanking($('range-select').value);
-      } else {
-        section.classList.remove('open');
-        btn.textContent = 'ランキングを見る ↓';
-      }
-    });
-
-    $('range-select').addEventListener('change', (e) => loadRanking(e.target.value));
-
-    async function loadRanking(range) {
-      $('ranking-title').textContent = RANGE_LABELS[range] + 'の再生ランキング';
-
-      if (!topTracksCache[range]) {
-        try {
-          const res = await fetch('/api/top-tracks?range=' + encodeURIComponent(range));
-          topTracksCache[range] = await res.json();
-        } catch (e) {
-          $('ranking-list').innerHTML = '<li style="color:#aaa">取得できませんでした</li>';
-          return;
-        }
-      }
-      renderRanking(topTracksCache[range]);
-    }
-
-    function renderRanking(data) {
-      const list = $('ranking-list');
-      list.innerHTML = '';
-      for (const track of data.tracks) {
-        const li = document.createElement('li');
-        li.className = 'ranking-item';
-        li.innerHTML = `
-          <span class="rank">${track.rank}</span>
-          <img src="${track.album_art_url}" alt="">
-          <div class="info">
-            <div class="name">${escapeHtml(track.name)}</div>
-            <div class="artist">${escapeHtml(track.artist)}</div>
-          </div>`;
-        list.appendChild(li);
-      }
-    }
-
-    function escapeHtml(str) {
-      return str.replace(/[&<>"']/g, c =>
-        ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     }
 
     // ── ポーリング ────────────────────────────────

@@ -3,28 +3,28 @@
  *
  *   GET /embed        iframe 用HTMLページ
  *   GET /badge.svg    now-playing カードのSVG（GitHub README にも貼れる）
- *   GET /ranking.svg  ランキングのSVG（?range= で集計期間、?count= で表示件数）
+ *
+ * ランキングは扱わない（静的モードの ranking.svg / top-tracks.json を使う）。
  *
  * SVG は静的モードと同じレンダラを使う。違いは「リクエストのたびに
  * 最新を描く」ことだけ。
  */
-import { Router } from 'express';
-import { collectNowPlaying, collectTopTracks } from '../core/collect.js';
+import { Hono, type Context } from 'hono';
+import { collectNowPlaying } from '../core/collect.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
-import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
 import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolveTheme } from '../render/theme.js';
-import { parseRange, parseLimit, parseCount } from '../core/topTracksParams.js';
 import { artCache } from '../cache/index.js';
 
-const router = Router();
+const router = new Hono();
 
 /** SVGはGitHubのcamo等がキャッシュする。こちら側では持たせない。 */
-function sendSvg(res: import('express').Response, svg: string): void {
-  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.send(svg);
+function sendSvg(c: Context, svg: string): Response {
+  return c.body(svg, 200, {
+    'Content-Type': 'image/svg+xml; charset=utf-8',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+  });
 }
 
 /** 画像バイト列は使い回す。取得失敗は null のままキャッシュしない。 */
@@ -44,94 +44,41 @@ async function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | nu
   return dataUri;
 }
 
-router.get('/badge.svg', async (req, res, next) => {
-  try {
-    const data = await collectNowPlaying();
-    const state: PlaybackState = data.is_playing && data.track ? 'playing' : 'idle';
-    const art = data.track?.album_art_url
-      ? await cachedArt(data.track.album_art_url, 300)
-      : null;
+router.get('/badge.svg', async (c) => {
+  const data = await collectNowPlaying();
+  const state: PlaybackState = data.is_playing && data.track ? 'playing' : 'idle';
+  const art = data.track?.album_art_url ? await cachedArt(data.track.album_art_url, 300) : null;
 
-    sendSvg(
-      res,
-      renderNowPlayingCard({
-        state,
-        track: data.track,
-        mood: data.mood,
-        since: data.fetched_at,
-        artDataUri: art,
-        theme: resolveTheme(req.query['theme'] as string | undefined),
-      })
-    );
-  } catch (err) {
-    next(err);
-  }
+  return sendSvg(
+    c,
+    renderNowPlayingCard({
+      state,
+      track: data.track,
+      mood: data.mood,
+      since: data.fetched_at,
+      artDataUri: art,
+      theme: resolveTheme(c.req.query('theme')),
+    })
+  );
 });
 
-router.get('/ranking.svg', async (req, res, next) => {
-  try {
-    const data = await collectTopTracks({
-      range: parseRange(req.query['range']),
-      limit: parseLimit(req.query['limit']),
-    });
-    const count = parseCount(req.query['count']);
-    const arts = await Promise.all(
-      data.tracks
-        .slice(0, count)
-        .map((track) => (track.album_art_url ? cachedArt(track.album_art_url, 64) : null))
-    );
+router.get('/embed', async (c) => {
+  const nowPlaying = await collectNowPlaying();
 
-    sendSvg(
-      res,
-      renderRankingCard({
-        tracks: data.tracks,
-        fetchedAt: data.fetched_at,
-        range: data.range,
-        mood: data.mood,
-        count,
-        artDataUris: arts,
-        theme: resolveTheme(req.query['theme'] as string | undefined),
-      })
-    );
-  } catch (err) {
-    next(err);
-  }
-});
+  const state: PlaybackState = nowPlaying.is_playing && nowPlaying.track ? 'playing' : 'idle';
 
-router.get('/embed', async (req, res, next) => {
-  try {
-    const withRanking = req.query['ranking'] === 'true';
-    const [nowPlaying, topTracks] = await Promise.all([
-      collectNowPlaying(),
-      withRanking
-        ? collectTopTracks({
-            range: parseRange(req.query['range']),
-            limit: parseLimit(req.query['limit']),
-          })
-        : Promise.resolve(null),
-    ]);
-
-    const state: PlaybackState =
-      nowPlaying.is_playing && nowPlaying.track ? 'playing' : 'idle';
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(
-      renderEmbedPage({
-        nowPlaying,
-        topTracks,
-        state,
-        since: nowPlaying.fetched_at,
-        theme: resolveTheme(req.query['theme'] as string | undefined),
-        transparent: req.query['transparent'] === 'true',
-        // ページ自身が定期的に取得し直す。iframe を貼り替える必要はない。
-        liveEndpoint: '/api/now-playing',
-        refreshSeconds: parseRefresh(req.query['refresh']),
-        rankingCount: parseCount(req.query['count']),
-      })
-    );
-  } catch (err) {
-    next(err);
-  }
+  return c.html(
+    renderEmbedPage({
+      nowPlaying,
+      state,
+      since: nowPlaying.fetched_at,
+      theme: resolveTheme(c.req.query('theme')),
+      transparent: c.req.query('transparent') === 'true',
+      // ページ自身が定期的に取得し直す。iframe を貼り替える必要はない。
+      liveEndpoint: '/api/now-playing',
+      refreshSeconds: parseRefresh(c.req.query('refresh')),
+    })
+  );
 });
 
 function parseRefresh(raw: unknown): number {
