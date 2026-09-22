@@ -9,7 +9,13 @@ import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
 import { generateMood } from '../llm/moodGenerator.js';
 import { hasLlmConfigured } from '../authStore.js';
-import { nowPlayingCache, topTracksCache, moodCache } from '../cache/index.js';
+import { resolveRankingMood, type RankingMoodRecord } from './rankingMood.js';
+import {
+  nowPlayingCache,
+  topTracksCache,
+  moodCache,
+  rankingMoodCache,
+} from '../cache/index.js';
 import {
   DEFAULT_TOP_TRACKS_RANGE,
   DEFAULT_TOP_TRACKS_LIMIT,
@@ -108,15 +114,45 @@ export async function collectTopTracks(
   }
 
   const tracks = await fetchTopTracks(range, limit);
+  const wantMood = !options.skipMood && hasLlmConfigured();
+  const record = wantMood ? await liveRankingMood(range, tracks) : null;
+
   const response: TopTracksResponse = {
     range,
     limit,
     fetched_at: new Date().toISOString(),
+    mood: record?.mood ?? null,
     tracks,
   };
 
   if (!options.bypassCache) cacheSet(topTracksCache, cacheKey, response);
   return response;
+}
+
+/** 期間ごとの生成中の Promise。limit 違いの同時リクエストで二重に呼ばないため。 */
+const pendingRankingMoods = new Map<TopTracksRange, Promise<RankingMoodRecord | null>>();
+
+/**
+ * ライブAPI用。前回の結果はメモリに持つ（期間ごとに1件、期限なし）。
+ * 静的モードは snapshot.json を使うので、ここは通らない。
+ */
+function liveRankingMood(
+  range: TopTracksRange,
+  tracks: TopTracksResponse['tracks']
+): Promise<RankingMoodRecord | null> {
+  const pending = pendingRankingMoods.get(range);
+  if (pending) return pending;
+
+  const previous = rankingMoodCache.get<RankingMoodRecord>(range) ?? null;
+  const promise = resolveRankingMood(range, tracks, previous)
+    .then((record) => {
+      if (record) cacheSet(rankingMoodCache, range, record);
+      return record;
+    })
+    .finally(() => pendingRankingMoods.delete(range));
+
+  pendingRankingMoods.set(range, promise);
+  return promise;
 }
 
 export async function collectStatus(options: TopTracksOptions = {}): Promise<StatusResponse> {

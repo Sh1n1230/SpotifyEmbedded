@@ -9,3 +9,6 @@ export const moodCache = new NodeCache({ stdTTL: 86400, checkperiod: 600, maxKey
 // Keyed by image URL. ライブSVGはリクエストのたびにジャケ写を data URI 化
 // するため、画像バイト列を使い回す。maxKeys は moodCache と同じ理由で必要。
 export const artCache = new NodeCache({ stdTTL: 86400, checkperiod: 600, maxKeys: 100 });
+// Keyed by range（最大3キー）。期限は設けない。ランキングのムード文は
+// 時間ではなく上位曲の顔ぶれで失効する（src/core/rankingMood.ts）。
+export const rankingMoodCache = new NodeCache({ stdTTL: 0, checkperiod: 0 });

@@ -12,6 +12,8 @@ import { join, resolve } from 'node:path';
 import yaml from 'js-yaml';
 
 import { collectNowPlaying, collectTopTracks } from '../core/collect.js';
+import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
+import { hasLlmConfigured } from '../authStore.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
@@ -53,6 +55,12 @@ interface Snapshot {
   mood: MoodResult | null;
   /** その曲を「再生中」として最後に観測した時刻 */
   observed_at: string;
+  /**
+   * ランキングのムード文と、その生成時点の上位曲。Actions の実行ごとに
+   * LLM を呼ばないよう、顔ぶれが変わるまでここから使い回す。
+   * これが導入される前のスナップショットには無い。
+   */
+  ranking_mood?: RankingMoodRecord | null;
 }
 
 const SNAPSHOT_FILE = 'snapshot.json';
@@ -71,10 +79,27 @@ export async function generate(options: GenerateOptions): Promise<void> {
   console.log('Spotify からデータを取得しています...');
   const [nowPlaying, topTracks] = await Promise.all([
     collectNowPlaying({ bypassCache: true, skipMood: options.skipMood }),
-    collectTopTracks({ bypassCache: true, range: options.range, limit: options.limit }),
+    // ランキングのムード文はメモリではなく snapshot.json を根拠に決めるので、
+    // ここでは生成させない（プロセスは毎回まっさらで、メモリは持ち越せない）。
+    collectTopTracks({
+      bypassCache: true,
+      skipMood: true,
+      range: options.range,
+      limit: options.limit,
+    }),
   ]);
 
-  const snapshot = resolveSnapshot(nowPlaying, readSnapshot(outDir));
+  const previous = readSnapshot(outDir);
+  const rankingMood =
+    !options.skipMood && hasLlmConfigured()
+      ? await resolveRankingMood(topTracks.range, topTracks.tracks, previous?.ranking_mood ?? null)
+      : null;
+  topTracks.mood = rankingMood?.mood ?? null;
+
+  const snapshot: Snapshot = {
+    ...resolveSnapshot(nowPlaying, previous),
+    ranking_mood: rankingMood,
+  };
   logState(snapshot);
 
   // ジャケ写は SVG に焼き込むため data URI 化する（GitHub の camo 対策）
@@ -118,6 +143,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
         tracks: topTracks.tracks,
         fetchedAt: topTracks.fetched_at,
         range: topTracks.range,
+        mood: topTracks.mood,
         count: options.count,
         artDataUris: rankingArts,
         theme,
@@ -194,11 +220,25 @@ function readSnapshot(outDir: string): Snapshot | null {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Snapshot;
     if (!parsed || typeof parsed !== 'object') return null;
     if (typeof parsed.observed_at !== 'string') return null;
+    // 壊れていたら無視して作り直す（1回余分に LLM を呼ぶだけで済む）。
+    if (!isRankingMoodRecord(parsed.ranking_mood)) parsed.ranking_mood = null;
     return parsed;
   } catch (err) {
     console.warn(`[generate] ${SNAPSHOT_FILE} を読めませんでした。無視します:`, err);
     return null;
   }
+}
+
+function isRankingMoodRecord(value: unknown): value is RankingMoodRecord {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Partial<RankingMoodRecord>;
+  return (
+    typeof record.range === 'string' &&
+    Array.isArray(record.track_ids) &&
+    record.track_ids.every((id) => typeof id === 'string') &&
+    typeof record.mood?.text === 'string' &&
+    typeof record.mood.generated_at === 'string'
+  );
 }
 
 function logState(snapshot: Snapshot): void {
@@ -209,6 +249,12 @@ function logState(snapshot: Snapshot): void {
     console.log(`  停止中。前回の観測を引き継ぎます: ${snapshot.track.name}`);
   } else {
     console.log('  再生中の曲はなく、引き継げる前回データもありません。');
+  }
+  if (snapshot.ranking_mood) {
+    console.log(
+      `  ランキングのムード: ${snapshot.ranking_mood.mood.text}` +
+        `（${snapshot.ranking_mood.mood.generated_at} 生成）`
+    );
   }
 }
 
