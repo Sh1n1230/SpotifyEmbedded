@@ -1,0 +1,557 @@
+range: short_term
+limit: 50
+fetched_at: '2026-09-26T18:27:19.937Z'
+mood:
+  text: 最近はヒップホップの力強いビートで自分を奮い立たせているようです
+  generated_at: '2026-09-24T05:58:22.067Z'
+tracks:
+  - rank: 1
+    id: 3g787Pbss2un5f6kgbuqol
+    name: Shiawase (feat. C6ix)
+    artist: Jinmenusagi, C6ix
+    album: ALXVE
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27332742eb42251a7d737fe524c
+    duration_ms: 143110
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3g787Pbss2un5f6kgbuqol
+    preview_url: null
+  - rank: 2
+    id: 1pnDvUuAEd6z8bKEsbAjk1
+    name: We Don't Trust You
+    artist: Future, Metro Boomin
+    album: WE DON'T TRUST YOU
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273cec3fc072352b5f4f637d9fa
+    duration_ms: 226213
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1pnDvUuAEd6z8bKEsbAjk1
+    preview_url: null
+  - rank: 3
+    id: 6gzIcEUuswJQGfJNPYMjjv
+    name: Hard Work Pays Off
+    artist: Future, Juice WRLD
+    album: Future & Juice WRLD Present... WRLD ON DRUGS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273644c510e8d4c02ae69028297
+    duration_ms: 224506
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6gzIcEUuswJQGfJNPYMjjv
+    preview_url: null
+  - rank: 4
+    id: 3VlnuNS63lYRcttmEJpLb0
+    name: OMG!!
+    artist: Lunv Loyal, YTG, ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 158877
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3VlnuNS63lYRcttmEJpLb0
+    preview_url: null
+  - rank: 5
+    id: 1Is7yXk0ROtMfqbvsclKCA
+    name: GOOD DAY
+    artist: 舐達麻
+    album: GODBREATH BUDDHACESS (THE RE-UP EDITION)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2739ef4c4ffb8965e7b476b9bde
+    duration_ms: 264000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1Is7yXk0ROtMfqbvsclKCA
+    preview_url: null
+  - rank: 6
+    id: 285pBltuF7vW8TeWk8hdRR
+    name: Lucid Dreams
+    artist: Juice WRLD
+    album: Goodbye & Good Riddance
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f7db43292a6a99b21b51d5b4
+    duration_ms: 239835
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/285pBltuF7vW8TeWk8hdRR
+    preview_url: null
+  - rank: 7
+    id: 7vG8zjbeQmwCe4azzU77oU
+    name: BUDS MONTAGE
+    artist: 舐達麻, BADSAIKUSH, DELTA9KID, GPLANTS
+    album: BUDS MONTAGE
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27321d8e5d38b85a71516645e6c
+    duration_ms: 286759
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7vG8zjbeQmwCe4azzU77oU
+    preview_url: null
+  - rank: 8
+    id: 2VWvQ7NlOwl1t7e76A66t4
+    name: AIRPLANE MODE
+    artist: Lunv Loyal, YTG, ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 143571
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2VWvQ7NlOwl1t7e76A66t4
+    preview_url: null
+  - rank: 9
+    id: 49BhIFz7eSbOspuxXrR4NM
+    name: 遊戯 (feat. SpiderWeb)
+    artist: YeYan, SpiderWeb
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 180705
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/49BhIFz7eSbOspuxXrR4NM
+    preview_url: null
+  - rank: 10
+    id: 3BXxCcrS7bhbvxSM3jbHuy
+    name: READY? (feat. Ivy & Saggypants Shimba)
+    artist: YeYan, Ivy, Saggypants Shimba
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 98461
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3BXxCcrS7bhbvxSM3jbHuy
+    preview_url: null
+  - rank: 11
+    id: 6Vbl17X8kTUmZDqaZXqC07
+    name: BATMAN
+    artist: YTG
+    album: FAR EASTERN BAT
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27356b6d66b67a82ba87b7a333c
+    duration_ms: 132500
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6Vbl17X8kTUmZDqaZXqC07
+    preview_url: null
+  - rank: 12
+    id: 75UHjvmcBI18Oc9mLYNQGH
+    name: ひたすrr (feat. MIKADO)
+    artist: YeYan, Ivy, Saggypants Shimba, MIKADO
+    album: ひたすrr (feat. MIKADO)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273d8d7a539be6fe21f4b251deb
+    duration_ms: 232867
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/75UHjvmcBI18Oc9mLYNQGH
+    preview_url: null
+  - rank: 13
+    id: 72KCekLkEgP3TsYacbut3f
+    name: sowasowa (feat. Harmm & otuyyuto)
+    artist: YeYan, Harmm, otuyyuto
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 158893
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/72KCekLkEgP3TsYacbut3f
+    preview_url: null
+  - rank: 14
+    id: 5X3kIfvB5bun5Nh9NyX18h
+    name: Get dis money (feat. DAB & Yvngboi P)
+    artist: DNE, DAB, Yvngboi P
+    album: '404'
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273892985dccdbbd4bb3351aab6
+    duration_ms: 237176
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/5X3kIfvB5bun5Nh9NyX18h
+    preview_url: null
+  - rank: 15
+    id: 1uXP7P8KC1k3wBT2LWn9ez
+    name: Domestic (feat. Saggypants Shimba & Ivy)
+    artist: YeYan, Saggypants Shimba, Ivy
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 128000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1uXP7P8KC1k3wBT2LWn9ez
+    preview_url: null
+  - rank: 16
+    id: 3HsJQpi43e4l2SbqL0ACGo
+    name: Spotlight (feat. Kohjiya & Tete) - Remix
+    artist: IO, Kohjiya, Tete, KORK
+    album: Spotlight (feat. Kohjiya & Tete) [Remix]
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2733f088189c9dab675f5a0372a
+    duration_ms: 178106
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3HsJQpi43e4l2SbqL0ACGo
+    preview_url: null
+  - rank: 17
+    id: 1O2DBz82e11JYap40VPmyM
+    name: 故障 (feat. Ivy & otuyyuto)
+    artist: YeYan, Ivy, otuyyuto
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 116756
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1O2DBz82e11JYap40VPmyM
+    preview_url: null
+  - rank: 18
+    id: 0AcUCSOqzGrWP73GYwjUkD
+    name: ボロ儲け
+    artist: Jellyyabashi, YTG, Nyture, AFB
+    album: ボロ儲け
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2730f94a5881a9e84df22eee3f1
+    duration_ms: 150708
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0AcUCSOqzGrWP73GYwjUkD
+    preview_url: null
+  - rank: 19
+    id: 56DR7IOTCrxxTRsumsXl6w
+    name: Bad News pt.2 (feat. YTG)
+    artist: DJ JAM, YTG
+    album: BRAVURA STUDIO
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f77ac7f8a4a96c96b46746f7
+    duration_ms: 152571
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/56DR7IOTCrxxTRsumsXl6w
+    preview_url: null
+  - rank: 20
+    id: 5274I4mUMnYczyeXkGDWZN
+    name: Fine China
+    artist: Future, Juice WRLD
+    album: Future & Juice WRLD Present... WRLD ON DRUGS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273644c510e8d4c02ae69028297
+    duration_ms: 141586
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/5274I4mUMnYczyeXkGDWZN
+    preview_url: null
+  - rank: 21
+    id: 2k0GSUDmeABnK694v8w1i4
+    name: I'M HIGH
+    artist: Lunv Loyal, YTG, ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 172500
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2k0GSUDmeABnK694v8w1i4
+    preview_url: null
+  - rank: 22
+    id: 1dxqk42KIlMyrSawZ5YjBE
+    name: KEEP IT UP
+    artist: Rex Orange County
+    album: WHO CARES?
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273761dc49441e6d2a991d46dc7
+    duration_ms: 183000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1dxqk42KIlMyrSawZ5YjBE
+    preview_url: null
+  - rank: 23
+    id: 2WE8gfVUOK9Yi59GlePFbx
+    name: 好キニ
+    artist: Lunv Loyal, YTG, ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 173846
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2WE8gfVUOK9Yi59GlePFbx
+    preview_url: null
+  - rank: 24
+    id: 3G5fucKKpeGeAxc3wJv1mM
+    name: PULL UP
+    artist: Lunv Loyal, YTG, ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 220200
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3G5fucKKpeGeAxc3wJv1mM
+    preview_url: null
+  - rank: 25
+    id: 4VXIryQMWpIdGgYR4TrjT1
+    name: All Girls Are The Same
+    artist: Juice WRLD
+    album: Goodbye & Good Riddance
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f7db43292a6a99b21b51d5b4
+    duration_ms: 165819
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4VXIryQMWpIdGgYR4TrjT1
+    preview_url: null
+  - rank: 26
+    id: 2Co0IjcLTSHMtodwD4gzfg
+    name: I Bet on Losing Dogs
+    artist: Mitski
+    album: Puberty 2
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27342cb382726e956058bf73ed3
+    duration_ms: 170240
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2Co0IjcLTSHMtodwD4gzfg
+    preview_url: null
+  - rank: 27
+    id: 1mdY7BAmjQ2DLsjGKG33az
+    name: 100MILLION (feat. BADSAIKUSH) - REMIX
+    artist: 舐達麻, BADSAIKUSH
+    album: GODBREATH BUDDHACESS (THE RE-UP EDITION)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2739ef4c4ffb8965e7b476b9bde
+    duration_ms: 254574
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1mdY7BAmjQ2DLsjGKG33az
+    preview_url: null
+  - rank: 28
+    id: 1AB6erZpwrepDaY6cXUGB0
+    name: INTRO -AKATSUKI-
+    artist: ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 69374
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1AB6erZpwrepDaY6cXUGB0
+    preview_url: null
+  - rank: 29
+    id: 3UdcfsR5zm2nJAJgpR7DQg
+    name: Ma Boyz (feat. MIKADO, G-k.i.d & Tete)
+    artist: Kohjiya, MIKADO, G-k.i.d, Tete
+    album: TIMELESS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273bab89d2fe66251463a0cb777
+    duration_ms: 261386
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3UdcfsR5zm2nJAJgpR7DQg
+    preview_url: null
+  - rank: 30
+    id: 70ToiXlzl8N1EgfC07ZcZE
+    name: Ice Attack
+    artist: Future, Metro Boomin
+    album: WE DON'T TRUST YOU
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273cec3fc072352b5f4f637d9fa
+    duration_ms: 199253
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/70ToiXlzl8N1EgfC07ZcZE
+    preview_url: null
+  - rank: 31
+    id: 7KCbtIO3Vc1o8hbrXdo6u3
+    name: Aura (feat. Jellyyabashi & Tiji Jojo)
+    artist: MIKADO, Jellyyabashi, Tiji Jojo
+    album: FAME FLAME
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27326d14e6aa1b0abaf29294f18
+    duration_ms: 249095
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7KCbtIO3Vc1o8hbrXdo6u3
+    preview_url: null
+  - rank: 32
+    id: 6iaSML1PIYq936g62BDtBq
+    name: Robbery
+    artist: Juice WRLD
+    album: Death Race For Love (Bonus Track Version)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2738b27d35aa2c6dcf99895d664
+    duration_ms: 240050
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6iaSML1PIYq936g62BDtBq
+    preview_url: null
+  - rank: 33
+    id: 52ETOkA8Ck9ejwqzWzsHs7
+    name: THE SEQUEL
+    artist: 舐達麻
+    album: GODBREATH BUDDHACESS (THE RE-UP EDITION)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2739ef4c4ffb8965e7b476b9bde
+    duration_ms: 243448
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/52ETOkA8Ck9ejwqzWzsHs7
+    preview_url: null
+  - rank: 34
+    id: 3jgGGlQ68qfRIRmc6MASH7
+    name: ひたすr (feat. Ivy & Saggypants Shimba)
+    artist: YeYan, Ivy, Saggypants Shimba
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 134265
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3jgGGlQ68qfRIRmc6MASH7
+    preview_url: null
+  - rank: 35
+    id: 1pCcp92kwHoHcVLctarU5O
+    name: TRAPANESE (feat. YTG)
+    artist: Lil’Yukichi, YTG
+    album: まぢ感謝
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2736456ef3b854f3efe1c5fbf04
+    duration_ms: 172403
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1pCcp92kwHoHcVLctarU5O
+    preview_url: null
+  - rank: 36
+    id: 2mlNgAeIBnL78ZriXgrRHz
+    name: Glimpse of Us
+    artist: Joji
+    album: SMITHEREENS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273cdd1a8a427b3f81f4f4f4f7d
+    duration_ms: 233453
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2mlNgAeIBnL78ZriXgrRHz
+    preview_url: null
+  - rank: 37
+    id: 1oWM79mUVdZGCGYjSirHZR
+    name: Bandit (with YoungBoy Never Broke Again)
+    artist: Juice WRLD, YoungBoy Never Broke Again
+    album: Death Race For Love (Bonus Track Version)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2738b27d35aa2c6dcf99895d664
+    duration_ms: 189322
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1oWM79mUVdZGCGYjSirHZR
+    preview_url: null
+  - rank: 38
+    id: 3OxL6MuctgZp1e0zxoAZhH
+    name: Young Metro
+    artist: Future, Metro Boomin, The Weeknd
+    album: WE DON'T TRUST YOU
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273cec3fc072352b5f4f637d9fa
+    duration_ms: 205346
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3OxL6MuctgZp1e0zxoAZhH
+    preview_url: null
+  - rank: 39
+    id: 549N5uwie3NdAifO3xfKDv
+    name: Flyout (feat. Harmm, Saggypants Shimba & Ivy)
+    artist: YeYan, Harmm, Saggypants Shimba, Ivy
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 160000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/549N5uwie3NdAifO3xfKDv
+    preview_url: null
+  - rank: 40
+    id: 00WLowvlN5cjkYpQV6pjo4
+    name: Die For You
+    artist: Joji
+    album: SMITHEREENS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273cdd1a8a427b3f81f4f4f4f7d
+    duration_ms: 211666
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/00WLowvlN5cjkYpQV6pjo4
+    preview_url: null
+  - rank: 41
+    id: 2P5yIMu2DNeMXTyOANKS6k
+    name: Nobody
+    artist: Mitski
+    album: Be the Cowboy
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273c428f67b4a9b7e1114dfc117
+    duration_ms: 193429
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2P5yIMu2DNeMXTyOANKS6k
+    preview_url: null
+  - rank: 42
+    id: 2zzyJ9lzN6agtRt6j3QeMH
+    name: Say My Name (feat. Ryohu & MUD) - Remix
+    artist: IO, Ryohu, MUD, Neetz
+    album: JUST ALBUM RELOADED
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273da9740d26bf74d4551a17afe
+    duration_ms: 293967
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2zzyJ9lzN6agtRt6j3QeMH
+    preview_url: null
+  - rank: 43
+    id: 3jjsRKEsF42ccXf8kWR3nu
+    name: Washing Machine Heart
+    artist: Mitski
+    album: Be the Cowboy
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273c428f67b4a9b7e1114dfc117
+    duration_ms: 128198
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3jjsRKEsF42ccXf8kWR3nu
+    preview_url: null
+  - rank: 44
+    id: 3oDkdAySo1VQQG0ptV7uwa
+    name: Lean Wit Me
+    artist: Juice WRLD
+    album: Goodbye & Good Riddance
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f7db43292a6a99b21b51d5b4
+    duration_ms: 175755
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3oDkdAySo1VQQG0ptV7uwa
+    preview_url: null
+  - rank: 45
+    id: 3pANfZVFdtuVnJsE6xa5Ox
+    name: Me and My Husband
+    artist: Mitski
+    album: Be the Cowboy
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273c428f67b4a9b7e1114dfc117
+    duration_ms: 137141
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3pANfZVFdtuVnJsE6xa5Ox
+    preview_url: null
+  - rank: 46
+    id: 4VQH4VluDUOsOuDxccTeyN
+    name: Sanctuary
+    artist: Joji
+    album: Nectar
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f733e50079838090eebc3fe4
+    duration_ms: 180018
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4VQH4VluDUOsOuDxccTeyN
+    preview_url: null
+  - rank: 47
+    id: 7o8l8Ug7m3OLV6cXGACVtx
+    name: LIFE STASH
+    artist: 舐達麻
+    album: GODBREATH BUDDHACESS (THE RE-UP EDITION)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2739ef4c4ffb8965e7b476b9bde
+    duration_ms: 342000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7o8l8Ug7m3OLV6cXGACVtx
+    preview_url: null
+  - rank: 48
+    id: 0XpxBV69JUDfqyzrJbndsw
+    name: PIXELATED KISSES
+    artist: Joji
+    album: Piss In The Wind
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27304316985c2c333c86874dad3
+    duration_ms: 110430
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0XpxBV69JUDfqyzrJbndsw
+    preview_url: null
+  - rank: 49
+    id: 1a7WZZZH7LzyvorhpOJFTe
+    name: Wasted (feat. Lil Uzi Vert)
+    artist: Juice WRLD, Lil Uzi Vert
+    album: Goodbye & Good Riddance
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f7db43292a6a99b21b51d5b4
+    duration_ms: 258475
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1a7WZZZH7LzyvorhpOJFTe
+    preview_url: null
+  - rank: 50
+    id: 32KHL95ZViJy80VF0DFD9E
+    name: 1942 (feat. MonyHorse & CFN Malik) - Remix
+    artist: IO, MonyHorse, CFN MALIK, LLouis
+    album: JUST ALBUM RELOADED
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273da9740d26bf74d4551a17afe
+    duration_ms: 210436
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/32KHL95ZViJy80VF0DFD9E
+    preview_url: null
