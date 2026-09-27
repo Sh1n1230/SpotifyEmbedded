@@ -15,7 +15,7 @@
 | **静的モード** | **不要** | 数十分〜数時間ごと（※） | GitHub README、ブログ、まず試したいとき |
 | **ライブAPIモード** | 必要 | 秒単位 | ポートフォリオで「今まさに」を出したいとき |
 
-どちらも出力するJSONのスキーマは同じなので、あとから移行するときは **fetch先のURLを差し替えるだけ**です。
+ライブAPIが扱うのは **now-playing だけ**です。ランキングは数週間〜1年の集計で秒単位の鮮度が要らないため、静的モードだけが出力します。now-playing のJSONはどちらも同じスキーマなので、あとから移行するときは **fetch先のURLを差し替えるだけ**です。
 
 ---
 
@@ -104,7 +104,7 @@ const res = await fetch('https://<あなた>.github.io/SpotifyEmbedded/now-playi
 | `now-playing.svg` / `now-playing-light.svg` | ムード文つきカード |
 | `ranking.svg` / `ranking-light.svg` | トップトラック（既定: 直近4週間のトップ5）。LLM設定時はランキング全体のムード文つき |
 | `now-playing.json` / `.yaml` | ライブAPIと同一スキーマ |
-| `top-tracks.json` / `.yaml` | 同上 |
+| `top-tracks.json` / `.yaml` | ランキング（静的モードのみ。ライブAPIには無い） |
 | `index.html` | iframe用ページ |
 
 **停止中でも「最後に聴いていた曲」を表示します。** 前回の観測結果を `snapshot.json` に持ち越しているので、カードが「再生していません」で埋まりません。
@@ -150,7 +150,7 @@ Spotify Web API が受け付けるのは次の3つのプリセットだけで、
 
 ## ライブAPIモード
 
-秒単位で「今まさに再生中」を出したい場合は、サーバーを1つ動かします。
+秒単位で「今まさに再生中」を出したい場合は、サーバーを1つ動かします。ライブAPIは now-playing 専用です。ランキングは静的モードの `ranking.svg` / `top-tracks.json` を使ってください。
 
 ```bash
 npm run setup      # まだなら
@@ -166,9 +166,6 @@ npm run dev        # http://localhost:3000
 <script src="https://your-api.example.com/embed.js"
         data-target="#spotify"
         data-theme="dark"
-        data-ranking="false"
-        data-range="short_term"
-        data-count="5"
         data-refresh="30"></script>
 ```
 
@@ -176,17 +173,13 @@ npm run dev        # http://localhost:3000
 |---|---|---|
 | `data-target` | (スクリプトの直後) | 描画先のCSSセレクタ |
 | `data-theme` | `dark` | `dark` / `light` |
-| `data-ranking` | `false` | `true` でランキングも表示 |
-| `data-range` | `short_term` | 集計期間（`short_term` / `medium_term` / `long_term`） |
-| `data-limit` | `50` | 取得件数（`10` / `30` / `50`） |
-| `data-count` | `5` | ランキングの表示件数（1〜50） |
 | `data-transparent` | `false` | `true` で背景を透過 |
 | `data-refresh` | `30` | 更新間隔（秒、最小10） |
 
 **iframe**
 
 ```html
-<iframe src="https://your-api.example.com/embed?theme=dark&ranking=true"
+<iframe src="https://your-api.example.com/embed?theme=dark"
         width="500" height="180" frameborder="0"></iframe>
 ```
 
@@ -194,8 +187,6 @@ npm run dev        # http://localhost:3000
 
 ```markdown
 ![Now Playing](https://your-api.example.com/badge.svg)
-![Top Tracks](https://your-api.example.com/ranking.svg?count=5)
-![Top Tracks 6ヶ月](https://your-api.example.com/ranking.svg?range=medium_term&count=10)
 ```
 
 **データ**
@@ -247,34 +238,18 @@ if (data.is_playing) {
 > キー自体はスキーマに残したまま、`popularity` と `preview_url` は `null`、`genres` は空配列になります。
 > 詳しくは[設計メモ](#audio-features-を使わない理由)を参照してください。
 
-### `GET /api/top-tracks`
+### ランキング（`top-tracks.json`、静的モードのみ）
 
-再生ランキングを返します。各曲に `rank` と `genres` が付きます。LLMが設定されていれば、ランキング全体の傾向を表す `mood`（例: `"最近は夜に似合う曲ばかり聴いているようです"`）も付きます。未設定なら `mood: null` です。
+ライブAPIには無く、静的モードが `top-tracks.json` / `.yaml` として出力します。各曲に `rank` と `genres` が付きます。LLMが設定されていれば、ランキング全体の傾向を表す `mood`（例: `"最近は夜に似合う曲ばかり聴いているようです"`）も付きます。未設定なら `mood: null` です。
 
-`mood` は上位10曲の顔ぶれが大きく変わったときだけ作り直すため、`mood.generated_at` は `fetched_at` より古いのが普通です（[設計メモ](#ランキングのムード文を毎回作らない理由)）。
-
-| クエリ | 既定値 | 説明 |
-|---|---|---|
-| `range` | `short_term` | `short_term`（約4週間） / `medium_term`（約6か月） / `long_term`（約1年） |
-| `limit` | `50` | 取得件数。`10` / `30` / `50` のいずれか |
-
-不正な値は既定値に丸めます（エラーにはしません）。レスポンスの `range` / `limit` に実際に使われた値が入ります。
-
-```bash
-curl 'https://your-api.example.com/api/top-tracks?range=medium_term&limit=30'
-```
-
-### `GET /api/status`
-
-now-playing と top-tracks をまとめて返します。`range` と `limit` は `/api/top-tracks` と同じものが使えます。
+`mood` は上位10曲の顔ぶれが大きく変わったときだけ作り直すため、`mood.generated_at` は `fetched_at` より古いのが普通です（[設計メモ](#ランキングのムード文を毎回作らない理由)）。集計期間と件数は `generate` の `--range` / `--limit` で指定します（[ランキングの集計期間](#ランキングの集計期間)）。
 
 ### 埋め込み用エンドポイント
 
 | パス | 内容 | クエリ |
 |---|---|---|
-| `GET /embed` | iframe用HTML | `theme` `ranking` `range` `limit` `count` `transparent` `refresh` |
+| `GET /embed` | iframe用HTML | `theme` `transparent` `refresh` |
 | `GET /badge.svg` | now-playingカード | `theme` |
-| `GET /ranking.svg` | ランキング | `theme` `range` `limit` `count` |
 | `GET /embed.js` | ワンタグ埋め込み | — |
 
 ---
@@ -283,15 +258,28 @@ now-playing と top-tracks をまとめて返します。`range` と `limit` は
 
 DBは不要です。秘密情報はリポジトリに含まれないので、各プラットフォームのシークレット機能で設定します。本番では `CORS_ORIGIN` を自分のサイトのURLに限定することを推奨します。
 
-### Render
+### Cloudflare Workers（推奨・無料）
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sh1n1230/SpotifyEmbedded)
 
-同梱の [`render.yaml`](render.yaml) を Blueprint として読み込み、`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `SPOTIFY_REFRESH_TOKEN` を入力します（`sync: false` なので値はリポジトリに保存されません）。`LLM_API_KEY` などは任意です。
+無料プラン（1日10万リクエスト）で動きます。スリープしないので、GitHub README の画像が起動待ちでタイムアウトすることもありません。
 
-値は `npm run setup` を実行したあとの `.env` からコピーできます。
+```bash
+npx wrangler login
+npm run deploy                                   # 初回はムード文用の KV も自動で作られる
+npx wrangler secret put SPOTIFY_CLIENT_ID        # 以下、値を聞かれるので貼り付ける
+npx wrangler secret put SPOTIFY_CLIENT_SECRET
+npx wrangler secret put SPOTIFY_REFRESH_TOKEN
+npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_MODEL / CORS_ORIGIN も同様）
+```
 
-> 無料プランは15分アクセスが無いとスリープします。常に即応させたい場合は [cron-job.org](https://cron-job.org) などで定期的に `/health` を叩いてください。
+`npm run setup` 済みなら、`npx wrangler secret bulk .env` でまとめて登録できます。
+
+デプロイ先は `https://spotify-embedded.<あなたのサブドメイン>.workers.dev` です。設定は [`wrangler.jsonc`](wrangler.jsonc) にあります。手元で Workers として動かすには、`.dev.vars.example` を `.dev.vars` にコピーして `npm run dev:worker` を実行します。
+
+- 曲ごとのムード文は KV に保存します。Workers はメモリがすぐ捨てられるため、KV が無いと同じ曲でも LLM を呼び直してしまいます。
+- `data/auth.json` は使えません。設定はすべてシークレットで渡します。
+- `npm run auth`（`/auth/*`）はローカル専用です。Workers では有効にしないでください。
 
 ### Docker（Fly.io / Cloud Run / VPS）
 
@@ -347,7 +335,7 @@ Spotifyは2024年11月以降に作成されたアプリで `/audio-features`（�
 - 生成時点の上位10曲のIDを、根拠としてムード文と一緒に保存します。
 - 今の上位10曲のうち、根拠に無い新顔が**4曲以上**になったときだけ作り直します。順位の入れ替わりは無視します。
 - 比較する相手は「前回見た顔ぶれ」ではなく「生成時点の顔ぶれ」です。1曲ずつの入れ替わりでも、積み重なればいずれ作り直されます。
-- 保存先は、ライブAPIではメモリ（期間ごとに1件）、静的モードでは `snapshot.json` です。判定のロジックはどちらも同じです（`src/core/rankingMood.ts`）。
+- 根拠は `snapshot.json` に保存し、GitHub Actions の実行をまたいで持ち越します（判定は `src/core/rankingMood.ts`）。
 - 作り直しに失敗した場合は古い文を出し続け、次の取得でまた作り直しを試みます。
 
 ### 似たプロジェクトとの違い

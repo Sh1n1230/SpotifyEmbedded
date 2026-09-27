@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { requireAuthValue, resolveAuthValue } from './authStore.js';
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from './llm/providers.js';
 

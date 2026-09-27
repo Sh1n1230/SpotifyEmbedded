@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 import { setup } from './setup.js';
 import { generate } from './generate.js';
 import { isTopTracksRange, isTopTracksLimit } from '../core/topTracksParams.js';

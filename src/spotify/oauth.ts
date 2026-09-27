@@ -1,6 +1,6 @@
 /**
  * Authorization Code フローの共通部分。
- * Express の /auth ルートと CLI の setup の両方から使う。
+ * ライブAPIの /auth ルートと CLI の setup の両方から使う。
  */
 
 export const SCOPES = ['user-read-currently-playing', 'user-top-read'] as const;

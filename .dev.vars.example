@@ -1,0 +1,13 @@
+# `npm run dev:worker` 用。.dev.vars にコピーして値を入れる（.dev.vars はコミットしない）。
+# 本番は `npx wrangler secret put <名前>` で1つずつ設定する。
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+SPOTIFY_REFRESH_TOKEN=
+
+# 任意。未設定ならムード文なしで動作する
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL=
+
+# 任意。本番では自分のサイトのURLに限定することを推奨
+CORS_ORIGIN=

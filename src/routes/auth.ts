@@ -1,9 +1,9 @@
-import { Router } from 'express';
-import { randomBytes } from 'crypto';
+import { Hono } from 'hono';
+import { randomBytes } from 'node:crypto';
 import { config } from '../config.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
 
-const router = Router();
+const router = new Hono();
 
 // CSRF対策: stateをメモリに保持 (dev-onlyサーバーなので十分)
 let pendingState: string | null = null;
@@ -16,42 +16,40 @@ function oauthApp(): OAuthApp {
   };
 }
 
-router.get('/login', (_req, res) => {
+router.get('/login', (c) => {
   pendingState = randomBytes(16).toString('hex');
-  res.redirect(buildAuthorizeUrl(oauthApp(), pendingState));
+  return c.redirect(buildAuthorizeUrl(oauthApp(), pendingState));
 });
 
-router.get('/callback', async (req, res, next) => {
-  const code = req.query['code'] as string | undefined;
-  const state = req.query['state'] as string | undefined;
+router.get('/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
 
   if (!state || state !== pendingState) {
-    res.status(400).send('Invalid state parameter. Please restart the auth flow from /auth/login.');
-    return;
+    return c.text('Invalid state parameter. Please restart the auth flow from /auth/login.', 400);
   }
   pendingState = null;
 
   if (!code) {
-    res.status(400).send('Missing code parameter');
-    return;
+    return c.text('Missing code parameter', 400);
   }
 
-  try {
-    const tokens = await exchangeCodeForTokens(oauthApp(), code);
+  const tokens = await exchangeCodeForTokens(oauthApp(), code);
 
-    console.log('\n✅ OAuth successful!');
-    console.log('SPOTIFY_REFRESH_TOKEN=' + tokens.refresh_token);
-    console.log('\n上記の行をコピーして設定してください。');
-    console.log('（`npm run setup` を使うと、この貼り付け作業は不要になります）\n');
+  console.log('\n✅ OAuth successful!');
+  console.log('SPOTIFY_REFRESH_TOKEN=' + tokens.refresh_token);
+  console.log('\n上記の行をコピーして設定してください。');
+  console.log('（`npm run setup` を使うと、この貼り付け作業は不要になります）\n');
 
-    // refresh_token はHTMLエスケープしてXSSを防ぐ
-    const escaped = tokens.refresh_token.replace(/[&<>"']/g, (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c)
-    );
+  // refresh_token はHTMLエスケープしてXSSを防ぐ
+  const escaped = tokens.refresh_token.replace(
+    /[&<>"']/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] ?? ch
+  );
 
-    // 埋め込む値は上でエスケープ済みの refresh_token のみ(リクエスト由来の値は含まない)
-    // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
-    res.send(`
+  // 埋め込む値は上でエスケープ済みの refresh_token のみ(リクエスト由来の値は含まない)
+  // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
+  return c.html(`
       <!DOCTYPE html>
       <html lang="ja"><head><meta charset="utf-8"><title>認証完了</title></head>
       <body style="font-family:monospace;padding:2rem">
@@ -62,9 +60,6 @@ router.get('/callback', async (req, res, next) => {
         <p style="color:#666">次回からは <code>npm run setup</code> を使うと、この貼り付け作業なしで完了します。</p>
       </body></html>
     `);
-  } catch (err) {
-    next(err);
-  }
 });
 
 export default router;

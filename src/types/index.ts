@@ -201,26 +201,4 @@ export interface TopTracksResponse {
   tracks: TopTrackEntry[];
 }
 
-/**
- * YAML schema for /api/status:
- *
- * now_playing:
- *   is_playing: boolean
- *   track: ...
- *   mood: ...
- *   fetched_at: string
- * top_tracks:
- *   range: "short_term" | "medium_term" | "long_term"
- *   limit: 10 | 30 | 50
- *   fetched_at: string
- *   mood: ...
- *   tracks: [...]
- * generated_at: string
- */
-export interface StatusResponse {
-  now_playing: NowPlayingResponse;
-  top_tracks: TopTracksResponse;
-  generated_at: string;
-}
-
 export type ResponseFormat = 'json' | 'yaml';
