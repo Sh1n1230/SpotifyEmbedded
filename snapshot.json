@@ -1,0 +1,38 @@
+{
+  "state": "recent",
+  "track": {
+    "id": "2D8romyooihdEEMlzjoqon",
+    "name": "so goo",
+    "artist": "Sweet William, Jinmenusagi",
+    "album": "la blanka",
+    "album_art_url": "https://i.scdn.co/image/ab67616d0000b273a8dfef4a0ed97b117913f037",
+    "duration_ms": 284142,
+    "popularity": null,
+    "spotify_url": "https://open.spotify.com/track/2D8romyooihdEEMlzjoqon",
+    "preview_url": null
+  },
+  "mood": {
+    "text": "洗練された夜の街を歩くような気分になっています",
+    "generated_at": "2026-10-02T06:03:24.958Z"
+  },
+  "observed_at": "2026-10-02T06:03:24.958Z",
+  "ranking_mood": {
+    "range": "short_term",
+    "track_ids": [
+      "3g787Pbss2un5f6kgbuqol",
+      "7vG8zjbeQmwCe4azzU77oU",
+      "3VlnuNS63lYRcttmEJpLb0",
+      "1Is7yXk0ROtMfqbvsclKCA",
+      "6gzIcEUuswJQGfJNPYMjjv",
+      "285pBltuF7vW8TeWk8hdRR",
+      "1mdY7BAmjQ2DLsjGKG33az",
+      "2VWvQ7NlOwl1t7e76A66t4",
+      "5X3kIfvB5bun5Nh9NyX18h",
+      "6Vbl17X8kTUmZDqaZXqC07"
+    ],
+    "mood": {
+      "text": "最近は重厚なビートとストリートの空気に浸っているようです",
+      "generated_at": "2026-10-01T14:42:43.256Z"
+    }
+  }
+}
