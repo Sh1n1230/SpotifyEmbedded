@@ -1,5 +1,5 @@
-# このファイルを検査したいリポジトリの .github/workflows/ にコピーして使う。
-# security-checker 本体もリポジトリに含めるか、checkout で取得すること。
+# 秘密情報の混入・危険なコード・依存の既知の脆弱性・設定の不備を検査する。
+# 検査の中身は security-checker (https://github.com/Sh1n1230/security-checker) にあり、ここでは呼ぶだけ。
 name: Security Check
 
 on:
@@ -7,44 +7,16 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   security:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # 結果を GitHub の Code Scanning に登録するため
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: security-checker を取得
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Sh1n1230/security-checker
-          path: .security-checker
-
-      # security-checker 自身の依存ファイル（uv.lock 等）を検査対象に混ぜない
-      - name: security-checker の依存ファイルを検査対象から除外
-        run: rm -f .security-checker/uv.lock .security-checker/pyproject.toml
-
-      - name: ツールをインストール
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq jq
-          # gitleaks (最新版をGitHub APIから解決)
-          GITLEAKS_VER=$(curl -sSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name | sed 's/^v//')
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER}_linux_x64.tar.gz" | tar xz gitleaks
-          sudo mv gitleaks /usr/local/bin/
-          # semgrep
-          pipx install semgrep
-          # osv-scanner
-          curl -sSL -o osv-scanner https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64
-          chmod +x osv-scanner && sudo mv osv-scanner /usr/local/bin/
-          # trivy
-          curl -sSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-
-      - name: セキュリティ検査を実行
-        run: |
-          # デフォルトshellは pipefail 無しのため、check.sh の失敗が tee に隠れないようにする
-          set -o pipefail
-          bash .security-checker/check.sh . --min-score 70 | tee result.txt
-          echo '## Security Check 結果' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat result.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: Sh1n1230/security-checker@491dbb07119b5ad9823d92c3bbc95855c65b6149 # v1.1.0
