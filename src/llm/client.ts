@@ -1,7 +1,7 @@
 /**
  * OpenAI Chat Completions 形式の最小クライアント。
  *
- * 専用SDKを使わないのは、OpenAI / OpenRouter / Groq / ローカルのサーバーを
+ * 専用SDKを使わないのは、OpenAI / OpenRouter / Gemini / ローカルのサーバーを
  * 同じコードで扱うため。必要なのは `POST {baseUrl}/chat/completions` ひとつ。
  */
 

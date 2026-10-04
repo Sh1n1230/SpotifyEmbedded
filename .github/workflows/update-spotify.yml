@@ -7,7 +7,7 @@
 # 必要な Secrets（`npm run setup` で自動登録できる）:
 #   SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET / SPOTIFY_REFRESH_TOKEN
 #   LLM_API_KEY / LLM_BASE_URL / LLM_MODEL … 未設定ならムード文なしで生成する
-#   （OpenAI互換なら提供元は問わない: OpenAI / OpenRouter / Groq など）
+#   （OpenAI互換なら提供元は問わない: OpenAI / OpenRouter / Gemini など）
 name: Update Spotify snapshot
 
 on:

@@ -20,18 +20,10 @@ export interface ProviderPreset {
 
 export const PROVIDERS: ProviderPreset[] = [
   {
-    id: 'groq',
-    label: 'Groq（推奨）',
-    baseUrl: 'https://api.groq.com/openai/v1',
-    defaultModel: 'llama-3.3-70b-versatile',
-    signupUrl: 'https://console.groq.com/keys',
-    note: '無料枠あり・クレジットカード不要',
-  },
-  {
     id: 'gemini',
     // Gemini は OpenAI 互換の口を `/v1beta/openai` に持っている。
     // 素の `/v1beta` や `/v1beta/interactions` ではないので注意。
-    label: 'Google Gemini',
+    label: 'Google Gemini（推奨）',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     defaultModel: 'gemini-3.1-flash-lite',
     signupUrl: 'https://aistudio.google.com/apikey',
@@ -54,9 +46,9 @@ export const PROVIDERS: ProviderPreset[] = [
   },
 ];
 
-/** プリセットが無い場合の既定。Groq は無料で始められるため。 */
-export const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
-export const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+/** プリセットが無い場合の既定。Gemini は無料枠があるため。 */
+export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+export const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
 
 export function findProvider(id: string): ProviderPreset | undefined {
   return PROVIDERS.find((provider) => provider.id === id);

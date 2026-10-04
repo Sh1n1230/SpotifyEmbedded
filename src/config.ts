@@ -31,7 +31,7 @@ export const config = {
     },
   },
   /**
-   * OpenAI互換であれば提供元は問わない（OpenAI / OpenRouter / Groq /
+   * OpenAI互換であれば提供元は問わない（OpenAI / OpenRouter / Gemini /
    * ローカルのサーバーなど）。未設定でもムード文を省いて動作するため、
    * apiKey 以外は既定値を持たせている。
    */

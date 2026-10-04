@@ -1,0 +1,11 @@
+name: 機能要望
+description: 追加してほしい機能
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: やりたいこと
+      description: 困っていること・実現したいことから書いてください。
+    validations:
+      required: true

@@ -2,10 +2,24 @@
 
 Spotifyで再生中の楽曲をもとに、LLMが推論したムード文（今の気分を表す一言）を生成し、GitHubのREADMEやポートフォリオサイトへ埋め込むためのセルフホスト型ツールです。
 
-> ダークな気分に浸っているようです
-> — Armed And Dangerous / Juice WRLD
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://sh1n1230.github.io/SpotifyEmbedded/now-playing.svg">
+    <img src="https://sh1n1230.github.io/SpotifyEmbedded/now-playing-light.svg" alt="Now Playing" width="500">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://sh1n1230.github.io/SpotifyEmbedded/ranking.svg">
+    <img src="https://sh1n1230.github.io/SpotifyEmbedded/ranking-light.svg" alt="Top Tracks" width="500">
+  </picture>
+</p>
+
+<p align="center"><sub>上の2枚は、このリポジトリ自身の静的モード（GitHub Actions）が生成した作者のSpotifyデータです。</sub></p>
 
 [![CI](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Sh1n1230/SpotifyEmbedded)](LICENSE)
 [![Security Check](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml)
 
 本ツールには「静的モード」と「ライブAPIモード」の2つの動作方式があり、サーバーを常時稼働させない構成でも運用できます。
@@ -43,8 +57,7 @@ http://127.0.0.1:3000/auth/callback
 
 | | エンドポイント | 既定モデル | 備考 |
 |---|---|---|---|
-| **Groq（推奨）** | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` | 無料枠あり・クレジットカード登録不要 |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.1-flash-lite` | 無料枠あり |
+| **Google Gemini（推奨）** | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.1-flash-lite` | 無料枠あり |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | 従量課金 |
 | その他 | 任意のOpenAI互換URL | — | — |
 
@@ -299,8 +312,8 @@ docker run -p 3000:3000 \
 | `SPOTIFY_CLIENT_SECRET` | ✓ | — | Spotifyアプリの Client Secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得したリフレッシュトークン |
 | `LLM_API_KEY` | | — | 未設定時はムード文なしで動作 |
-| `LLM_BASE_URL` | | `https://api.groq.com/openai/v1` | OpenAI互換のエンドポイント（Geminiは `.../v1beta/openai`） |
-| `LLM_MODEL` | | `llama-3.3-70b-versatile` | 使用モデル |
+| `LLM_BASE_URL` | | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI互換のエンドポイント |
+| `LLM_MODEL` | | `gemini-3.1-flash-lite` | 使用モデル |
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
 | `PORT` | | `3000` | サーバーの待受ポート |
 | `CORS_ORIGIN` | | `*` | 許可するオリジン（本番では埋め込み先サイトに限定を推奨） |
@@ -308,7 +321,7 @@ docker run -p 3000:3000 \
 
 設定値は **環境変数 → `data/auth.json`** の優先順位で解決されます。環境変数が優先されるため、`.env` ファイルのみで設定を行っている既存の構成にもそのまま適用されます。
 
-`LLM_API_KEY` は `OPENAI_API_KEY`、`OPENROUTER_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY`、`GOOGLE_API_KEY` の各環境変数名にも対応しています。これらのいずれかが定義されている場合は、追加の設定なしで自動的に読み込まれます。
+`LLM_API_KEY` は `OPENAI_API_KEY`、`OPENROUTER_API_KEY`、`GEMINI_API_KEY`、`GOOGLE_API_KEY` の各環境変数名にも対応しています。これらのいずれかが定義されている場合は、追加の設定なしで自動的に読み込まれます。
 
 ---
 

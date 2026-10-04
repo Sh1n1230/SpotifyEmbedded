@@ -1,0 +1,25 @@
+name: バグ報告
+description: 動作がおかしいとき
+labels: [bug]
+body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 利用モード
+      options:
+        - 静的モード（GitHub Actions）
+        - ライブAPI（Cloudflare Workers）
+        - ライブAPI（Node / Docker）
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が起きましたか
+      description: 期待した動作と実際の動作。APIキーやトークンは絶対に貼らないでください。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ・再現手順

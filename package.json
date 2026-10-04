@@ -42,7 +42,10 @@
     "github-readme",
     "svg",
     "embed",
-    "groq",
+    "gemini",
+    "llm",
+    "mood",
+    "github-profile",
     "cloudflare-workers"
   ],
   "author": "Shin Nakamura",
