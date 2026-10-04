@@ -74,7 +74,8 @@ export async function setup(): Promise<void> {
     console.log('\n完了しました。次のいずれかで使えます:\n');
     console.log('  npm run dev        # ライブAPIサーバーを起動');
     console.log('  npm run generate   # 静的ファイルを ./out に生成');
-    if (!llm.llmApiKey) {
+    // 維持を選んだ場合 askLlm は {} を返すため、保存済みのキーも見て判定する。
+    if (!llm.llmApiKey && !resolveAuthValue('llmApiKey')) {
       console.log('\n※ LLM未設定のため、ムード文なしで動作します。');
       console.log('  あとから有効にするには、もう一度 `npm run setup` を実行してください。');
     }
