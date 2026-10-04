@@ -19,6 +19,10 @@ jobs:
           repository: Sh1n1230/security-checker
           path: .security-checker
 
+      # security-checker 自身の依存ファイル（uv.lock 等）を検査対象に混ぜない
+      - name: security-checker の依存ファイルを検査対象から除外
+        run: rm -f .security-checker/uv.lock .security-checker/pyproject.toml
+
       - name: ツールをインストール
         run: |
           sudo apt-get update -qq
