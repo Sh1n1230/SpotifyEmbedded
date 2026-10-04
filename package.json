@@ -65,7 +65,7 @@
     "@types/node": "^20.0.0",
     "fast-xml-parser": "^5.11.1",
     "tsx": "^4.23.15",
-    "typescript": "^5.4.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.136.2"
   }
