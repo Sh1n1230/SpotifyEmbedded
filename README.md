@@ -84,9 +84,15 @@ npm run setup
 
 ### 3. 有効化
 
-フォークしたリポジトリの **Settings → Pages → Source** で `spotify-data` ブランチを指定します。以降はGitHub Actionsによってデータが定期的に更新されます（更新間隔の仕様は後述の「更新の間隔について」を参照）。
+フォークしたリポジトリでは、GitHub Actions がはじめは無効になっています。次の順で有効化してください。
 
-即座に動作を確認したい場合は、GitHub上の **Actions → Update Spotify snapshot → Run workflow** を手動実行してください。
+1. **Actions** タブを開き、**I understand my workflows, go ahead and enable them** を押します。フォーク直後はスケジュール実行も止まっているため、これを押さないと定期更新が始まりません。
+2. **Settings → Pages → Build and deployment → Source** で **GitHub Actions** を選びます（ブランチ指定ではありません。`spotify-data` ブランチの中身は `Deploy GitHub Pages` ワークフローが公開します）。
+3. **Actions → Update Spotify snapshot → Run workflow** で初回を手動実行します。成功すると `spotify-data` ブランチが作られ、続けて `Deploy GitHub Pages` が走って公開されます。
+
+以降はGitHub Actionsによってデータが定期的に更新されます（更新間隔の仕様は後述の「更新の間隔について」を参照）。
+
+> 公開リポジトリのスケジュール実行は、リポジトリに60日間アクティビティが無いと GitHub によって自動で無効化されます。止まっていたら Actions タブから再度有効化してください。
 
 ### 4. 埋め込みコードの配置
 
@@ -119,7 +125,10 @@ const res = await fetch('https://<username>.github.io/SpotifyEmbedded/now-playin
 | `top-tracks.json` / `.yaml` | ランキングデータ（静的モード限定） |
 | `index.html` | iframe用HTMLページ |
 
-楽曲の再生が停止している状態でも、直前の観測結果を `snapshot.json` から引き継ぐため、非再生状態のプレースホルダーではなく最後に再生していた楽曲が表示されます。
+楽曲の再生が停止している状態では、Spotifyの再生履歴（`recently-played`）から最後に聴き終えた楽曲を取得して表示します。ワークフローの実行が数時間おきでも、その間に聴いた曲を取りこぼしません。履歴を取得できない場合も、直前の観測結果を `snapshot.json` から引き継ぐため、非再生状態のプレースホルダーにはなりません。
+
+> **v1.2.0 以前からの利用者へ**
+> 再生履歴の取得には `user-read-recently-played` スコープが必要で、v1.3.0 で追加しました。以前に発行した `refresh_token` にはこのスコープが含まれないため、`npm run setup` を再実行して再認証してください（GitHub Secrets も同時に更新されます）。再認証しなくても従来どおり動作しますが、停止中の表示は「Actions の実行時にたまたま再生していた曲」のままになります。
 
 > **更新の間隔について**
 > ワークフロー定義上は30分間隔でスケジュールを設定していますが、GitHub Actionsの `schedule` トリガーは定刻起動を保証せず、実行の遅延や間引きが発生します。環境や混雑状況によっては更新間隔が2〜5時間程度空く場合があります。また、GitHubによる画像キャッシュ（camoプロキシ）の影響により、README上の表示更新にはさらなる遅延が加わります。

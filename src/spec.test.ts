@@ -143,6 +143,8 @@ function installDefaultHandlers(): void {
         })
       : null
   );
+  // 既定では再生履歴は空（引き継ぎの仕様を履歴なしで検証できるように）
+  respondWith((url) => (url.includes('/me/player/recently-played') ? jsonOk({ items: [] }) : null));
   // 既定では 2024年11月以降のアプリ: /artists?ids= は 403 で拒否される
   respondWith((url) =>
     url.includes('/artists?ids=') ? new Response('forbidden', { status: 403 }) : null
@@ -209,6 +211,14 @@ function givenNowPlaying(track: SpotifyTrack | null): void {
     if (!track) return new Response(null, { status: 204 });
     return jsonOk({ is_playing: true, progress_ms: 1000, item: track, timestamp: NOW.getTime() });
   });
+}
+
+function givenRecentlyPlayed(track: SpotifyTrack, playedAt: string): void {
+  respondWith((url) =>
+    url.includes('/me/player/recently-played')
+      ? jsonOk({ items: [{ track, played_at: playedAt }] })
+      : null
+  );
 }
 
 function givenTopTracks(items: SpotifyTrack[]): void {
@@ -673,6 +683,95 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       // ここを更新すると「たった今聴いていた」のまま固まってしまう
       expect(second['observed_at']).toBe(NOW_ISO);
       expect(second['observed_at']).not.toBe(later.toISOString());
+    });
+
+    /** 1回目は再生中（NOW に観測）、2回目は later 時点で停止中、という2回の実行。 */
+    async function playedThenStopped(
+      laterMinutes: number,
+      arrange: () => void
+    ): Promise<Record<string, unknown>> {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+
+      vi.setSystemTime(new Date(NOW.getTime() + laterMinutes * 60 * 1000));
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      arrange();
+      await runGenerate();
+      return JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+    }
+
+    const anotherTrack = aSpotifyTrack({
+      id: 'track-2',
+      name: 'Morning Light',
+      external_urls: { spotify: 'https://open.spotify.com/track/track-2' },
+    });
+
+    it('前回の観測より後に聴き終えた曲が履歴にあれば、それを「最後に聴いた曲」にする', async () => {
+      // 実行が数時間おきでも、その間に聴いた曲を取りこぼさないため
+      const playedAt = new Date(NOW.getTime() + 2 * 60 * 60 * 1000).toISOString();
+      const snapshot = await playedThenStopped(240, () => givenRecentlyPlayed(anotherTrack, playedAt));
+
+      expect(snapshot['state']).toBe('recent');
+      expect((snapshot['track'] as { name: string }).name).toBe('Morning Light');
+      // 「◯時間前」は聴き終えた時刻から数える
+      expect(snapshot['observed_at']).toBe(playedAt);
+      expect(read('now-playing.svg')).toContain('Morning Light');
+    });
+
+    it('履歴が前回の観測より古ければ、前回の観測を引き継ぐ', async () => {
+      const playedAt = new Date(NOW.getTime() - 60 * 60 * 1000).toISOString();
+      const snapshot = await playedThenStopped(30, () => givenRecentlyPlayed(anotherTrack, playedAt));
+
+      expect((snapshot['track'] as { name: string }).name).toBe('Midnight Drive');
+      expect(snapshot['observed_at']).toBe(NOW_ISO);
+    });
+
+    it('履歴を取れない（スコープの無い古い refresh_token）ときは、前回の観測を引き継いで生成を続ける', async () => {
+      const snapshot = await playedThenStopped(30, () =>
+        respondWith((url) =>
+          url.includes('/me/player/recently-played')
+            ? new Response('Insufficient client scope', { status: 403 })
+            : null
+        )
+      );
+
+      expect(snapshot['state']).toBe('recent');
+      expect((snapshot['track'] as { name: string }).name).toBe('Midnight Drive');
+    });
+
+    it('再生中なら履歴は見に行かない', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+
+      expect(callsTo('/me/player/recently-played')).toHaveLength(0);
+    });
+
+    it('履歴の曲が前回と同じなら、ムード文を作り直さない', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('前回の文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      vi.setSystemTime(new Date(NOW.getTime() + 60 * 60 * 1000));
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      moodCache.flushAll();
+      givenLlmReplies('作り直された文');
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(aSpotifyTrack(), new Date(NOW.getTime() + 5 * 60 * 1000).toISOString());
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      const snapshot = JSON.parse(read('snapshot.json')) as { mood: { text: string } };
+      expect(snapshot.mood.text).toBe('前回の文');
     });
 
     it('引き継げる前回データも無ければ idle として生成する', async () => {

@@ -96,7 +96,12 @@ The same core powers both. This split is the product's core idea — don't colla
 - **Workers**: secrets reach `process.env` via `nodejs_compat`, so `config.ts` works unchanged;
   `data/auth.json` is unavailable there. Import `dotenv` only in the Node entries
   (`src/index.ts`, `src/cli/index.ts`)
-- Static mode carries `snapshot.json` forward so a paused Spotify doesn't produce empty cards
+- Static mode carries `snapshot.json` forward so a paused Spotify doesn't produce empty cards.
+  When paused, `generate` first asks `/me/player/recently-played` (`src/spotify/recentlyPlayed.ts`)
+  and uses it if `played_at` is newer than the snapshot — Actions runs hours apart, so
+  currently-playing alone rarely catches playback. The scope `user-read-recently-played` was added
+  in v1.3.0; older refresh tokens lack it, so any failure there degrades to the old carry-forward,
+  never an error. Static-only: don't add it to the live API.
 
 ## Environment variables
 

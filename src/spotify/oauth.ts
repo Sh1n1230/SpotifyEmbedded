@@ -3,7 +3,13 @@
  * ライブAPIの /auth ルートと CLI の setup の両方から使う。
  */
 
-export const SCOPES = ['user-read-currently-playing', 'user-top-read'] as const;
+// user-read-recently-played は v1.3.0 で追加。それ以前に発行した refresh_token には
+// 含まれないが、静的モードは「取れなければ従来どおり」で動くので再認証は任意。
+export const SCOPES = [
+  'user-read-currently-playing',
+  'user-read-recently-played',
+  'user-top-read',
+] as const;
 
 export interface OAuthApp {
   clientId: string;
