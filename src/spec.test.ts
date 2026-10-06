@@ -799,6 +799,59 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(snapshot.mood?.text).toBe('作り直された文');
     });
 
+    it('履歴が前回と同じ曲・同じ時刻でも、ムード文が無ければ作り直す', async () => {
+      // 実測: 前回の実行で履歴から取った直後に LLM が落ち、次の実行でも
+      // 履歴は同じ（新しくない）ため、引き継ぎ側に回って空のまま固まった
+      const playedAt = new Date(NOW.getTime() - 10 * 60 * 1000).toISOString();
+      givenLlmConfigured();
+      respondWith((url) =>
+        url.includes('/chat/completions') ? new Response('busy', { status: 503 }) : null
+      );
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(aSpotifyTrack(), playedAt);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+      expect((JSON.parse(read('snapshot.json')) as { mood: unknown }).mood).toBeNull();
+
+      vi.setSystemTime(new Date(NOW.getTime() + 60 * 60 * 1000));
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      givenLlmReplies('作り直された文');
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(aSpotifyTrack(), playedAt);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      const snapshot = JSON.parse(read('snapshot.json')) as {
+        mood: { text: string } | null;
+        observed_at: string;
+      };
+      expect(snapshot.mood?.text).toBe('作り直された文');
+      expect(snapshot.observed_at).toBe(playedAt);
+    });
+
+    it('履歴が前回より古い別の曲なら、そのために LLM を呼ばない', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('前回の文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      vi.setSystemTime(new Date(NOW.getTime() + 30 * 60 * 1000));
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      givenLlmReplies('呼ばれてはいけない');
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(anotherTrack, new Date(NOW.getTime() - 60 * 60 * 1000).toISOString());
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      // ランキングの顔ぶれは変わっていないので、ここも呼ばれない
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+    });
+
     it('引き継げる前回データも無ければ idle として生成する', async () => {
       givenNowPlaying(null);
       givenTopTracks([]);

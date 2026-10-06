@@ -99,7 +99,9 @@ export async function generate(options: GenerateOptions): Promise<void> {
     ? null
     : await collectRecentlyPlayed({
         skipMood: options.skipMood,
-        known: previous?.track ? { trackId: previous.track.id, mood: previous.mood } : null,
+        previous: previous?.track
+          ? { trackId: previous.track.id, mood: previous.mood, observedAt: previous.observed_at }
+          : null,
       });
   const rankingMood =
     !options.skipMood && hasLlmConfigured()
@@ -189,7 +191,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
 
 /**
  * 再生中ならそれを、停止中なら「最後に聴いた曲」を決める。
- * 履歴の方が新しければ履歴を、そうでなければ前回の観測結果を引き継ぐ。
+ * 履歴が前回の観測を更新するなら履歴を、そうでなければ前回の観測結果を引き継ぐ。
  */
 function resolveSnapshot(
   nowPlaying: NowPlayingResponse,
@@ -205,7 +207,8 @@ function resolveSnapshot(
     };
   }
 
-  if (recent && (!previous?.track || isLater(recent.played_at, previous.observed_at))) {
+  // 採るべきかどうかは collectRecentlyPlayed が判定済み（採らないなら null）
+  if (recent) {
     // observed_at には聴き終えた時刻を入れる。カードの「◯時間前」がこれで正しくなる。
     return {
       state: 'recent',
@@ -222,13 +225,6 @@ function resolveSnapshot(
   }
 
   return { state: 'idle', track: null, mood: null, observed_at: nowPlaying.fetched_at };
-}
-
-function isLater(a: string, b: string): boolean {
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  if (Number.isNaN(ta)) return false;
-  return Number.isNaN(tb) || ta > tb;
 }
 
 /** iframe ページには、SVGと同じ「最後に聴いた曲」を見せる。 */
