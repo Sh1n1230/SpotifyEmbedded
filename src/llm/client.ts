@@ -49,7 +49,7 @@ function noReasoningParams(baseUrl: string): Record<string, unknown> {
 export async function chatCompletion(params: ChatCompletionParams): Promise<string> {
   const url = `${params.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
-  const send = async (): Promise<Response> => {
+  const send = async (): Promise<Response | 'timeout'> => {
     try {
       return await fetch(url, {
         method: 'POST',
@@ -67,21 +67,21 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
         signal: AbortSignal.timeout(params.timeoutMs ?? 15000),
       });
     } catch (err) {
-      if (err instanceof Error && err.name === 'TimeoutError') {
-        throw new Error(`LLMへのリクエストがタイムアウトしました (${url})`);
-      }
+      if (err instanceof Error && err.name === 'TimeoutError') return 'timeout';
       throw new Error(`LLMに接続できませんでした (${url}): ${(err as Error).message}`);
     }
   };
 
   let res = await send();
 
-  // 5xx は相手側の一時的な混雑であることが多い（Gemini の 503 "high demand" など）。
+  // 5xx とタイムアウトは相手側の一時的な混雑であることが多い（Gemini の
+  // 503 "high demand" や、混雑時に応答が返ってこないケース）。
   // 一度だけ間を置いて引き直す。それでも駄目ならムード文を諦める。
-  if (res.status >= 500) {
+  if (res === 'timeout' || res.status >= 500) {
     await new Promise((done) => setTimeout(done, 900));
     res = await send();
   }
+  if (res === 'timeout') throw new Error(`LLMへのリクエストがタイムアウトしました (${url})`);
 
   if (!res.ok) {
     throw new Error(`${describeStatus(res.status, params)} (${res.status})${await detail(res)}`);

@@ -58,8 +58,13 @@ interface Snapshot {
   state: PlaybackState;
   track: TrackSummary | null;
   mood: MoodResult | null;
-  /** その曲を「再生中」として最後に観測した時刻 */
+  /** その曲を「再生中」として最後に観測した時刻（履歴由来なら聴き終えた時刻） */
   observed_at: string;
+  /**
+   * state が 'recent' のとき、どこから決めたか。ログを分けるためだけに使う。
+   * history = 今回の再生履歴、carried = 前回のスナップショットを引き継いだ。
+   */
+  source?: 'history' | 'carried';
   /**
    * ランキングのムード文と、その生成時点の上位曲。Actions の実行ごとに
    * LLM を呼ばないよう、顔ぶれが変わるまでここから使い回す。
@@ -202,12 +207,18 @@ function resolveSnapshot(
 
   if (recent && (!previous?.track || isLater(recent.played_at, previous.observed_at))) {
     // observed_at には聴き終えた時刻を入れる。カードの「◯時間前」がこれで正しくなる。
-    return { state: 'recent', track: recent.track, mood: recent.mood, observed_at: recent.played_at };
+    return {
+      state: 'recent',
+      source: 'history',
+      track: recent.track,
+      mood: recent.mood,
+      observed_at: recent.played_at,
+    };
   }
 
   if (previous?.track) {
     // observed_at は更新しない。更新すると「たった今」のまま固まってしまう。
-    return { ...previous, state: 'recent' };
+    return { ...previous, state: 'recent', source: 'carried' };
   }
 
   return { state: 'idle', track: null, mood: null, observed_at: nowPlaying.fetched_at };
@@ -266,6 +277,9 @@ function isRankingMoodRecord(value: unknown): value is RankingMoodRecord {
 function logState(snapshot: Snapshot): void {
   if (snapshot.state === 'playing' && snapshot.track) {
     console.log(`  再生中: ${snapshot.track.name} / ${snapshot.track.artist}`);
+    if (snapshot.mood) console.log(`  ムード: ${snapshot.mood.text}`);
+  } else if (snapshot.state === 'recent' && snapshot.track && snapshot.source === 'history') {
+    console.log(`  停止中。再生履歴から最後に聴いた曲を取得しました: ${snapshot.track.name}`);
     if (snapshot.mood) console.log(`  ムード: ${snapshot.mood.text}`);
   } else if (snapshot.state === 'recent' && snapshot.track) {
     console.log(`  停止中。前回の観測を引き継ぎます: ${snapshot.track.name}`);

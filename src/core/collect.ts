@@ -159,7 +159,7 @@ export interface RecentlyPlayed {
  * 直近に再生し終えた曲。静的モード（CLI）専用で、ライブAPIには出さない。
  *
  * 取得できない（スコープ不足の古い refresh_token など）ときは null を返し、
- * 例外にしない。known が同じ曲のものなら LLM を呼ばずにそれを使う。
+ * 例外にしない。known が同じ曲のムード文なら LLM を呼ばずにそれを使う。
  */
 export async function collectRecentlyPlayed(
   options: CollectOptions & { known?: { trackId: string; mood: MoodResult | null } | null } = {}
@@ -178,7 +178,8 @@ export async function collectRecentlyPlayed(
   if (!data) return null;
 
   let mood: MoodResult | null = null;
-  if (options.known && options.known.trackId === data.track.id) {
+  // 前回 LLM が失敗して mood が null なら、使い回さずに作り直す
+  if (options.known?.mood && options.known.trackId === data.track.id) {
     mood = options.known.mood;
   } else if (!options.skipMood && hasLlmConfigured()) {
     // 履歴からはジャンルを引かない（新しいアプリでは取れず、往復が増えるだけ）

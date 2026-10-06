@@ -774,6 +774,31 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(snapshot.mood.text).toBe('前回の文');
     });
 
+    it('前回 LLM が失敗してムード文が無ければ、同じ曲でも作り直す', async () => {
+      // 使い回すと、別の曲を聴くまでムード文が空のまま固まる
+      givenLlmConfigured();
+      respondWith((url) =>
+        url.includes('/chat/completions') ? new Response('busy', { status: 503 }) : null
+      );
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+      expect((JSON.parse(read('snapshot.json')) as { mood: unknown }).mood).toBeNull();
+
+      vi.setSystemTime(new Date(NOW.getTime() + 60 * 60 * 1000));
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      givenLlmReplies('作り直された文');
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(aSpotifyTrack(), new Date(NOW.getTime() + 5 * 60 * 1000).toISOString());
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      const snapshot = JSON.parse(read('snapshot.json')) as { mood: { text: string } | null };
+      expect(snapshot.mood?.text).toBe('作り直された文');
+    });
+
     it('引き継げる前回データも無ければ idle として生成する', async () => {
       givenNowPlaying(null);
       givenTopTracks([]);
@@ -1013,6 +1038,36 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       );
 
       await expect(callLlm()).rejects.toThrow(/混雑/);
+      expect(callsTo('/chat/completions')).toHaveLength(2);
+    });
+
+    function timeoutError(): Error {
+      const err = new Error('The operation was aborted due to timeout');
+      err.name = 'TimeoutError';
+      return err;
+    }
+
+    it('タイムアウトも一度だけ引き直す', async () => {
+      // 混雑時の Gemini は 503 ではなく、応答が返ってこないことがある
+      let attempt = 0;
+      respondWith((url) => {
+        if (!url.includes('/chat/completions')) return null;
+        attempt += 1;
+        if (attempt === 1) throw timeoutError();
+        return jsonOk({ choices: [{ message: { content: 'もう一度で通りました' } }] });
+      });
+
+      await expect(callLlm()).resolves.toBe('もう一度で通りました');
+      expect(attempt).toBe(2);
+    });
+
+    it('引き直してもタイムアウトなら諦める', async () => {
+      respondWith((url) => {
+        if (!url.includes('/chat/completions')) return null;
+        throw timeoutError();
+      });
+
+      await expect(callLlm()).rejects.toThrow(/タイムアウト/);
       expect(callsTo('/chat/completions')).toHaveLength(2);
     });
 
