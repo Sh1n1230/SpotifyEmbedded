@@ -11,7 +11,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import yaml from 'js-yaml';
 
-import { collectNowPlaying, collectTopTracks } from '../core/collect.js';
+import {
+  collectNowPlaying,
+  collectRecentlyPlayed,
+  collectTopTracks,
+  type RecentlyPlayed,
+} from '../core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
 import { hasLlmConfigured } from '../authStore.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
@@ -84,6 +89,13 @@ export async function generate(options: GenerateOptions): Promise<void> {
   ]);
 
   const previous = readSnapshot(outDir);
+  // 停止中は、前回の観測より後に聴き終えた曲がないかを履歴で確かめる
+  const recent = nowPlaying.is_playing
+    ? null
+    : await collectRecentlyPlayed({
+        skipMood: options.skipMood,
+        known: previous?.track ? { trackId: previous.track.id, mood: previous.mood } : null,
+      });
   const rankingMood =
     !options.skipMood && hasLlmConfigured()
       ? await resolveRankingMood(topTracks.range, topTracks.tracks, previous?.ranking_mood ?? null)
@@ -91,7 +103,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
   topTracks.mood = rankingMood?.mood ?? null;
 
   const snapshot: Snapshot = {
-    ...resolveSnapshot(nowPlaying, previous),
+    ...resolveSnapshot(nowPlaying, recent, previous),
     ranking_mood: rankingMood,
   };
   logState(snapshot);
@@ -170,9 +182,13 @@ export async function generate(options: GenerateOptions): Promise<void> {
   console.log(`\n生成しました: ${outDir}`);
 }
 
-/** 再生中ならそれを、停止中なら前回の観測結果を引き継ぐ。 */
+/**
+ * 再生中ならそれを、停止中なら「最後に聴いた曲」を決める。
+ * 履歴の方が新しければ履歴を、そうでなければ前回の観測結果を引き継ぐ。
+ */
 function resolveSnapshot(
   nowPlaying: NowPlayingResponse,
+  recent: RecentlyPlayed | null,
   previous: Snapshot | null
 ): Snapshot {
   if (nowPlaying.is_playing && nowPlaying.track) {
@@ -184,12 +200,24 @@ function resolveSnapshot(
     };
   }
 
+  if (recent && (!previous?.track || isLater(recent.played_at, previous.observed_at))) {
+    // observed_at には聴き終えた時刻を入れる。カードの「◯時間前」がこれで正しくなる。
+    return { state: 'recent', track: recent.track, mood: recent.mood, observed_at: recent.played_at };
+  }
+
   if (previous?.track) {
     // observed_at は更新しない。更新すると「たった今」のまま固まってしまう。
     return { ...previous, state: 'recent' };
   }
 
   return { state: 'idle', track: null, mood: null, observed_at: nowPlaying.fetched_at };
+}
+
+function isLater(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta)) return false;
+  return Number.isNaN(tb) || ta > tb;
 }
 
 /** iframe ページには、SVGと同じ「最後に聴いた曲」を見せる。 */

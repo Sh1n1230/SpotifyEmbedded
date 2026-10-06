@@ -8,6 +8,7 @@
  */
 import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
+import { fetchRecentlyPlayed } from '../spotify/recentlyPlayed.js';
 import { generateMood } from '../llm/moodGenerator.js';
 import { hasLlmConfigured } from '../authStore.js';
 import {
@@ -24,6 +25,7 @@ import {
   type MoodResult,
   type TopTracksRange,
   type TopTracksLimit,
+  type TrackSummary,
 } from '../types/index.js';
 
 export interface CollectOptions {
@@ -89,6 +91,34 @@ async function writeThrough(
   }
 }
 
+/** 曲ごとのムード文。キャッシュに無ければ生成する。失敗しても null を返すだけ。 */
+async function moodFor(
+  trackId: string,
+  track: TrackSummary,
+  genres: string[]
+): Promise<MoodResult | null> {
+  const cached = await readThrough<MoodResult>(moodCache, trackId, `mood:${trackId}`);
+  if (cached) return cached;
+
+  try {
+    const text = await generateMood({
+      trackName: track.name,
+      artistName: track.artist,
+      albumName: track.album,
+      genres,
+      popularity: track.popularity,
+    });
+    const mood = { text, generated_at: new Date().toISOString() };
+    await writeThrough(moodCache, trackId, `mood:${trackId}`, mood, MOOD_TTL_SECONDS);
+    return mood;
+  } catch (err) {
+    // ムードが出せなくても曲情報は返す（デグレード動作）。
+    // 原因が伝わればよいので、スタックトレースは出さない。
+    console.error('[mood] ムード文を省略しました:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function collectNowPlaying(
   options: CollectOptions = {}
 ): Promise<NowPlayingResponse> {
@@ -102,31 +132,10 @@ export async function collectNowPlaying(
   // LLMが未設定なら、呼びに行かず静かに省く（曲情報だけで成立する）
   const wantMood = !options.skipMood && hasLlmConfigured();
 
-  let mood: MoodResult | null = null;
-  if (wantMood && data.isPlaying && data.track && data.trackId) {
-    mood = await readThrough<MoodResult>(moodCache, data.trackId, `mood:${data.trackId}`);
-
-    if (!mood) {
-      try {
-        const text = await generateMood({
-          trackName: data.track.name,
-          artistName: data.track.artist,
-          albumName: data.track.album,
-          genres: data.genres,
-          popularity: data.track.popularity,
-        });
-        mood = { text, generated_at: new Date().toISOString() };
-        await writeThrough(moodCache, data.trackId, `mood:${data.trackId}`, mood, MOOD_TTL_SECONDS);
-      } catch (err) {
-        // ムードが出せなくても曲情報は返す（デグレード動作）。
-        // 原因が伝わればよいので、スタックトレースは出さない。
-        console.error(
-          '[mood] ムード文を省略しました:',
-          err instanceof Error ? err.message : err
-        );
-      }
-    }
-  }
+  const mood =
+    wantMood && data.isPlaying && data.track && data.trackId
+      ? await moodFor(data.trackId, data.track, data.genres)
+      : null;
 
   const response: NowPlayingResponse = {
     is_playing: data.isPlaying,
@@ -137,6 +146,46 @@ export async function collectNowPlaying(
 
   if (!options.bypassCache) cacheSet(nowPlayingCache, 'now-playing', response);
   return response;
+}
+
+export interface RecentlyPlayed {
+  track: TrackSummary;
+  mood: MoodResult | null;
+  /** 再生し終えた時刻（ISO 8601） */
+  played_at: string;
+}
+
+/**
+ * 直近に再生し終えた曲。静的モード（CLI）専用で、ライブAPIには出さない。
+ *
+ * 取得できない（スコープ不足の古い refresh_token など）ときは null を返し、
+ * 例外にしない。known が同じ曲のものなら LLM を呼ばずにそれを使う。
+ */
+export async function collectRecentlyPlayed(
+  options: CollectOptions & { known?: { trackId: string; mood: MoodResult | null } | null } = {}
+): Promise<RecentlyPlayed | null> {
+  let data;
+  try {
+    data = await fetchRecentlyPlayed();
+  } catch (err) {
+    console.warn(
+      '[recently-played] 直近の再生履歴を取得できませんでした。前回の観測を引き継ぎます。' +
+        '`npm run setup` で再認証すると取得できるようになります:',
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+  if (!data) return null;
+
+  let mood: MoodResult | null = null;
+  if (options.known && options.known.trackId === data.track.id) {
+    mood = options.known.mood;
+  } else if (!options.skipMood && hasLlmConfigured()) {
+    // 履歴からはジャンルを引かない（新しいアプリでは取れず、往復が増えるだけ）
+    mood = await moodFor(data.track.id, data.track, []);
+  }
+
+  return { track: data.track, mood, played_at: data.playedAt };
 }
 
 /**
