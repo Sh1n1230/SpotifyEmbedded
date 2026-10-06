@@ -50,7 +50,7 @@ The same core powers both. This split is the product's core idea — don't colla
     `reasoning_effort` for Gemini. Add a branch rather than sending it to everyone.
   - Gemini's OpenAI-compatible base URL is `https://generativelanguage.googleapis.com/v1beta/openai`
     — not `/v1beta`, not `/v1beta/interactions`.
-  - `client.ts` retries once on 5xx (Gemini's `gemini-3.x-flash` 503s under load; the
+  - `client.ts` retries once on 5xx or timeout (Gemini's `gemini-3.x-flash` 503s under load; the
     `-lite` models are markedly more reliable).
 - `src/core/rankingMood.ts` — ranking-wide mood. **Invalidated by content, not time**: the
   record stores the top-10 track IDs it was generated from, and is regenerated only when ≥4 of

@@ -155,14 +155,24 @@ export interface RecentlyPlayed {
   played_at: string;
 }
 
+/** 静的モードが前回までに確定させていた「最後に聴いた曲」。 */
+export interface KnownRecent {
+  trackId: string;
+  mood: MoodResult | null;
+  observedAt: string;
+}
+
 /**
  * 直近に再生し終えた曲。静的モード（CLI）専用で、ライブAPIには出さない。
  *
- * 取得できない（スコープ不足の古い refresh_token など）ときは null を返し、
- * 例外にしない。known が同じ曲のものなら LLM を呼ばずにそれを使う。
+ * 前回の観測（previous）を更新すべきときだけ返し、それ以外は null を返す:
+ * - 前回より後に聴き終えた曲がある
+ * - 前回と同じ曲だが、前回は LLM が失敗してムード文が無い（作り直す）
+ * 取得できない（スコープ不足の古い refresh_token など）ときも null で、例外にしない。
+ * 判定を先にするのは、採用しない曲のために LLM を呼ばないため。
  */
 export async function collectRecentlyPlayed(
-  options: CollectOptions & { known?: { trackId: string; mood: MoodResult | null } | null } = {}
+  options: CollectOptions & { previous?: KnownRecent | null } = {}
 ): Promise<RecentlyPlayed | null> {
   let data;
   try {
@@ -177,15 +187,31 @@ export async function collectRecentlyPlayed(
   }
   if (!data) return null;
 
+  const wantMood = !options.skipMood && hasLlmConfigured();
+  const previous = options.previous;
+  const sameTrack = previous?.trackId === data.track.id;
+  const newer = !previous || isLater(data.playedAt, previous.observedAt);
+  const moodMissing = sameTrack && !previous?.mood && wantMood;
+  if (!newer && !moodMissing) return null;
+
   let mood: MoodResult | null = null;
-  if (options.known && options.known.trackId === data.track.id) {
-    mood = options.known.mood;
-  } else if (!options.skipMood && hasLlmConfigured()) {
+  if (sameTrack && previous?.mood) {
+    mood = previous.mood;
+  } else if (wantMood) {
     // 履歴からはジャンルを引かない（新しいアプリでは取れず、往復が増えるだけ）
     mood = await moodFor(data.track.id, data.track, []);
   }
 
-  return { track: data.track, mood, played_at: data.playedAt };
+  // 同じ曲を作り直しただけなら、時刻は前回のまま（新しい方を採る）
+  const playedAt = newer || !previous ? data.playedAt : previous.observedAt;
+  return { track: data.track, mood, played_at: playedAt };
+}
+
+function isLater(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta)) return false;
+  return Number.isNaN(tb) || ta > tb;
 }
 
 /**
