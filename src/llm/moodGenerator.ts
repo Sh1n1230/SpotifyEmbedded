@@ -30,12 +30,20 @@ function truncate(s: string, max: number): string {
 }
 
 /**
- * メタデータを <data> で囲む。中身に閉じタグがあれば、囲みから抜け出せないよう潰す。
- * 改行も潰す: 改行で「曲名:」の行を抜けて別の行を装えないようにする。
+ * メタデータを <data> で囲む。
+ *
+ * 閉じタグだけを消す方式は `<</data>/data>` のように消した後で組み上がる形や
+ * `</data >` で抜けられるので、山括弧（全角・類似記号も）を丸ごと落としてタグを
+ * 書けなくする。改行・制御文字・ゼロ幅などの書式文字は空白にし、「曲名:」の行を
+ * 抜けて別の行を装えないようにする。
  */
 function wrapData(lines: string[]): string {
   const body = lines
-    .map((l) => l.replace(/<\/?data>/gi, '').replace(/[\r\n]+/g, ' '))
+    .map((l) =>
+      l
+        .replace(/[<>\uff1c\uff1e\u2039\u203a\u3008\u3009\u300a\u300b\u27e8\u27e9]/g, '')
+        .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ')
+    )
     .join('\n');
   return `<data>\n${body}\n</data>`;
 }
@@ -44,20 +52,24 @@ function wrapData(lines: string[]): string {
 const MAX_MOOD_LENGTH = 40;
 
 /**
+ * ムード文に使ってよい文字。URL やドメインを禁止語で弾こうとすると、
+ * 「evil。com」やゼロ幅文字の差し込みで抜けられる。そこで許す文字を列挙し、
+ * ドット類（. ． 。 ｡）・スラッシュ・コロン・@ はそもそも通さない。
+ * 1文なので句点は要らず、末尾のものは requestMood が先に落としている。
+ */
+const MOOD_CHARS =
+  /^[\u3041-\u309f\u30a0-\u30ff\u3005\u3006\u3001\u3400-\u4dbf\u4e00-\u9fff\uff10-\uff19\uff21-\uff3a\uff41-\uff5aA-Za-z0-9 \u3000!?\uff01\uff1f\u2026~\u301c\uff5e\-\u266a&'\u2019]+$/;
+
+/**
  * モデルの出力をムード文として採ってよいか。プロンプト側の対策は破られうるので、
  * 公開ページに載せる前に形で弾く。弾いたら投げ、呼び出し側は LLM 失敗と同じく
  * ムードなしに落とす（ランキングは前回の文を残す）。
  */
 export function isAcceptableMood(text: string): boolean {
   if (text.length === 0 || text.length > MAX_MOOD_LENGTH) return false;
-  if (/[\r\n]/.test(text)) return false;
+  if (!MOOD_CHARS.test(text)) return false;
   // 日本語の文なら仮名を必ず含む。英語の指示に乗っ取られた出力をここで落とす。
-  if (!/[\u3041-\u309f\u30a1-\u30ff]/.test(text)) return false;
-  // URL・ドメイン。全角の「．」「：」「／」も半角と同じに見なす。
-  const ascii = text.normalize('NFKC');
-  if (/[a-z][a-z0-9+.-]*:\/\/|www\.|@/i.test(ascii)) return false;
-  if (/[a-z0-9-]+\.[a-z]{2,}/i.test(ascii)) return false;
-  return true;
+  return /[\u3041-\u309f\u30a1-\u30fa]/.test(text);
 }
 
 export async function generateMood(params: {
