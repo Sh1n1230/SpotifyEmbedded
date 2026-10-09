@@ -6,6 +6,7 @@ import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { getConnInfo } from '@hono/node-server/conninfo';
+import type { Context } from 'hono';
 import { createApp, type RateLimiter } from './app.js';
 import { config } from './config.js';
 import { missingAuthValues, hasLlmConfigured } from './authStore.js';
@@ -13,11 +14,25 @@ import { missingAuthValues, hasLlmConfigured } from './authStore.js';
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_REQUESTS = 100;
 
+/**
+ * レート制限のキー。既定は接続元アドレス。TRUSTED_PROXY_HEADER があればそのヘッダーを使う。
+ * x-forwarded-for のような列挙は、信頼するプロキシが最後に足した右端を採る
+ * （左側はクライアントが自由に書ける）。
+ */
+function clientKey(c: Context): string {
+  const header = config.server.trustedProxyHeader;
+  if (header) {
+    const value = c.req.header(header)?.split(',').at(-1)?.trim();
+    if (value) return value;
+  }
+  return getConnInfo(c).remote.address ?? 'unknown';
+}
+
 /** IPごとの固定ウィンドウ。単一プロセスなのでメモリで足りる。 */
 function memoryRateLimiter(): RateLimiter {
   const windows = new Map<string, { count: number; resetAt: number }>();
   return async (c) => {
-    const key = getConnInfo(c).remote.address ?? 'unknown';
+    const key = clientKey(c);
     const now = Date.now();
     let window = windows.get(key);
     if (!window || window.resetAt <= now) {

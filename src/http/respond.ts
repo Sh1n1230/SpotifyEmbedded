@@ -10,6 +10,8 @@ function wantsYaml(c: Context): boolean {
 
 /** JSON / YAML のコンテンツネゴシエーション。スキーマはどちらも同じ。 */
 export function sendFormatted(c: Context, data: unknown): Response {
+  // 同じ URL で Accept により形式が変わるので、共有キャッシュに混ぜさせない
+  c.header('Vary', 'Accept');
   if (wantsYaml(c)) {
     return c.body(yaml.dump(data, { lineWidth: 120 }), 200, {
       'Content-Type': 'application/yaml; charset=utf-8',
@@ -33,11 +35,12 @@ export function handleError(err: unknown, c: Context): Response {
     return c.json({ error: 'Spotify rate limit exceeded', retry_after: err.retryAfter }, 429);
   }
 
-  // Spotify 由来の失敗は、こちらのバグではなく相手側の応答なので
-  // 502 で返し、原因（403 など）をそのまま伝える。
+  // Spotify 由来の失敗は、こちらのバグではなく相手側の応答なので 502 で返し、
+  // ステータス（403 など）だけ伝える。本文の詳細はサーバーのログにだけ出す
+  // （外部 API の応答本文を公開エンドポイントにそのまま流さない）。
   if (err instanceof SpotifyApiError) {
     console.error('[spotify]', err.message);
-    return c.json({ error: err.message, spotify_status: err.status }, 502);
+    return c.json({ error: 'Spotify API request failed', spotify_status: err.status }, 502);
   }
 
   console.error('[error]', err);

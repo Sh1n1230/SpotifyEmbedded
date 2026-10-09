@@ -53,6 +53,14 @@ export const config = {
     get corsOrigin(): string {
       return optional_env('CORS_ORIGIN', '*');
     },
+    /**
+     * レート制限のキーに使うクライアントIPのヘッダー（例: fly-client-ip, x-forwarded-for）。
+     * プロキシ配下では接続元が全員プロキシになり1つの枠を共有してしまう。ただし
+     * ヘッダーは偽装できるので、プロキシが必ず上書きする構成でだけ設定すること。
+     */
+    get trustedProxyHeader(): string | null {
+      return process.env['TRUSTED_PROXY_HEADER']?.trim().toLowerCase() || null;
+    },
     get enableAuthRoutes(): boolean {
       return optional_env('ENABLE_AUTH_ROUTES', 'false') === 'true';
     },

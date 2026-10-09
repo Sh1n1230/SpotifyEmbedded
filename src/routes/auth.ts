@@ -1,12 +1,20 @@
 import { Hono } from 'hono';
-import { randomBytes } from 'node:crypto';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
 
 const router = new Hono();
 
-// CSRF対策: stateをメモリに保持 (dev-onlyサーバーなので十分)
-let pendingState: string | null = null;
+// CSRF対策の state はブラウザごとに Cookie で持つ。サーバーのグローバル変数に
+// 置くと、別の人が /auth/login を開いた時点で上書きされ、取り違えが起きる。
+const STATE_COOKIE = 'spotify_oauth_state';
+
+// トークンを含む応答・それに至る応答はどこにもキャッシュさせない。
+router.use(async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store');
+});
 
 function oauthApp(): OAuthApp {
   return {
@@ -16,19 +24,34 @@ function oauthApp(): OAuthApp {
   };
 }
 
+function sameState(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
 router.get('/login', (c) => {
-  pendingState = randomBytes(16).toString('hex');
-  return c.redirect(buildAuthorizeUrl(oauthApp(), pendingState));
+  const state = randomBytes(16).toString('hex');
+  setCookie(c, STATE_COOKIE, state, {
+    path: '/auth',
+    httpOnly: true,
+    // Spotify からのトップレベル遷移で戻ってくるので Lax（Strict だと送られない）
+    sameSite: 'Lax',
+    secure: new URL(c.req.url).protocol === 'https:',
+    maxAge: 600,
+  });
+  return c.redirect(buildAuthorizeUrl(oauthApp(), state));
 });
 
 router.get('/callback', async (c) => {
   const code = c.req.query('code');
   const state = c.req.query('state');
+  const expected = getCookie(c, STATE_COOKIE);
+  deleteCookie(c, STATE_COOKIE, { path: '/auth' });
 
-  if (!state || state !== pendingState) {
+  if (!state || !expected || !sameState(state, expected)) {
     return c.text('Invalid state parameter. Please restart the auth flow from /auth/login.', 400);
   }
-  pendingState = null;
 
   if (!code) {
     return c.text('Missing code parameter', 400);
@@ -36,9 +59,8 @@ router.get('/callback', async (c) => {
 
   const tokens = await exchangeCodeForTokens(oauthApp(), code);
 
-  console.log('\n✅ OAuth successful!');
-  console.log('SPOTIFY_REFRESH_TOKEN=' + tokens.refresh_token);
-  console.log('\n上記の行をコピーして設定してください。');
+  // refresh_token はログに出さない（ログ収集基盤に残るため）。ブラウザにだけ表示する。
+  console.log('\n✅ OAuth successful! ブラウザに表示された SPOTIFY_REFRESH_TOKEN を設定してください。');
   console.log('（`npm run setup` を使うと、この貼り付け作業は不要になります）\n');
 
   // refresh_token はHTMLエスケープしてXSSを防ぐ
