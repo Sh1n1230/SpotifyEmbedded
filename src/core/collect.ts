@@ -119,14 +119,29 @@ async function moodFor(
   }
 }
 
+/**
+ * キャッシュが切れた瞬間に来たリクエストは、進行中の取得を待って同じ結果を使う。
+ * そうしないと同時アクセスの数だけ Spotify と LLM を並列に叩く。
+ */
+let nowPlayingInFlight: Promise<NowPlayingResponse> | null = null;
+
 export async function collectNowPlaying(
   options: CollectOptions = {}
 ): Promise<NowPlayingResponse> {
-  if (!options.bypassCache) {
-    const cached = nowPlayingCache.get<NowPlayingResponse>('now-playing');
-    if (cached) return cached;
-  }
+  if (options.bypassCache) return fetchAndBuildNowPlaying(options);
 
+  const cached = nowPlayingCache.get<NowPlayingResponse>('now-playing');
+  if (cached) return cached;
+
+  // skipMood の有無で結果が変わるので、共有するのは既定の呼び出しだけ。
+  if (options.skipMood) return fetchAndBuildNowPlaying(options);
+  nowPlayingInFlight ??= fetchAndBuildNowPlaying(options).finally(() => {
+    nowPlayingInFlight = null;
+  });
+  return nowPlayingInFlight;
+}
+
+async function fetchAndBuildNowPlaying(options: CollectOptions): Promise<NowPlayingResponse> {
   const data = await fetchNowPlaying();
 
   // LLMが未設定なら、呼びに行かず静かに省く（曲情報だけで成立する）

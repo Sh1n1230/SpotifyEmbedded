@@ -29,7 +29,7 @@ on:
         default: '5'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: spotify-snapshot
@@ -40,15 +40,21 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # spotify-data ブランチへの push
     steps:
+      # トークンを .git/config に残さない。push は最後のステップでだけ明示的に渡す。
+      # 公開リポジトリなので、snapshot.json の fetch は認証なしで通る。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
 
       # 停止中は「最後に聴いた曲」を前回の観測から引き継ぐ。

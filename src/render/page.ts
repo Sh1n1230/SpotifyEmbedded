@@ -32,6 +32,8 @@ export interface PageInput {
   transparent?: boolean | undefined;
   /** 指定すると、このURLを定期的に取得してカードを更新する。 */
   liveEndpoint?: string | undefined;
+  /** ライブ更新スクリプトに付ける CSP の nonce。ライブAPIの /embed が渡す。 */
+  scriptNonce?: string | undefined;
   /** ライブ更新の間隔（秒）。既定30秒。 */
   refreshSeconds?: number | undefined;
   /** ランキングの表示件数。1〜50、既定5。 */
@@ -192,7 +194,7 @@ export function renderEmbedPage(input: PageInput): string {
 <body>
 ${renderCardMarkup(track, mood, state, label)}
 ${rankingSection}
-${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null) : ''}
+${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null, input.scriptNonce) : ''}
 </body>
 </html>
 `;
@@ -281,11 +283,13 @@ ${items}
 function renderLiveScript(
   endpoint: string,
   refreshSeconds: number,
-  hasTrack: boolean
+  hasTrack: boolean,
+  nonce?: string
 ): string {
   const interval = Math.max(refreshSeconds, 10) * 1000;
+  const nonceAttr = nonce ? ` nonce="${escapeXml(nonce)}"` : '';
 
-  return `<script>
+  return `<script${nonceAttr}>
 (function () {
   var endpoint = ${JSON.stringify(endpoint)};
   var interval = ${interval};
@@ -303,6 +307,11 @@ function renderLiveScript(
       if (url.indexOf(ART_SIZES[i]) !== -1) return url.replace(ART_SIZES[i], ART_SIZES[1]);
     }
     return url;
+  }
+
+  // API 由来の URL は https のものだけ属性に入れる（javascript: などを通さない）
+  function isHttps(url) {
+    return typeof url === 'string' && /^https:\\/\\//i.test(url);
   }
 
   function setText(id, value) {
@@ -336,10 +345,10 @@ function renderLiveScript(
     if (data.mood && data.mood.text) setText('mood', data.mood.text);
 
     var art = document.getElementById('art');
-    if (art && art.tagName === 'IMG' && track.album_art_url) {
+    if (art && art.tagName === 'IMG' && isHttps(track.album_art_url)) {
       art.setAttribute('src', artAt300(track.album_art_url));
     }
-    if (card.tagName === 'A' && track.spotify_url) card.setAttribute('href', track.spotify_url);
+    if (card.tagName === 'A' && isHttps(track.spotify_url)) card.setAttribute('href', track.spotify_url);
   }
 
   function tick() {

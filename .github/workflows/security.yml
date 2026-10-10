@@ -18,5 +18,7 @@ jobs:
       security-events: write # 結果を GitHub の Code Scanning に登録するため
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: Sh1n1230/security-checker@491dbb07119b5ad9823d92c3bbc95855c65b6149 # v1.1.0

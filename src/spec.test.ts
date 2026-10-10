@@ -37,6 +37,8 @@ import { resolveRankingMood, type RankingMoodRecord } from './core/rankingMood.j
 import { isTopTracksLimit, isTopTracksRange } from './core/topTracksParams.js';
 import { generate } from './cli/generate.js';
 import { chatCompletion } from './llm/client.js';
+import { createApp } from './app.js';
+import { escapeXml } from './render/text.js';
 import { renderNowPlayingCard } from './render/card.js';
 import { renderRankingCard } from './render/ranking.js';
 import {
@@ -875,7 +877,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       on: { schedule?: { cron: string }[] };
       concurrency: { 'cancel-in-progress': boolean };
       permissions: Record<string, string>;
-      jobs: Record<string, { steps: Step[] }>;
+      jobs: Record<string, { steps: Step[]; permissions?: Record<string, string> }>;
     }
 
     const workflow = yaml.load(
@@ -917,7 +919,9 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
     it('公開ブランチへ push する', () => {
       expect(allRunScripts).toContain('spotify-data');
       expect(allRunScripts).toContain('git push');
-      expect(workflow.permissions['contents']).toBe('write');
+      // 書き込み権限は push するジョブにだけ渡し、ワークフロー全体は読み取りのまま
+      expect(workflow.jobs['update']!.permissions?.['contents']).toBe('write');
+      expect(workflow.permissions['contents']).toBe('read');
     });
 
     it('実行中のジョブを途中で中断しない', () => {
@@ -1698,5 +1702,104 @@ describe('静的モードとライブAPIは同一のJSONスキーマを出す', 
     const asYaml = yaml.load(readFileSync(join(outDir, 'top-tracks.yaml'), 'utf8'));
 
     expect(asYaml).toEqual(asJson);
+  });
+});
+
+describe('ライブAPIは公開エンドポイントとして余計なものを漏らさない', () => {
+  it('キャッシュ切れの瞬間の同時アクセスは、Spotify を1回だけ叩いて結果を共有する', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const [a, b, c] = await Promise.all([
+      collectNowPlaying(),
+      collectNowPlaying(),
+      collectNowPlaying(),
+    ]);
+
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(1);
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+  });
+
+  it('/api/now-playing は Accept で形式が変わるので Vary: Accept を返す', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.headers.get('vary')).toContain('Accept');
+  });
+
+  it('Spotify のエラー本文は応答に含めず、ステータスだけ返す', async () => {
+    respondWith((url) =>
+      url.includes('/me/player/currently-playing')
+        ? new Response('internal detail: secret-ish', { status: 403 })
+        : null
+    );
+
+    const res = await createApp().request('/api/now-playing');
+    const body = (await res.json()) as Record<string, unknown>;
+
+    expect(res.status).toBe(502);
+    expect(body['spotify_status']).toBe(403);
+    expect(JSON.stringify(body)).not.toContain('internal detail');
+  });
+
+  it('/embed はライブ更新スクリプトだけを nonce で許す CSP を付ける', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/embed');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    const html = await res.text();
+
+    const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(html).toContain(`<script nonce="${nonce}">`);
+    expect(csp).toContain("default-src 'none'");
+    // iframe に入るためのページなので、フレームの禁止はしない
+    expect(res.headers.get('x-frame-options')).toBeNull();
+  });
+
+  it('/badge.svg は外部読み込みもスクリプトも許さない CSP を付ける', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/badge.svg');
+
+    expect(res.headers.get('content-security-policy')).toBe(
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+    );
+  });
+
+  describe('/auth（ENABLE_AUTH_ROUTES=true のときだけ）', () => {
+    beforeEach(() => vi.stubEnv('ENABLE_AUTH_ROUTES', 'true'));
+
+    it('state はブラウザごとの Cookie に持ち、応答はキャッシュさせない', async () => {
+      const res = await createApp().request('/auth/login');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      const cookie = res.headers.get('set-cookie') ?? '';
+      expect(cookie).toMatch(/spotify_oauth_state=[0-9a-f]{32}/);
+      expect(cookie).toContain('HttpOnly');
+      const state = /spotify_oauth_state=([0-9a-f]+)/.exec(cookie)![1]!;
+      expect(res.headers.get('location')).toContain(`state=${state}`);
+    });
+
+    it('別のブラウザが始めた state では通らない', async () => {
+      const app = createApp();
+      const login = await app.request('/auth/login');
+      const state = /spotify_oauth_state=([0-9a-f]+)/.exec(login.headers.get('set-cookie')!)![1]!;
+
+      // Cookie を持たない（= 別のブラウザ）コールバック
+      const res = await app.request(`/auth/callback?code=c&state=${state}`);
+
+      expect(res.status).toBe(400);
+      expect(callsTo('accounts.spotify.com/api/token')).toHaveLength(0);
+    });
+  });
+
+  it('escapeXml は XML で表せない U+FFFE/U+FFFF と孤立サロゲートを落とす', () => {
+    expect(escapeXml('a\uFFFEb\uFFFFc')).toBe('abc');
+    expect(escapeXml('x\uD800y\uDC00z')).toBe('xyz');
+    // 対になったサロゲート（絵文字）は残す
+    expect(escapeXml('🎧')).toBe('🎧');
   });
 });

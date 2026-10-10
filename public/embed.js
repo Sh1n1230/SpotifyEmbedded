@@ -104,14 +104,20 @@
     return node;
   }
 
+  // API 由来の URL は https のものだけ使う（javascript: などを href に入れない）
+  function isHttps(url) {
+    return typeof url === 'string' && /^https:\/\//i.test(url);
+  }
+
   function renderCard(data) {
     var track = data && data.track;
     var mood = data && data.mood;
     var playing = !!(data && data.is_playing && track);
 
-    var card = document.createElement(track ? 'a' : 'div');
+    var linkable = !!(track && isHttps(track.spotify_url));
+    var card = document.createElement(linkable ? 'a' : 'div');
     card.className = 'card' + (track && !(mood && mood.text) ? ' no-mood' : '');
-    if (track) {
+    if (linkable) {
       card.href = track.spotify_url;
       card.target = '_blank';
       card.rel = 'noopener noreferrer';
@@ -123,7 +129,7 @@
       );
     }
 
-    if (track && track.album_art_url) {
+    if (track && isHttps(track.album_art_url)) {
       // ジャケ写は装飾。読み上げはリンク全体の aria-label に任せる。
       var img = el('img', 'art');
       img.src = artAtSize(track.album_art_url, 300);

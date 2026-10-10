@@ -2,21 +2,24 @@
 # 秘密情報は COPY しません（.dockerignore で .env を除外）。実行時に
 # 環境変数として渡してください（例: fly secrets set / docker run -e ...）。
 
+# ベースイメージは digest で固定する（タグは中身が差し替わるため）。
+# 更新は Dependabot（.github/dependabot.yml の docker）が PR にする。
+
 # --- build stage ---
-FROM node:20-alpine AS build
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY tsconfig*.json ./
 COPY src ./src
 RUN npm run build
 
 # --- runtime stage ---
-FROM node:20-alpine AS runtime
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY public ./public
 USER node
