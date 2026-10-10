@@ -253,7 +253,7 @@ function readSnapshot(outDir: string): Snapshot | null {
     if (!isRankingMoodRecord(parsed.ranking_mood)) parsed.ranking_mood = null;
     return parsed;
   } catch (err) {
-    console.warn(`[generate] ${SNAPSHOT_FILE} を読めませんでした。無視します:`, err);
+    console.warn('[generate] %s を読めませんでした。無視します:', SNAPSHOT_FILE, err);
     return null;
   }
 }

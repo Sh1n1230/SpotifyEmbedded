@@ -102,7 +102,7 @@ export function loadStoredAuth(forceReload = false): StoredAuth {
     }
     cached = next;
   } catch (err) {
-    console.warn(`[auth] ${path} を読み込めませんでした。無視します:`, err);
+    console.warn('[auth] %s を読み込めませんでした。無視します:', path, err);
     cached = {};
   }
   return cached;

@@ -75,7 +75,7 @@ export async function fetchImageDataUri(url: string): Promise<string | null> {
 
     return `data:${contentType};base64,${buffer.toString('base64')}`;
   } catch (err) {
-    console.warn(`[image] 取得中にエラーが発生しました: ${url}`, err);
+    console.warn('[image] 取得中にエラーが発生しました:', url, err);
     return null;
   }
 }
