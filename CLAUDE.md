@@ -14,6 +14,7 @@ npm run setup      # interactive OAuth setup (writes .env + data/auth.json, opti
 npm run generate   # generate static artifacts into ./out
 npm run auth       # legacy: start server with OAuth routes enabled
 npm run typecheck  # TypeScript type check without emitting
+npm test           # run the spec suite (vitest)
 ```
 
 ## Two delivery modes
@@ -29,7 +30,9 @@ The same core powers both. This split is the product's core idea — don't colla
 - **Live API mode**: the Hono app in `src/app.ts`, run by two entries — `src/index.ts` (Node:
   `npm run dev`, Docker) and `src/worker.ts` (Cloudflare Workers, the recommended host; config in
   `wrangler.jsonc`, `npm run deploy`). Runtime differences (static files, rate limiter, KV) are
-  injected by the entry; routes must stay runtime-neutral.
+  injected by the entry; routes must stay runtime-neutral. Workers replaced Render because a
+  sleeping free instance cold-starts slower than GitHub camo's timeout, so `badge.svg` broke in
+  READMEs. Don't recommend a host that sleeps.
 
 ## Architecture
 
@@ -68,6 +71,9 @@ The same core powers both. This split is the product's core idea — don't colla
   handler
 - `src/routes/` — `/api/now-playing`, `/auth/*`, `/embed`, `/badge.svg`
 - `public/embed.js` — one-tag embed; renders into a Shadow DOM so host CSS can't leak in
+- `src/spec.test.ts` — the executable spec: `describe` headings read as requirements. Mock at the
+  `fetch` layer, never by replacing modules — which URL, query and headers we hit is part of
+  what's being verified. Fixtures default to a post-Nov-2024 app (restricted fields absent).
 
 ## Key constraints
 
