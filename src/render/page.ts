@@ -194,7 +194,7 @@ export function renderEmbedPage(input: PageInput): string {
 <body>
 ${renderCardMarkup(track, mood, state, label)}
 ${rankingSection}
-${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null, input.scriptNonce) : ''}
+${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null, Boolean(mood?.text), input.scriptNonce) : ''}
 </body>
 </html>
 `;
@@ -284,6 +284,7 @@ function renderLiveScript(
   endpoint: string,
   refreshSeconds: number,
   hasTrack: boolean,
+  hasMood: boolean,
   nonce?: string
 ): string {
   const interval = Math.max(refreshSeconds, 10) * 1000;
@@ -294,9 +295,11 @@ function renderLiveScript(
   var endpoint = ${JSON.stringify(endpoint)};
   var interval = ${interval};
 
-  // カードの骨組み（<a>＋<img> か、曲なしの <div>）はサーバー側で決まる。
-  // 曲の有無が入れ替わったときだけはDOMを組み直せないので読み込み直す。
+  // カードの骨組み（<a>＋<img> か、曲なしの <div>）と、ムード文の段落の有無は
+  // サーバー側で決まる。これらが入れ替わったときはDOMを組み直せないので読み込み直す
+  // （ムード文が消えたのに前の曲のムード文が残る、後から出たムード文が表示されない、を防ぐ）。
   var hadTrack = ${hasTrack ? 'true' : 'false'};
+  var hadMood = ${hasMood ? 'true' : 'false'};
 
   // ジャケ写URLのプレフィックスは画像サイズを表す。112pxで描くので
   // 300px版に寄せる。640px版のままだと表示が目に見えて遅れる。
@@ -324,7 +327,8 @@ function renderLiveScript(
     if (!card) return;
 
     var track = data && data.track;
-    if (!!track !== hadTrack) {
+    var moodText = data && data.mood && data.mood.text ? data.mood.text : '';
+    if (!!track !== hadTrack || !!moodText !== hadMood) {
       location.reload();
       return;
     }
@@ -332,6 +336,14 @@ function renderLiveScript(
 
     var playing = !!data.is_playing;
     setText('label-text', playing ? 'NOW PLAYING' : 'LAST PLAYED');
+
+    // 読み上げとタブのタイトルも、表示中の曲に合わせる（サーバー側の書式と同じ）
+    card.setAttribute(
+      'aria-label',
+      (playing ? '再生中' : '最後に再生') + ': ' + (moodText ? moodText + ' — ' : '') +
+        track.name + ' / ' + track.artist + '（Spotifyで開く）'
+    );
+    document.title = (playing ? 'Now Playing' : 'Last Played') + ': ' + track.name + ' / ' + track.artist;
 
     // 再生が止まったらイコライザとアクセント色も戻す（CSSが属性を見ている）
     var label = document.getElementById('label');
@@ -342,7 +354,7 @@ function renderLiveScript(
 
     setText('track', track.name);
     setText('artist', track.artist);
-    if (data.mood && data.mood.text) setText('mood', data.mood.text);
+    if (moodText) setText('mood', moodText);
 
     var art = document.getElementById('art');
     if (art && art.tagName === 'IMG' && isHttps(track.album_art_url)) {
