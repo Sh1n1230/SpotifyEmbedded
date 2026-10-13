@@ -1605,6 +1605,49 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     expect(callsTo('/me/top/tracks')).toHaveLength(2);
   });
 
+  describe('トークン更新の失敗', () => {
+    // トークンはモジュール内にキャッシュされるので、API の 401 で取り直しを起こす
+    function givenTokenEndpointFails(status: number, body: string): void {
+      respondWith((url) =>
+        url.includes('/me/player/currently-playing') ? new Response('expired', { status: 401 }) : null
+      );
+      respondWith((url) =>
+        url.includes('accounts.spotify.com/api/token')
+          ? new Response(body, { status, headers: { 'content-type': 'application/json' } })
+          : null
+      );
+    }
+
+    it('refresh_token が失効（400 invalid_grant）なら、502 と再セットアップの案内を返す', async () => {
+      givenTokenEndpointFails(400, '{"error":"invalid_grant","error_description":"Refresh token revoked"}');
+
+      const res = await createApp().request('/api/now-playing');
+
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({
+        error: 'Spotify authentication failed. Re-run `npm run setup` to get a new refresh_token.',
+      });
+    });
+
+    it('Client ID / Secret の誤り（401 invalid_client）も認証エラーとして扱い、原因を区別できる', async () => {
+      givenTokenEndpointFails(401, '{"error":"invalid_client","error_description":"Invalid client"}');
+
+      await expect(spotifyFetch('/me/player/currently-playing')).rejects.toMatchObject({
+        name: 'SpotifyAuthError',
+        reason: 'invalid_client',
+      });
+    });
+
+    it('5xx は設定の問題ではないので、認証エラーにしない', async () => {
+      givenTokenEndpointFails(503, 'Service Unavailable');
+
+      const err = await spotifyFetch('/me/player/currently-playing').catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(SpotifyAuthError);
+    });
+  });
+
   it('204（本文なし）は null を返す', async () => {
     respondWith((url) =>
       url.includes('/me/player/currently-playing') ? new Response(null, { status: 204 }) : null
