@@ -1605,6 +1605,54 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     expect(callsTo('/me/top/tracks')).toHaveLength(2);
   });
 
+  describe('応答しない相手を待ち続けない（タイムアウト）', () => {
+    /** AbortSignal.timeout() が時間切れになったときに fetch が投げるもの */
+    function timedOut(): never {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }
+
+    it('Spotify API とトークン更新の fetch には AbortSignal を付ける', async () => {
+      let attempt = 0;
+      respondWith((url) => {
+        if (!url.includes('/me/top/tracks')) return null;
+        attempt += 1;
+        // 1回目は 401 にしてトークン更新を起こす
+        return attempt === 1 ? new Response('expired', { status: 401 }) : jsonOk({ items: [] });
+      });
+
+      await spotifyFetch('/me/top/tracks');
+
+      expect(callsTo('/me/top/tracks').every((call) => call.init?.signal instanceof AbortSignal)).toBe(
+        true
+      );
+      expect(callsTo('accounts.spotify.com/api/token').at(-1)?.init?.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('Spotify API が時間内に応答しなければ、ライブAPIは 504 を返す', async () => {
+      respondWith((url) => (url.includes('/me/player/currently-playing') ? timedOut() : null));
+
+      await expect(spotifyFetch('/me/player/currently-playing')).rejects.toMatchObject({
+        name: 'SpotifyTimeoutError',
+      });
+      const res = await createApp().request('/api/now-playing');
+      expect(res.status).toBe(504);
+      expect(await res.json()).toEqual({ error: 'Spotify API timed out' });
+    });
+
+    it('ジャケ写の取得が時間内に終わらなければ、プレースホルダのカードを返す', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      respondWith((url) => (url.includes('.scdn.co') ? timedOut() : null));
+
+      const res = await createApp().request('/badge.svg');
+      const svg = await res.text();
+
+      expect(res.status).toBe(200);
+      expect(XMLValidator.validate(svg)).toBe(true);
+      expect(svg).not.toContain('data:image/jpeg');
+      expect(callsTo('.scdn.co')[0]?.init?.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
   it('204（本文なし）は null を返す', async () => {
     respondWith((url) =>
       url.includes('/me/player/currently-playing') ? new Response(null, { status: 204 }) : null

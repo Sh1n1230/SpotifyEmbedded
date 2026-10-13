@@ -5,6 +5,7 @@
  * 描画しない。README に貼れる SVG にするには、画像そのものを base64 で
  * 焼き込む必要がある。
  */
+import { IMAGE_TIMEOUT_MS } from '../spotify/timeout.js';
 
 /** これを超える画像は埋め込まない（SVGが肥大化してレンダリングが不安定になる）。 */
 const MAX_IMAGE_BYTES = 512 * 1024;
@@ -55,7 +56,8 @@ export async function fetchImageDataUri(url: string): Promise<string | null> {
   }
 
   try {
-    const res = await fetch(url);
+    // 時間切れも下の catch で null（プレースホルダ）になる
+    const res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
     if (!res.ok) {
       console.warn(`[image] 取得に失敗しました (${res.status}): ${url}`);
       return null;

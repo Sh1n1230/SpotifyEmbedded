@@ -1,4 +1,7 @@
 import { getAccessToken } from './auth.js';
+import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
+
+export { SpotifyTimeoutError } from './timeout.js';
 
 const BASE_URL = 'https://api.spotify.com/v1';
 
@@ -46,9 +49,12 @@ export class SpotifyRateLimitError extends Error {
 }
 
 async function spotifyFetchOnce(path: string, token: string): Promise<Response> {
-  return fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  return fetchWithTimeout(
+    `${BASE_URL}${path}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    SPOTIFY_TIMEOUT_MS,
+    path
+  );
 }
 
 export async function spotifyFetch(path: string): Promise<Response | null> {
