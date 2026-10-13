@@ -23,7 +23,7 @@ import type { MoodResult, TopTrackEntry, TopTracksRange } from '../types/index.j
 export const RANKING_MOOD_BASIS_SIZE = 10;
 
 /** 生成時点から新顔がこの数を超えたら作り直す。 */
-export const RANKING_MOOD_MAX_NEWCOMERS = 3;
+export const RANKING_MOOD_MAX_NEWCOMERS = 2;
 
 export interface RankingMoodRecord {
   range: TopTracksRange;

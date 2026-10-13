@@ -27,6 +27,10 @@ on:
         description: 'ランキングの表示件数（1〜50）'
         type: string
         default: '5'
+      refresh_ranking_mood:
+        description: 'ランキングのムード文を、顔ぶれの変化に関係なく作り直す'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -60,6 +64,8 @@ jobs:
       # 停止中は「最後に聴いた曲」を前回の観測から引き継ぐ。
       # そのために公開ブランチの snapshot.json を復元しておく。
       - name: Restore previous snapshot
+        env:
+          REFRESH_RANKING_MOOD: ${{ inputs.refresh_ranking_mood }}
         run: |
           mkdir -p out
           if git fetch --depth=1 origin spotify-data 2>/dev/null; then
@@ -68,6 +74,10 @@ jobs:
               || echo "スナップショットがないので新規作成します"
           else
             echo "spotify-data ブランチがまだありません"
+          fi
+          if [ "$REFRESH_RANKING_MOOD" = "true" ] && [ -f out/snapshot.json ]; then
+            node -e 'const f="out/snapshot.json",fs=require("fs"),s=JSON.parse(fs.readFileSync(f));s.ranking_mood=null;fs.writeFileSync(f,JSON.stringify(s))'
+            echo "ランキングのムード文を作り直します"
           fi
 
       - name: Generate
