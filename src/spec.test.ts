@@ -32,7 +32,7 @@ import {
   setDurableStore,
   type DurableStore,
 } from './cache/index.js';
-import { collectNowPlaying, collectTopTracks } from './core/collect.js';
+import { collectNowPlaying, collectRecentlyPlayed, collectTopTracks } from './core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from './core/rankingMood.js';
 import { isTopTracksLimit, isTopTracksRange } from './core/topTracksParams.js';
 import { generate } from './cli/generate.js';
@@ -185,6 +185,23 @@ function aSpotifyTrack(overrides: Partial<SpotifyTrack> = {}): SpotifyTrack {
     external_urls: { spotify: 'https://open.spotify.com/track/track-1' },
     ...overrides,
   };
+}
+
+/**
+ * Spotify クライアントに取り込んだローカルファイル。Spotify はこれを id・external_urls・
+ * アーティストの id が空の形で返す（型の上では string だが、実際は null）。
+ * https://developer.spotify.com/documentation/web-api/concepts/playlists#local-files
+ */
+function aLocalFileTrack(): SpotifyTrack {
+  const none = null as unknown as string;
+  return aSpotifyTrack({
+    id: none,
+    is_local: true,
+    name: 'My Demo',
+    artists: [{ id: none, name: 'Local Artist', external_urls: {} as { spotify: string } }],
+    album: { name: 'Local Album', images: [], release_date: '' },
+    external_urls: {} as { spotify: string },
+  });
 }
 
 function aTopTrackEntry(overrides: Partial<TopTrackEntry> = {}): TopTrackEntry {
@@ -415,6 +432,70 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
     expect(result.is_playing).toBe(false);
     expect(result.track).toBeNull();
+  });
+
+  describe('ローカルファイル（Spotify のカタログに無い曲）', () => {
+    // id も spotify_url も無く公開スキーマを満たせないので、再生していない扱いにする。
+    it('再生していないことを返し、ジャンルも LLM も呼ばない', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('今チルな気分になっています');
+      givenNowPlaying(aLocalFileTrack());
+
+      const result = await collectNowPlaying();
+
+      expect(result).toMatchObject({ is_playing: false, track: null, mood: null });
+      expect(callsTo('/artists')).toHaveLength(0);
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+    });
+
+    it('/embed と /badge.svg は壊れずに描画できる', async () => {
+      givenNowPlaying(aLocalFileTrack());
+      const app = createApp();
+
+      const embed = await app.request('/embed');
+      nowPlayingCache.flushAll();
+      const badge = await app.request('/badge.svg');
+
+      expect(embed.status).toBe(200);
+      expect(await embed.text()).toContain('再生していません');
+      expect(badge.status).toBe(200);
+      expect(XMLValidator.validate(await badge.text())).toBe(true);
+    });
+
+    it('静的モードでは前回の曲を引き継いで生成を続ける', async () => {
+      const outDir = mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-local-'));
+      try {
+        const run = () =>
+          generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: true });
+        givenNowPlaying(aSpotifyTrack());
+        givenTopTracks([aSpotifyTrack()]);
+        await run();
+
+        handlers = [];
+        installDefaultHandlers();
+        givenNowPlaying(aLocalFileTrack());
+        givenTopTracks([aSpotifyTrack()]);
+        await run();
+
+        const snapshot = JSON.parse(readFileSync(join(outDir, 'snapshot.json'), 'utf8')) as {
+          state: string;
+          track: { name: string };
+        };
+        expect(snapshot.state).toBe('recent');
+        expect(snapshot.track.name).toBe('Midnight Drive');
+      } finally {
+        rmSync(outDir, { recursive: true, force: true });
+      }
+    });
+
+    it('再生履歴の先頭がローカルファイルなら採らない', async () => {
+      givenNowPlaying(null);
+      givenRecentlyPlayed(aLocalFileTrack(), NOW_ISO);
+
+      const recent = await collectRecentlyPlayed({ previous: null });
+
+      expect(recent).toBeNull();
+    });
   });
 
   it('複数アーティストはカンマ区切りにまとめる', async () => {
