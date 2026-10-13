@@ -56,7 +56,7 @@ The same core powers both. This split is the product's core idea — don't colla
   - `client.ts` retries once on 5xx or timeout (Gemini's `gemini-3.x-flash` 503s under load; the
     `-lite` models are markedly more reliable).
 - `src/core/rankingMood.ts` — ranking-wide mood. **Invalidated by content, not time**: the
-  record stores the top-10 track IDs it was generated from, and is regenerated only when ≥4 of
+  record stores the top-10 track IDs it was generated from, and is regenerated only when ≥3 of
   the current top 10 are absent from that basis (order ignored). Don't replace this with a TTL.
   Only static mode uses it: `generate` carries the record in `snapshot.json` as `ranking_mood`.
   On LLM failure the previous record is kept, basis unchanged.

@@ -1355,29 +1355,28 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
       expect(again?.mood.text).toBe('一回目の文');
     });
 
-    it('新顔が3曲までなら使い回し、4曲目で作り直す', async () => {
+    it('新顔が2曲までなら使い回し、3曲目で作り直す', async () => {
       await resolveFor(entries(...TOP10));
       thenLlmReplies('二回目の文');
 
-      const three = await resolveFor(entries(1, 2, 3, 4, 5, 6, 7, 21, 22, 23));
-      expect(three?.mood.text).toBe('一回目の文');
+      const two = await resolveFor(entries(1, 2, 3, 4, 5, 6, 7, 8, 21, 22));
+      expect(two?.mood.text).toBe('一回目の文');
 
-      const four = await resolveFor(entries(1, 2, 3, 4, 5, 6, 21, 22, 23, 24));
-      expect(four?.mood.text).toBe('二回目の文');
+      const three = await resolveFor(entries(1, 2, 3, 4, 5, 6, 7, 21, 22, 23));
+      expect(three?.mood.text).toBe('二回目の文');
     });
 
     it('比べる相手は生成時点の顔ぶれなので、少しずつの入れ替わりも積み重なれば作り直す', async () => {
       await resolveFor(entries(...TOP10));
       thenLlmReplies('二回目の文');
 
-      // 1曲ずつ入れ替わる。直前との差は常に1曲だが、生成時点からは4曲目で閾値を超える。
+      // 1曲ずつ入れ替わる。直前との差は常に1曲だが、生成時点からは3曲目で閾値を超える。
       const r1 = await resolveFor(entries(1, 2, 3, 4, 5, 6, 7, 8, 9, 21));
       const r2 = await resolveFor(entries(1, 2, 3, 4, 5, 6, 7, 8, 21, 22));
       const r3 = await resolveFor(entries(1, 2, 3, 4, 5, 6, 7, 21, 22, 23));
-      const r4 = await resolveFor(entries(1, 2, 3, 4, 5, 6, 21, 22, 23, 24));
 
-      expect([r1, r2, r3].map((r) => r?.mood.text)).toEqual(['一回目の文', '一回目の文', '一回目の文']);
-      expect(r4?.mood.text).toBe('二回目の文');
+      expect([r1, r2].map((r) => r?.mood.text)).toEqual(['一回目の文', '一回目の文']);
+      expect(r3?.mood.text).toBe('二回目の文');
     });
 
     it('期間が違えば別物として作り直す', async () => {
