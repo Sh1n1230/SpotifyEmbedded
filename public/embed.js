@@ -188,7 +188,11 @@
   }
 
   refresh();
-  setInterval(refresh, options.refresh * 1000);
+  // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
+  // 表示に戻ったら下の visibilitychange ですぐ取り直す。
+  setInterval(function () {
+    if (!document.hidden) refresh();
+  }, options.refresh * 1000);
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) refresh();
   });

@@ -358,7 +358,11 @@ function renderLiveScript(
       .catch(function () { /* 一時的な失敗は次回に任せる */ });
   }
 
-  setInterval(tick, interval);
+  // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
+  // 表示に戻ったら下の visibilitychange ですぐ取り直す。
+  setInterval(function () {
+    if (!document.hidden) tick();
+  }, interval);
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) tick();
   });
