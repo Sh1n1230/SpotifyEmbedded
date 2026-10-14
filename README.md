@@ -122,10 +122,17 @@ const res = await fetch('https://<username>.github.io/SpotifyEmbedded/now-playin
 | `now-playing.svg` / `now-playing-light.svg` | ムード文つきカード画像 |
 | `ranking.svg` / `ranking-light.svg` | トップトラック（既定: 直近4週間のトップ5）。LLM設定時はランキング全体のムード文を含む |
 | `now-playing.json` / `.yaml` | ライブAPIと同一スキーマのJSON/YAML |
+| `last-played.json` / `.yaml` | カード画像と同じ「最後に聴いた曲」（`track` / `mood` / `played_at`）。静的モード限定 |
 | `top-tracks.json` / `.yaml` | ランキングデータ（静的モード限定） |
 | `index.html` | iframe用HTMLページ |
 
 楽曲の再生が停止している状態では、Spotifyの再生履歴（`recently-played`）から最後に聴き終えた楽曲を取得して表示します。ワークフローの実行が数時間おきでも、その間に聴いた曲を取りこぼしません。履歴を取得できない場合も、直前の観測結果を `snapshot.json` から引き継ぐため、非再生状態のプレースホルダーにはなりません。
+
+`now-playing.json` はライブAPIと同じく生成時点の再生状況そのものなので、停止中は `track: null` になります。カード画像と同じ曲をデータとして使う場合は `last-played.json` を参照してください。
+
+- 再生中: 再生中の曲。`played_at` は取得時刻
+- 停止中: 最後に聴いた曲。`played_at` は聴き終えた時刻（再生履歴から取得した場合）、または前回の実行で再生中と確認した時刻（引き継いだ場合）
+- 再生履歴も前回データも無い場合: `{ "track": null, "mood": null, "played_at": null }`
 
 > **v1.2.0 以前からの利用者へ**
 > 再生履歴の取得には `user-read-recently-played` スコープが必要で、v1.3.0 で追加しました。以前に発行した `refresh_token` にはこのスコープが含まれないため、`npm run setup` を再実行して再認証してください（GitHub Secrets も同時に更新されます）。再認証しなくても従来どおり動作しますが、停止中の表示は「Actions の実行時にたまたま再生していた曲」のままになります。
