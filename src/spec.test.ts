@@ -716,6 +716,8 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
         'top-tracks.json',
         'now-playing.yaml',
         'top-tracks.yaml',
+        'last-played.json',
+        'last-played.yaml',
         'index.html',
         'snapshot.json',
       ]) {
@@ -743,6 +745,85 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
 
       expect(read('ranking.svg')).toContain('data:image/jpeg;base64,');
       expect(read('ranking.svg')).not.toContain('href="https://i.scdn.co');
+    });
+  });
+
+  describe('last-played.json / .yaml（カードと同じ「最後に聴いた曲」）', () => {
+    function lastPlayed(): Record<string, unknown> {
+      const json = JSON.parse(read('last-played.json')) as Record<string, unknown>;
+      // YAML は JSON と同じ中身
+      expect(yaml.load(read('last-played.yaml'))).toEqual(json);
+      return json;
+    }
+
+    it('停止中は、再生履歴から最後に聴いた曲・ムード文・聴き終えた時刻が取れる', async () => {
+      const playedAt = new Date(NOW.getTime() - 60 * 60 * 1000).toISOString();
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(aSpotifyTrack(), playedAt);
+
+      await runGenerate();
+
+      const last = lastPlayed();
+      expect(Object.keys(last).sort()).toEqual(['mood', 'played_at', 'track']);
+      expect((last['track'] as { name: string }).name).toBe('Midnight Drive');
+      expect(last['played_at']).toBe(playedAt);
+      expect(last['mood']).toBeNull(); // skipMood
+      expect(read('now-playing.svg')).toContain('Midnight Drive');
+    });
+
+    it('now-playing.json は今までどおり生の応答のまま（停止中は track: null）', async () => {
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenRecentlyPlayed(aSpotifyTrack(), new Date(NOW.getTime() - 60 * 1000).toISOString());
+
+      await runGenerate();
+
+      const nowPlaying = JSON.parse(read('now-playing.json')) as Record<string, unknown>;
+      expect(Object.keys(nowPlaying).sort()).toEqual(['fetched_at', 'is_playing', 'mood', 'track']);
+      expect(nowPlaying['is_playing']).toBe(false);
+      expect(nowPlaying['track']).toBeNull();
+      expect(nowPlaying['mood']).toBeNull();
+    });
+
+    it('再生中は再生中の曲を返し、played_at は取得時刻になる', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+
+      await runGenerate();
+
+      const last = lastPlayed();
+      expect((last['track'] as { name: string }).name).toBe('Midnight Drive');
+      expect(last['played_at']).toBe(NOW_ISO);
+      // 再生中は履歴を取りに行かない（API 呼び出しを増やさない）
+      expect(callsTo('/me/player/recently-played')).toHaveLength(0);
+    });
+
+    it('前回の観測を引き継いだときは、その観測時刻を played_at にする', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+
+      vi.setSystemTime(new Date(NOW.getTime() + 30 * 60 * 1000));
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+
+      const last = lastPlayed();
+      expect((last['track'] as { name: string }).name).toBe('Midnight Drive');
+      expect(last['played_at']).toBe(NOW_ISO);
+    });
+
+    it('履歴も前回データも無ければ、すべて null になる', async () => {
+      givenNowPlaying(null);
+      givenTopTracks([]);
+
+      await runGenerate();
+
+      expect(lastPlayed()).toEqual({ track: null, mood: null, played_at: null });
     });
   });
 
