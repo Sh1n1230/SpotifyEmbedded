@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runInNewContext } from 'node:vm';
 import { XMLValidator } from 'fast-xml-parser';
 import yaml from 'js-yaml';
 
@@ -1836,6 +1837,48 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(csp).toContain("default-src 'none'");
     // iframe に入るためのページなので、フレームの禁止はしない
     expect(res.headers.get('x-frame-options')).toBeNull();
+  });
+
+  it('/embed のライブ更新は、タブが非表示の間は API を叩かず、表示に戻ったらすぐ取り直す', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const html = await (await createApp().request('/embed')).text();
+    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
+
+    // ブラウザの代わりに、スクリプトが触るものだけを用意して実行する
+    let hidden = true;
+    let onInterval: (() => void) | undefined;
+    let onVisibilityChange: (() => void) | undefined;
+    const fetched: string[] = [];
+    runInNewContext(script, {
+      document: {
+        get hidden() {
+          return hidden;
+        },
+        addEventListener: (type: string, fn: () => void) => {
+          if (type === 'visibilitychange') onVisibilityChange = fn;
+        },
+        getElementById: () => null,
+      },
+      setInterval: (fn: () => void) => {
+        onInterval = fn;
+        return 1;
+      },
+      fetch: (url: string) => {
+        fetched.push(url);
+        return new Promise(() => {});
+      },
+      location: { reload: () => {} },
+    });
+
+    onInterval!();
+    expect(fetched).toEqual([]);
+
+    hidden = false;
+    onVisibilityChange!();
+    expect(fetched).toEqual(['/api/now-playing']);
+
+    onInterval!();
+    expect(fetched).toHaveLength(2);
   });
 
   it('/badge.svg は外部読み込みもスクリプトも許さない CSP を付ける', async () => {
