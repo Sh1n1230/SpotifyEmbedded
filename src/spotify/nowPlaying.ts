@@ -9,6 +9,18 @@ function pickAlbumArt(images: { url: string; width: number | null }[]): string {
   return (large[0] ?? images[0])?.url ?? '';
 }
 
+/**
+ * Spotify のカタログにある曲か。
+ *
+ * ローカルファイル（`is_local: true`）は `id`・`external_urls`・アーティストの `id` が
+ * すべて空で返る。公開スキーマ（`id` と `spotify_url` は文字列）を満たせず、
+ * ジャンルも引けないので、now-playing でも recently-played でも採らない。
+ * https://developer.spotify.com/documentation/web-api/concepts/playlists#local-files
+ */
+export function isCatalogTrack(item: SpotifyTrack): boolean {
+  return item.is_local !== true && typeof item.id === 'string' && item.id !== '';
+}
+
 /** Spotify の生のトラックを、公開スキーマの形に揃える。recently-played とも共有する。 */
 export function toTrackSummary(item: SpotifyTrack): TrackSummary {
   return {
@@ -42,7 +54,9 @@ export async function fetchNowPlaying(): Promise<NowPlayingData> {
 
   const state = (await res.json()) as SpotifyPlaybackState;
 
-  if (!state.is_playing || !state.item) {
+  // ローカルファイルは再生していないのと同じ扱いにする（静的モードでは
+  // 前回のスナップショットの曲が「最後に聴いた曲」として残る）
+  if (!state.is_playing || !state.item || !isCatalogTrack(state.item)) {
     return { isPlaying: false, track: null, genres: [], trackId: null };
   }
 

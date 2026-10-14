@@ -11,7 +11,7 @@
  * 呼び出し側は従来どおり前回のスナップショットを引き継ぐ。
  */
 import { spotifyFetch } from './client.js';
-import { toTrackSummary } from './nowPlaying.js';
+import { isCatalogTrack, toTrackSummary } from './nowPlaying.js';
 import type { SpotifyTrack, TrackSummary } from '../types/index.js';
 
 interface RecentlyPlayedResponse {
@@ -30,8 +30,8 @@ export async function fetchRecentlyPlayed(): Promise<RecentlyPlayedData | null> 
 
   const data = (await res.json()) as RecentlyPlayedResponse;
   const item = data.items?.[0];
-  // ローカルファイルやエピソードは id が無いことがある
-  if (!item?.track?.id) return null;
+  // ローカルファイルやエピソードは id が無いことがある（now-playing と同じ判定）
+  if (!item?.track || !isCatalogTrack(item.track)) return null;
 
   return { track: toTrackSummary(item.track), playedAt: item.played_at };
 }
