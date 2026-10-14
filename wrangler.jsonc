@@ -15,13 +15,13 @@
 	"assets": {
 		"directory": "./public"
 	},
-	// ムード文の保存先。この id は作者の Cloudflare アカウントの namespace（ID はアカウントごと）。
-	// フォークして自分のアカウントにデプロイする場合は `npx wrangler kv namespace create MOODS`
-	// で作成し、表示された id に差し替える（手順は README「Cloudflare Workers」）。
+	// ムード文の保存先。KV の namespace ID はアカウントごとに異なるので、id は書かない。
+	// 初回の `wrangler deploy` で Wrangler が namespace を自動作成して MOODS にバインドし、
+	// 2回目以降はデプロイ済みの Worker の MOODS バインディング（同じ namespace）を引き継ぐ。
+	// https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning
 	"kv_namespaces": [
 		{
-			"binding": "MOODS",
-			"id": "154260f7bedf4f4ca2d290b41b9c5e67"
+			"binding": "MOODS"
 		}
 	],
 	// IPごとに 60 秒あたり 100 リクエストまで

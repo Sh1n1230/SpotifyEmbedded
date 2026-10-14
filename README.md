@@ -291,7 +291,6 @@ Cloudflare Workersの無料プラン（1日最大10万リクエスト）の範�
 
 ```bash
 npx wrangler login
-npx wrangler kv namespace create MOODS           # ムード文の保存先を作成（表示された id を下記のとおり wrangler.jsonc に反映）
 npm run deploy
 npx wrangler secret put SPOTIFY_CLIENT_ID        # プロンプトに従って各値を設定
 npx wrangler secret put SPOTIFY_CLIENT_SECRET
@@ -299,7 +298,7 @@ npx wrangler secret put SPOTIFY_REFRESH_TOKEN
 npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_MODEL / CORS_ORIGIN も同様）
 ```
 
-`wrangler.jsonc` の `kv_namespaces` に書かれている `id` は作者のアカウントのものです。KV ネームスペースの ID はアカウントごとに異なるため、フォークして自分のアカウントにデプロイする場合は、`npx wrangler kv namespace create MOODS` の出力に表示された `id` に差し替えてください（`binding` は `MOODS` のまま）。
+ムード文の保存先（Workers KV のネームスペース）は事前に作る必要はありません。`wrangler.jsonc` の `MOODS` バインディングには `id` を書いておらず、初回の `npm run deploy` で Wrangler が自動作成して Worker にバインドします（[automatic provisioning](https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning)）。対話的に実行した場合は、既存のネームスペースにつなぐか新しく作るかを聞かれることがあり、作成後は `id` が `wrangler.jsonc` に書き戻されます。書き戻された `id` は残しても消しても構いません。2回目以降のデプロイは、デプロイ済みの Worker の `MOODS` バインディングをそのまま引き継ぎます。
 
 `npm run setup` を実行済みの場合は、`npx wrangler secret bulk .env` で一括登録できます。
 
