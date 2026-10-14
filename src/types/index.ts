@@ -28,7 +28,13 @@ export interface SpotifyArtist extends SpotifyArtistRef {
 }
 
 export interface SpotifyTrack {
+  /**
+   * ローカルファイル（`is_local: true`）では実際には null が返り、`external_urls` も空になる。
+   * 公開スキーマに載せる前に `isCatalogTrack()`（src/spotify/nowPlaying.ts）で弾く。
+   */
   id: string;
+  /** Spotify クライアントに取り込んだローカルファイルなら true。 */
+  is_local?: boolean;
   name: string;
   artists: SpotifyArtistRef[];
   album: {

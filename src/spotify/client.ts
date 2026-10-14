@@ -1,16 +1,10 @@
-import { getAccessToken } from './auth.js';
+import { getAccessToken, SpotifyAuthError } from './auth.js';
 import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
 
+export { SpotifyAuthError } from './auth.js';
 export { SpotifyTimeoutError } from './timeout.js';
 
 const BASE_URL = 'https://api.spotify.com/v1';
-
-export class SpotifyAuthError extends Error {
-  constructor() {
-    super('Spotify authentication failed');
-    this.name = 'SpotifyAuthError';
-  }
-}
 
 /** 401 / 429 以外の失敗。原因が分かるメッセージを添える。 */
 export class SpotifyApiError extends Error {

@@ -27,6 +27,8 @@ export function sendFormatted(c: Context, data: unknown): Response {
 
 export function handleError(err: unknown, c: Context): Response {
   if (err instanceof SpotifyAuthError) {
+    // refresh_token の失効か Client ID / Secret の誤りかはログで見分ける
+    console.error('[spotify]', err.message);
     return c.json(
       {
         error: 'Spotify authentication failed. Re-run `npm run setup` to get a new refresh_token.',

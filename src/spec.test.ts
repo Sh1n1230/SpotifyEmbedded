@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runInNewContext } from 'node:vm';
 import { XMLValidator } from 'fast-xml-parser';
 import yaml from 'js-yaml';
 
@@ -32,7 +33,7 @@ import {
   setDurableStore,
   type DurableStore,
 } from './cache/index.js';
-import { collectNowPlaying, collectTopTracks } from './core/collect.js';
+import { collectNowPlaying, collectRecentlyPlayed, collectTopTracks } from './core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from './core/rankingMood.js';
 import { isTopTracksLimit, isTopTracksRange } from './core/topTracksParams.js';
 import { generate } from './cli/generate.js';
@@ -41,6 +42,7 @@ import { createApp } from './app.js';
 import { escapeXml } from './render/text.js';
 import { renderNowPlayingCard } from './render/card.js';
 import { renderRankingCard } from './render/ranking.js';
+import { renderEmbedPage } from './render/page.js';
 import {
   SpotifyApiError,
   SpotifyAuthError,
@@ -49,6 +51,7 @@ import {
 import { resetArtistGenreAvailability } from './spotify/artists.js';
 import {
   TOP_TRACKS_RANGES,
+  type NowPlayingResponse,
   type SpotifyTrack,
   type TopTrackEntry,
   type TopTracksRange,
@@ -185,6 +188,23 @@ function aSpotifyTrack(overrides: Partial<SpotifyTrack> = {}): SpotifyTrack {
     external_urls: { spotify: 'https://open.spotify.com/track/track-1' },
     ...overrides,
   };
+}
+
+/**
+ * Spotify クライアントに取り込んだローカルファイル。Spotify はこれを id・external_urls・
+ * アーティストの id が空の形で返す（型の上では string だが、実際は null）。
+ * https://developer.spotify.com/documentation/web-api/concepts/playlists#local-files
+ */
+function aLocalFileTrack(): SpotifyTrack {
+  const none = null as unknown as string;
+  return aSpotifyTrack({
+    id: none,
+    is_local: true,
+    name: 'My Demo',
+    artists: [{ id: none, name: 'Local Artist', external_urls: {} as { spotify: string } }],
+    album: { name: 'Local Album', images: [], release_date: '' },
+    external_urls: {} as { spotify: string },
+  });
 }
 
 function aTopTrackEntry(overrides: Partial<TopTrackEntry> = {}): TopTrackEntry {
@@ -415,6 +435,70 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
     expect(result.is_playing).toBe(false);
     expect(result.track).toBeNull();
+  });
+
+  describe('ローカルファイル（Spotify のカタログに無い曲）', () => {
+    // id も spotify_url も無く公開スキーマを満たせないので、再生していない扱いにする。
+    it('再生していないことを返し、ジャンルも LLM も呼ばない', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('今チルな気分になっています');
+      givenNowPlaying(aLocalFileTrack());
+
+      const result = await collectNowPlaying();
+
+      expect(result).toMatchObject({ is_playing: false, track: null, mood: null });
+      expect(callsTo('/artists')).toHaveLength(0);
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+    });
+
+    it('/embed と /badge.svg は壊れずに描画できる', async () => {
+      givenNowPlaying(aLocalFileTrack());
+      const app = createApp();
+
+      const embed = await app.request('/embed');
+      nowPlayingCache.flushAll();
+      const badge = await app.request('/badge.svg');
+
+      expect(embed.status).toBe(200);
+      expect(await embed.text()).toContain('再生していません');
+      expect(badge.status).toBe(200);
+      expect(XMLValidator.validate(await badge.text())).toBe(true);
+    });
+
+    it('静的モードでは前回の曲を引き継いで生成を続ける', async () => {
+      const outDir = mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-local-'));
+      try {
+        const run = () =>
+          generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: true });
+        givenNowPlaying(aSpotifyTrack());
+        givenTopTracks([aSpotifyTrack()]);
+        await run();
+
+        handlers = [];
+        installDefaultHandlers();
+        givenNowPlaying(aLocalFileTrack());
+        givenTopTracks([aSpotifyTrack()]);
+        await run();
+
+        const snapshot = JSON.parse(readFileSync(join(outDir, 'snapshot.json'), 'utf8')) as {
+          state: string;
+          track: { name: string };
+        };
+        expect(snapshot.state).toBe('recent');
+        expect(snapshot.track.name).toBe('Midnight Drive');
+      } finally {
+        rmSync(outDir, { recursive: true, force: true });
+      }
+    });
+
+    it('再生履歴の先頭がローカルファイルなら採らない', async () => {
+      givenNowPlaying(null);
+      givenRecentlyPlayed(aLocalFileTrack(), NOW_ISO);
+
+      const recent = await collectRecentlyPlayed({ previous: null });
+
+      expect(recent).toBeNull();
+    });
   });
 
   it('複数アーティストはカンマ区切りにまとめる', async () => {
@@ -1653,6 +1737,49 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     });
   });
 
+  describe('トークン更新の失敗', () => {
+    // トークンはモジュール内にキャッシュされるので、API の 401 で取り直しを起こす
+    function givenTokenEndpointFails(status: number, body: string): void {
+      respondWith((url) =>
+        url.includes('/me/player/currently-playing') ? new Response('expired', { status: 401 }) : null
+      );
+      respondWith((url) =>
+        url.includes('accounts.spotify.com/api/token')
+          ? new Response(body, { status, headers: { 'content-type': 'application/json' } })
+          : null
+      );
+    }
+
+    it('refresh_token が失効（400 invalid_grant）なら、502 と再セットアップの案内を返す', async () => {
+      givenTokenEndpointFails(400, '{"error":"invalid_grant","error_description":"Refresh token revoked"}');
+
+      const res = await createApp().request('/api/now-playing');
+
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({
+        error: 'Spotify authentication failed. Re-run `npm run setup` to get a new refresh_token.',
+      });
+    });
+
+    it('Client ID / Secret の誤り（401 invalid_client）も認証エラーとして扱い、原因を区別できる', async () => {
+      givenTokenEndpointFails(401, '{"error":"invalid_client","error_description":"Invalid client"}');
+
+      await expect(spotifyFetch('/me/player/currently-playing')).rejects.toMatchObject({
+        name: 'SpotifyAuthError',
+        reason: 'invalid_client',
+      });
+    });
+
+    it('5xx は設定の問題ではないので、認証エラーにしない', async () => {
+      givenTokenEndpointFails(503, 'Service Unavailable');
+
+      const err = await spotifyFetch('/me/player/currently-playing').catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(SpotifyAuthError);
+    });
+  });
+
   it('204（本文なし）は null を返す', async () => {
     respondWith((url) =>
       url.includes('/me/player/currently-playing') ? new Response(null, { status: 204 }) : null
@@ -1805,6 +1932,48 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(res.headers.get('x-frame-options')).toBeNull();
   });
 
+  it('/embed のライブ更新は、タブが非表示の間は API を叩かず、表示に戻ったらすぐ取り直す', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const html = await (await createApp().request('/embed')).text();
+    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
+
+    // ブラウザの代わりに、スクリプトが触るものだけを用意して実行する
+    let hidden = true;
+    let onInterval: (() => void) | undefined;
+    let onVisibilityChange: (() => void) | undefined;
+    const fetched: string[] = [];
+    runInNewContext(script, {
+      document: {
+        get hidden() {
+          return hidden;
+        },
+        addEventListener: (type: string, fn: () => void) => {
+          if (type === 'visibilitychange') onVisibilityChange = fn;
+        },
+        getElementById: () => null,
+      },
+      setInterval: (fn: () => void) => {
+        onInterval = fn;
+        return 1;
+      },
+      fetch: (url: string) => {
+        fetched.push(url);
+        return new Promise(() => {});
+      },
+      location: { reload: () => {} },
+    });
+
+    onInterval!();
+    expect(fetched).toEqual([]);
+
+    hidden = false;
+    onVisibilityChange!();
+    expect(fetched).toEqual(['/api/now-playing']);
+
+    onInterval!();
+    expect(fetched).toHaveLength(2);
+  });
+
   it('/badge.svg は外部読み込みもスクリプトも許さない CSP を付ける', async () => {
     givenNowPlaying(aSpotifyTrack());
 
@@ -1848,5 +2017,115 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(escapeXml('x\uD800y\uDC00z')).toBe('xyz');
     // 対になったサロゲート（絵文字）は残す
     expect(escapeXml('🎧')).toBe('🎧');
+  });
+});
+
+describe('/embed のライブ更新は、表示を取得した内容と食い違わせない', () => {
+  function aNowPlaying(name: string, moodText: string | null): NowPlayingResponse {
+    return {
+      is_playing: true,
+      track: {
+        id: name,
+        name,
+        artist: 'Neon District',
+        album: 'After Hours',
+        album_art_url: ART_640,
+        duration_ms: 213_000,
+        popularity: null,
+        spotify_url: `https://open.spotify.com/track/${name}`,
+        preview_url: null,
+      },
+      mood: moodText ? { text: moodText, generated_at: NOW_ISO } : null,
+      fetched_at: NOW_ISO,
+    };
+  }
+
+  /**
+   * 初期表示 `initial` で描いたページのスクリプトを、ブラウザの代わりに最小限の DOM で動かし、
+   * 定期取得で `next` が返ってきたあとの状態を返す。
+   */
+  async function liveUpdate(initial: NowPlayingResponse, next: NowPlayingResponse) {
+    const html = renderEmbedPage({
+      nowPlaying: initial,
+      state: 'playing',
+      liveEndpoint: '/api/now-playing',
+    });
+    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
+
+    const elements: Record<string, { tagName: string; textContent: string; attrs: Record<string, string> }> =
+      {};
+    for (const id of ['card', 'label', 'label-text', 'mood', 'track', 'artist', 'art']) {
+      elements[id] = { tagName: id === 'card' ? 'A' : id === 'art' ? 'IMG' : 'P', textContent: '', attrs: {} };
+    }
+    if (initial.mood?.text) elements['mood']!.textContent = initial.mood.text;
+    else delete elements['mood'];
+
+    let onInterval: (() => void) | undefined;
+    let reloaded = false;
+    const document = {
+      hidden: false,
+      title: '',
+      addEventListener: () => {},
+      getElementById: (id: string) => {
+        const el = elements[id];
+        if (!el) return null;
+        return {
+          ...el,
+          get textContent() {
+            return el.textContent;
+          },
+          set textContent(value: string) {
+            el.textContent = value;
+          },
+          setAttribute: (name: string, value: string) => {
+            el.attrs[name] = value;
+          },
+          removeAttribute: (name: string) => {
+            delete el.attrs[name];
+          },
+        };
+      },
+    };
+    runInNewContext(script, {
+      document,
+      setInterval: (fn: () => void) => {
+        onInterval = fn;
+        return 1;
+      },
+      fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve(next) }),
+      location: {
+        reload: () => {
+          reloaded = true;
+        },
+      },
+    });
+
+    onInterval!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { reloaded, elements, title: document.title };
+  }
+
+  it('次の曲にムード文が無ければ、前の曲のムード文を残さない（読み込み直す）', async () => {
+    const result = await liveUpdate(aNowPlaying('A', 'A のムード'), aNowPlaying('B', null));
+
+    expect(result.reloaded).toBe(true);
+  });
+
+  it('最初はムード文が無く、後からムード文が返ってきたら表示する（読み込み直す）', async () => {
+    const result = await liveUpdate(aNowPlaying('A', null), aNowPlaying('A', 'あとから来たムード'));
+
+    expect(result.reloaded).toBe(true);
+  });
+
+  it('ムード文がある曲どうしなら、読み込み直さずに曲名・ムード文・aria-label・タイトルを差し替える', async () => {
+    const result = await liveUpdate(aNowPlaying('A', 'A のムード'), aNowPlaying('B', 'B のムード'));
+
+    expect(result.reloaded).toBe(false);
+    expect(result.elements['track']!.textContent).toBe('B');
+    expect(result.elements['mood']!.textContent).toBe('B のムード');
+    expect(result.elements['card']!.attrs['aria-label']).toBe(
+      '再生中: B のムード — B / Neon District（Spotifyで開く）'
+    );
+    expect(result.title).toBe('Now Playing: B / Neon District');
   });
 });

@@ -284,12 +284,15 @@ Cloudflare Workersの無料プラン（1日最大10万リクエスト）の範�
 
 ```bash
 npx wrangler login
-npm run deploy                                   # 初回デプロイ時にムード文保存用のKVネームスペースが自動生成されます
+npx wrangler kv namespace create MOODS           # ムード文の保存先を作成（表示された id を下記のとおり wrangler.jsonc に反映）
+npm run deploy
 npx wrangler secret put SPOTIFY_CLIENT_ID        # プロンプトに従って各値を設定
 npx wrangler secret put SPOTIFY_CLIENT_SECRET
 npx wrangler secret put SPOTIFY_REFRESH_TOKEN
 npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_MODEL / CORS_ORIGIN も同様）
 ```
+
+`wrangler.jsonc` の `kv_namespaces` に書かれている `id` は作者のアカウントのものです。KV ネームスペースの ID はアカウントごとに異なるため、フォークして自分のアカウントにデプロイする場合は、`npx wrangler kv namespace create MOODS` の出力に表示された `id` に差し替えてください（`binding` は `MOODS` のまま）。
 
 `npm run setup` を実行済みの場合は、`npx wrangler secret bulk .env` で一括登録できます。
 
