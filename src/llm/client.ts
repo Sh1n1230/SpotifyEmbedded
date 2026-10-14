@@ -68,7 +68,9 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
       });
     } catch (err) {
       if (err instanceof Error && err.name === 'TimeoutError') return 'timeout';
-      throw new Error(`LLMに接続できませんでした (${url}): ${(err as Error).message}`);
+      throw new Error(`LLMに接続できませんでした (${url}): ${(err as Error).message}`, {
+        cause: err,
+      });
     }
   };
 

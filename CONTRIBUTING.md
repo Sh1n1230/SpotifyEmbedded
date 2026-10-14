@@ -9,6 +9,7 @@ CI（`.github/workflows/ci.yml`）と同じ検査を、同じ順番で手元で�
 ```bash
 npm ci --ignore-scripts
 npm run typecheck
+npm run lint
 npm test
 npm run build
 ```

@@ -14,6 +14,7 @@ npm run setup      # interactive OAuth setup (writes .env + data/auth.json, opti
 npm run generate   # generate static artifacts into ./out
 npm run auth       # legacy: start server with OAuth routes enabled
 npm run typecheck  # TypeScript type check without emitting
+npm run lint       # ESLint (typescript-eslint, type-aware; public/embed.js as ES5)
 npm test           # run the spec suite (vitest)
 ```
 

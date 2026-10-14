@@ -31,6 +31,8 @@ function clientKey(c: Context): string {
 /** IPごとの固定ウィンドウ。単一プロセスなのでメモリで足りる。 */
 function memoryRateLimiter(): RateLimiter {
   const windows = new Map<string, { count: number; resetAt: number }>();
+  // RateLimiter は KV を待つ Workers 版と同じ Promise を返す型なので、await が無くても async にしておく
+  // eslint-disable-next-line @typescript-eslint/require-await -- 型を揃えるため
   return async (c) => {
     const key = clientKey(c);
     const now = Date.now();

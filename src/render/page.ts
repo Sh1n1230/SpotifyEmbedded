@@ -248,7 +248,7 @@ function renderCardMarkup(
 </a>`;
 }
 
-function renderRanking(topTracks: TopTracksResponse, rankingCount?: number | undefined): string {
+function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): string {
   const fetchedAt = new Date(topTracks.fetched_at);
   const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
   const count = Math.min(Math.max(rankingCount ?? DEFAULT_RANKING_COUNT, 1), MAX_RANKING_COUNT);
