@@ -24,6 +24,8 @@ The same core powers both. This split is the product's core idea — don't colla
 - **Static mode** (no server): `src/cli/generate.ts` → SVG / JSON / YAML / HTML, published by
   `.github/workflows/update-spotify.yml` to the `spotify-data` branch. `now-playing.json` uses
   the *identical* schema as the live API so consumers can swap URLs.
+  `last-played.json` / `.yaml` (`{ track, mood, played_at }`, static-only) mirror the card's
+  track from `snapshot.json`, so the JSON consumers get "last played" without changing that schema.
 - **Live API mode is now-playing only** (`/api/now-playing`, `/badge.svg`, `/embed`, `embed.js`).
   Rankings are static-only by design: they aggregate weeks-to-a-year, so they don't need
   per-second freshness. Don't add ranking routes back to the live API.

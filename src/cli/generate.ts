@@ -6,6 +6,7 @@
  *
  * JSON はライブAPIと完全に同じスキーマ（src/types/index.ts）なので、
  * 利用側は fetch 先のURLを差し替えるだけで静的↔ライブを行き来できる。
+ * カードと同じ「最後に聴いた曲」は、スキーマを変えないよう last-played.json に分けて書く。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -74,6 +75,22 @@ interface Snapshot {
 }
 
 const SNAPSHOT_FILE = 'snapshot.json';
+
+/**
+ * last-played.json / .yaml の中身。静的モード専用で、ライブAPIには無い。
+ *
+ * now-playing.json は Actions の実行時点の生の応答なので、停止中はほぼ track: null になる。
+ * こちらは SVG・index.html と同じ曲（snapshot）を返す。
+ * - 再生中: 再生中の曲。played_at は取得時刻
+ * - 停止中: 最後に聴いた曲。played_at は聴き終えた時刻（履歴由来）か、
+ *   前回の実行で再生中と観測した時刻（引き継ぎ）
+ * - 履歴も前回データも無い: すべて null
+ */
+export interface LastPlayed {
+  track: TrackSummary | null;
+  mood: MoodResult | null;
+  played_at: string | null;
+}
 
 export async function generate(options: GenerateOptions): Promise<void> {
   const outDir = resolve(options.outDir);
@@ -170,6 +187,11 @@ export async function generate(options: GenerateOptions): Promise<void> {
   write(outDir, 'now-playing.yaml', yaml.dump(nowPlaying, { lineWidth: 120 }));
   write(outDir, 'top-tracks.yaml', yaml.dump(topTracks, { lineWidth: 120 }));
 
+  // カードと同じ「最後に聴いた曲」（now-playing.json のスキーマは変えない）
+  const lastPlayed = snapshotToLastPlayed(snapshot);
+  write(outDir, 'last-played.json', JSON.stringify(lastPlayed, null, 2) + '\n');
+  write(outDir, 'last-played.yaml', yaml.dump(lastPlayed, { lineWidth: 120 }));
+
   // iframe 用ページ（ホバー・Spotifyリンクが効く）
   write(
     outDir,
@@ -239,6 +261,12 @@ function snapshotToResponse(
     mood: snapshot.mood,
     fetched_at: nowPlaying.fetched_at,
   };
+}
+
+/** last-played.json には、SVGと同じ曲をそのまま出す。 */
+function snapshotToLastPlayed(snapshot: Snapshot): LastPlayed {
+  if (!snapshot.track) return { track: null, mood: null, played_at: null };
+  return { track: snapshot.track, mood: snapshot.mood, played_at: snapshot.observed_at };
 }
 
 function readSnapshot(outDir: string): Snapshot | null {
