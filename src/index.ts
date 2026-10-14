@@ -88,3 +88,30 @@ server.on('error', (err: NodeJS.ErrnoException) => {
   }
   throw err;
 });
+
+/** 処理中のリクエストを待つ上限。超えたら強制終了する（docker stop の既定の猶予は10秒）。 */
+const SHUTDOWN_TIMEOUT_MS = 5000;
+
+/**
+ * Docker では Node が PID 1 になり、ハンドラの無い SIGTERM / SIGINT では終了しない
+ * （docker stop が猶予時間いっぱい待たされ、SIGKILL で切られる）。
+ * https://github.com/nodejs/docker-node/blob/main/docs/BestPractices.md#handling-kernel-signals
+ *
+ * 新規の接続を止め、処理中のリクエストが終わったら終了する。
+ */
+let shuttingDown = false;
+
+function shutdown(signal: NodeJS.Signals): void {
+  // 2回目のシグナル（Ctrl-C の連打など）は待たずに止める
+  if (shuttingDown) process.exit(1);
+  shuttingDown = true;
+  console.log('終了します:', signal);
+  server.close(() => process.exit(0));
+  setTimeout(() => {
+    console.error('処理中のリクエストが終わらないため、強制終了します。');
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS).unref();
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

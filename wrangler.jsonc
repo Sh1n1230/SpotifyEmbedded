@@ -15,7 +15,9 @@
 	"assets": {
 		"directory": "./public"
 	},
-	// ムード文の保存先。id を書かなければ初回の `wrangler deploy` で自動作成される
+	// ムード文の保存先。この id は作者の Cloudflare アカウントの namespace（ID はアカウントごと）。
+	// フォークして自分のアカウントにデプロイする場合は `npx wrangler kv namespace create MOODS`
+	// で作成し、表示された id に差し替える（手順は README「Cloudflare Workers」）。
 	"kv_namespaces": [
 		{
 			"binding": "MOODS",
