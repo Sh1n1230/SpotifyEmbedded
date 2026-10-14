@@ -26,7 +26,6 @@ import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import type {
   MoodResult,
   NowPlayingResponse,
-  TopTracksResponse,
   TopTracksLimit,
   TopTracksRange,
   TrackSummary,

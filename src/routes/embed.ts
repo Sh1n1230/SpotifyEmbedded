@@ -146,8 +146,8 @@ router.get('/embed', async (c) => {
   );
 });
 
-function parseRefresh(raw: unknown): number {
-  const value = Number.parseInt(String(raw ?? ''), 10);
+function parseRefresh(raw: string | undefined): number {
+  const value = Number.parseInt(raw ?? '', 10);
   if (Number.isNaN(value)) return 30;
   return Math.min(Math.max(value, 10), 3600);
 }

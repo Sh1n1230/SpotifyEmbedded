@@ -24,5 +24,6 @@ jobs:
       # 依存の install スクリプトは走らせない（どれも無しで動く）
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - run: npm run build
