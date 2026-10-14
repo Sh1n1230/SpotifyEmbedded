@@ -28,7 +28,17 @@ export interface CardInput {
   theme?: ThemeName | undefined;
   /** 背景を透過するかどうか。既定値は true */
   transparent?: boolean | undefined;
+  /**
+   * Spotify から取得できなかった（ライブAPIの /badge.svg）。idle と同じ見た目で、
+   * 「再生していません」ではなく取得できなかったことを表示する。
+   */
+  unavailable?: boolean | undefined;
 }
+
+/** 取得に失敗したときの表示。/embed（page.ts）とも共有する。 */
+export const UNAVAILABLE_LABEL = 'UNAVAILABLE';
+export const UNAVAILABLE_TEXT = '取得できませんでした';
+const IDLE_TEXT = '再生していません';
 
 const WIDTH = 460;
 const HEIGHT = 160;
@@ -43,14 +53,16 @@ export function renderNowPlayingCard(input: CardInput): string {
   const isTransparent = input.transparent ?? true;
   const bgFill = isTransparent ? 'none' : theme.bg;
 
-  const label = labelFor(state, input.since);
-  const hasArt = state !== 'idle';
+  const unavailable = input.unavailable === true;
+  const label = unavailable ? UNAVAILABLE_LABEL : labelFor(state, input.since);
+  const hasArt = state !== 'idle' && !unavailable;
+  const idleText = unavailable ? UNAVAILABLE_TEXT : IDLE_TEXT;
 
-  const body = state === 'idle' || !track
-    ? renderIdleBody(theme.muted)
+  const body = state === 'idle' || !track || unavailable
+    ? renderIdleBody(theme.muted, idleText)
     : renderTrackBody(track, mood, theme);
 
-  const ariaLabel = buildAriaLabel(state, track, mood);
+  const ariaLabel = unavailable ? idleText : buildAriaLabel(state, track, mood);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
@@ -168,8 +180,8 @@ function renderTrackBody(track: TrackSummary, mood: MoodResult | null, theme: Th
   return parts.join('\n    ');
 }
 
-function renderIdleBody(muted: string): string {
-  return `<text x="${PAD}" y="84" font-size="17" font-weight="700" fill="${muted}">再生していません</text>`;
+function renderIdleBody(muted: string, text: string): string {
+  return `<text x="${PAD}" y="84" font-size="17" font-weight="700" fill="${muted}">${escapeXml(text)}</text>`;
 }
 
 function buildAriaLabel(
@@ -177,7 +189,7 @@ function buildAriaLabel(
   track: TrackSummary | null,
   mood: MoodResult | null
 ): string {
-  if (!track) return '再生していません';
+  if (!track) return IDLE_TEXT;
   const prefix = state === 'playing' ? '再生中' : '最後に再生';
   const moodText = mood?.text ? `${mood.text} — ` : '';
   return `${prefix}: ${moodText}${track.name} / ${track.artist}`;

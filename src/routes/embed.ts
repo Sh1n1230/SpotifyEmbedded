@@ -16,6 +16,7 @@ import { renderEmbedPage } from '../render/page.js';
 import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
+import type { NowPlayingResponse } from '../types/index.js';
 
 const router = new Hono();
 
@@ -74,8 +75,32 @@ async function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | nu
   return dataUri;
 }
 
+/**
+ * /badge.svg は README の <img>、/embed は他サイトの <iframe> から読まれる。どちらも
+ * JSON のエラーは描けず、壊れた画像や生の JSON に見えてしまうので、Spotify 側の失敗
+ * （認証切れ・429・5xx など）でも「取得できませんでした」のカードを 200 で返す。
+ * camo は 2xx 以外の画像を表示しないため、失敗の事実はヘッダーで示す。
+ * 詳細はログにだけ出す。/api/now-playing は従来どおり JSON のエラーを返す。
+ */
+const ERROR_HEADER = 'X-Spotify-Embedded-Error';
+
+async function nowPlayingOrNull(c: Context): Promise<NowPlayingResponse | null> {
+  try {
+    return await collectNowPlaying();
+  } catch (err) {
+    console.error('[embed] 再生状況を取得できませんでした:', err instanceof Error ? err.message : err);
+    c.header(ERROR_HEADER, 'spotify_unavailable');
+    return null;
+  }
+}
+
 router.get('/badge.svg', async (c) => {
-  const data = await collectNowPlaying();
+  const theme = resolveTheme(c.req.query('theme'));
+  const data = await nowPlayingOrNull(c);
+  if (!data) {
+    return sendSvg(c, renderNowPlayingCard({ state: 'idle', track: null, mood: null, theme, unavailable: true }));
+  }
+
   const state: PlaybackState = data.is_playing && data.track ? 'playing' : 'idle';
   const art = data.track?.album_art_url ? await cachedArt(data.track.album_art_url, 300) : null;
 
@@ -87,13 +112,19 @@ router.get('/badge.svg', async (c) => {
       mood: data.mood,
       since: data.fetched_at,
       artDataUri: art,
-      theme: resolveTheme(c.req.query('theme')),
+      theme,
     })
   );
 });
 
 router.get('/embed', async (c) => {
-  const nowPlaying = await collectNowPlaying();
+  const fetched = await nowPlayingOrNull(c);
+  const nowPlaying: NowPlayingResponse = fetched ?? {
+    is_playing: false,
+    track: null,
+    mood: null,
+    fetched_at: new Date().toISOString(),
+  };
 
   const state: PlaybackState = nowPlaying.is_playing && nowPlaying.track ? 'playing' : 'idle';
   const nonce = makeNonce();
@@ -110,6 +141,7 @@ router.get('/embed', async (c) => {
       liveEndpoint: '/api/now-playing',
       refreshSeconds: parseRefresh(c.req.query('refresh')),
       scriptNonce: nonce,
+      unavailable: fetched === null,
     })
   );
 });

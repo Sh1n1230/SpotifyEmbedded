@@ -1984,6 +1984,49 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     );
   });
 
+  describe('Spotify 側が失敗しても、画像と iframe は壊れて見えない', () => {
+    // README の <img> は JSON を描けず、iframe には生の JSON が出てしまう
+    beforeEach(() => {
+      respondWith((url) =>
+        url.includes('/me/player/currently-playing')
+          ? new Response('upstream detail: do-not-leak', { status: 503 })
+          : null
+      );
+    });
+
+    it('/badge.svg は「取得できませんでした」の SVG を 200 で返し、失敗はヘッダーで示す', async () => {
+      const res = await createApp().request('/badge.svg');
+      const svg = await res.text();
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('image/svg+xml');
+      expect(res.headers.get('x-spotify-embedded-error')).toBe('spotify_unavailable');
+      expect(XMLValidator.validate(svg)).toBe(true);
+      expect(svg).toContain('取得できませんでした');
+      expect(svg).not.toContain('do-not-leak');
+    });
+
+    it('/embed は「取得できませんでした」のカードを HTML で返す', async () => {
+      const res = await createApp().request('/embed');
+      const html = await res.text();
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(res.headers.get('x-spotify-embedded-error')).toBe('spotify_unavailable');
+      expect(html).toContain('取得できませんでした');
+      expect(html).not.toContain('do-not-leak');
+      // 次の周期で回復できるよう、ライブ更新のスクリプトは残す
+      expect(html).toContain('/api/now-playing');
+    });
+
+    it('/api/now-playing は従来どおり JSON のエラーを返す', async () => {
+      const res = await createApp().request('/api/now-playing');
+
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({ error: 'Spotify API request failed', spotify_status: 503 });
+    });
+  });
+
   describe('/auth（ENABLE_AUTH_ROUTES=true のときだけ）', () => {
     beforeEach(() => vi.stubEnv('ENABLE_AUTH_ROUTES', 'true'));
 

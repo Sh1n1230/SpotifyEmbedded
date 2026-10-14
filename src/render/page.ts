@@ -19,7 +19,7 @@ import { rangeLabelEn } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, relativeTimeJa, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
 import { albumArtAtSize } from './image.js';
-import type { PlaybackState } from './card.js';
+import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, type PlaybackState } from './card.js';
 
 export interface PageInput {
   nowPlaying: NowPlayingResponse;
@@ -38,6 +38,8 @@ export interface PageInput {
   refreshSeconds?: number | undefined;
   /** ランキングの表示件数。1〜50、既定5。 */
   rankingCount?: number | undefined;
+  /** Spotify から取得できなかった（ライブAPIの /embed）。曲なしのカードに理由を出す。 */
+  unavailable?: boolean | undefined;
 }
 
 export function renderEmbedPage(input: PageInput): string {
@@ -47,11 +49,15 @@ export function renderEmbedPage(input: PageInput): string {
   const track = nowPlaying.track;
   const mood = nowPlaying.mood;
 
-  const label = state === 'playing'
-    ? 'NOW PLAYING'
-    : state === 'recent'
-      ? `LAST PLAYED${input.since ? ` · ${relativeTimeJa(new Date(input.since))}` : ''}`
-      : 'NOTHING PLAYING';
+  const unavailable = input.unavailable === true && !track;
+  const label = unavailable
+    ? UNAVAILABLE_LABEL
+    : state === 'playing'
+      ? 'NOW PLAYING'
+      : state === 'recent'
+        ? `LAST PLAYED${input.since ? ` · ${relativeTimeJa(new Date(input.since))}` : ''}`
+        : 'NOTHING PLAYING';
+  const idleText = unavailable ? UNAVAILABLE_TEXT : '再生していません';
 
   const rankingSection = topTracks && topTracks.tracks.length > 0
     ? renderRanking(topTracks, input.rankingCount)
@@ -63,7 +69,7 @@ export function renderEmbedPage(input: PageInput): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="${themeName}">
-<title>${escapeXml(buildTitle(state, track?.name, track?.artist))}</title>
+<title>${escapeXml(unavailable ? idleText : buildTitle(state, track?.name, track?.artist))}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -192,7 +198,7 @@ export function renderEmbedPage(input: PageInput): string {
 </style>
 </head>
 <body>
-${renderCardMarkup(track, mood, state, label)}
+${renderCardMarkup(track, mood, state, label, idleText)}
 ${rankingSection}
 ${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null, Boolean(mood?.text), input.scriptNonce) : ''}
 </body>
@@ -204,7 +210,8 @@ function renderCardMarkup(
   track: NowPlayingResponse['track'],
   mood: NowPlayingResponse['mood'],
   state: PlaybackState,
-  label: string
+  label: string,
+  idleText: string
 ): string {
   // イコライザは常に描き、表示・非表示は #label の data-playing に任せる。
   // ライブ更新で再生が始まった/止まったときにDOMを作り直さずに済む。
@@ -216,7 +223,7 @@ function renderCardMarkup(
   <div class="art-placeholder">no art</div>
   <div class="body">
     <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
-    <p class="idle" id="mood">再生していません</p>
+    <p class="idle" id="mood">${escapeXml(idleText)}</p>
   </div>
 </div>`;
   }
@@ -332,7 +339,13 @@ function renderLiveScript(
       location.reload();
       return;
     }
-    if (!track) return;
+    if (!track) {
+      // 取得できなかった表示から回復したときのため、文言を戻す
+      setText('label-text', 'NOTHING PLAYING');
+      setText('mood', '再生していません');
+      document.title = '再生していません';
+      return;
+    }
 
     var playing = !!data.is_playing;
     setText('label-text', playing ? 'NOW PLAYING' : 'LAST PLAYED');
