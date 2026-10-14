@@ -343,6 +343,7 @@ function renderLiveScript(
       // 取得できなかった表示から回復したときのため、文言を戻す
       setText('label-text', 'NOTHING PLAYING');
       setText('mood', '再生していません');
+      document.title = '再生していません';
       return;
     }
 
