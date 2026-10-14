@@ -42,6 +42,7 @@ import { createApp } from './app.js';
 import { escapeXml } from './render/text.js';
 import { renderNowPlayingCard } from './render/card.js';
 import { renderRankingCard } from './render/ranking.js';
+import { renderEmbedPage } from './render/page.js';
 import {
   SpotifyApiError,
   SpotifyAuthError,
@@ -50,6 +51,7 @@ import {
 import { resetArtistGenreAvailability } from './spotify/artists.js';
 import {
   TOP_TRACKS_RANGES,
+  type NowPlayingResponse,
   type SpotifyTrack,
   type TopTrackEntry,
   type TopTracksRange,
@@ -1967,5 +1969,115 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(escapeXml('x\uD800y\uDC00z')).toBe('xyz');
     // 対になったサロゲート（絵文字）は残す
     expect(escapeXml('🎧')).toBe('🎧');
+  });
+});
+
+describe('/embed のライブ更新は、表示を取得した内容と食い違わせない', () => {
+  function aNowPlaying(name: string, moodText: string | null): NowPlayingResponse {
+    return {
+      is_playing: true,
+      track: {
+        id: name,
+        name,
+        artist: 'Neon District',
+        album: 'After Hours',
+        album_art_url: ART_640,
+        duration_ms: 213_000,
+        popularity: null,
+        spotify_url: `https://open.spotify.com/track/${name}`,
+        preview_url: null,
+      },
+      mood: moodText ? { text: moodText, generated_at: NOW_ISO } : null,
+      fetched_at: NOW_ISO,
+    };
+  }
+
+  /**
+   * 初期表示 `initial` で描いたページのスクリプトを、ブラウザの代わりに最小限の DOM で動かし、
+   * 定期取得で `next` が返ってきたあとの状態を返す。
+   */
+  async function liveUpdate(initial: NowPlayingResponse, next: NowPlayingResponse) {
+    const html = renderEmbedPage({
+      nowPlaying: initial,
+      state: 'playing',
+      liveEndpoint: '/api/now-playing',
+    });
+    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
+
+    const elements: Record<string, { tagName: string; textContent: string; attrs: Record<string, string> }> =
+      {};
+    for (const id of ['card', 'label', 'label-text', 'mood', 'track', 'artist', 'art']) {
+      elements[id] = { tagName: id === 'card' ? 'A' : id === 'art' ? 'IMG' : 'P', textContent: '', attrs: {} };
+    }
+    if (initial.mood?.text) elements['mood']!.textContent = initial.mood.text;
+    else delete elements['mood'];
+
+    let onInterval: (() => void) | undefined;
+    let reloaded = false;
+    const document = {
+      hidden: false,
+      title: '',
+      addEventListener: () => {},
+      getElementById: (id: string) => {
+        const el = elements[id];
+        if (!el) return null;
+        return {
+          ...el,
+          get textContent() {
+            return el.textContent;
+          },
+          set textContent(value: string) {
+            el.textContent = value;
+          },
+          setAttribute: (name: string, value: string) => {
+            el.attrs[name] = value;
+          },
+          removeAttribute: (name: string) => {
+            delete el.attrs[name];
+          },
+        };
+      },
+    };
+    runInNewContext(script, {
+      document,
+      setInterval: (fn: () => void) => {
+        onInterval = fn;
+        return 1;
+      },
+      fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve(next) }),
+      location: {
+        reload: () => {
+          reloaded = true;
+        },
+      },
+    });
+
+    onInterval!();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { reloaded, elements, title: document.title };
+  }
+
+  it('次の曲にムード文が無ければ、前の曲のムード文を残さない（読み込み直す）', async () => {
+    const result = await liveUpdate(aNowPlaying('A', 'A のムード'), aNowPlaying('B', null));
+
+    expect(result.reloaded).toBe(true);
+  });
+
+  it('最初はムード文が無く、後からムード文が返ってきたら表示する（読み込み直す）', async () => {
+    const result = await liveUpdate(aNowPlaying('A', null), aNowPlaying('A', 'あとから来たムード'));
+
+    expect(result.reloaded).toBe(true);
+  });
+
+  it('ムード文がある曲どうしなら、読み込み直さずに曲名・ムード文・aria-label・タイトルを差し替える', async () => {
+    const result = await liveUpdate(aNowPlaying('A', 'A のムード'), aNowPlaying('B', 'B のムード'));
+
+    expect(result.reloaded).toBe(false);
+    expect(result.elements['track']!.textContent).toBe('B');
+    expect(result.elements['mood']!.textContent).toBe('B のムード');
+    expect(result.elements['card']!.attrs['aria-label']).toBe(
+      '再生中: B のムード — B / Neon District（Spotifyで開く）'
+    );
+    expect(result.title).toBe('Now Playing: B / Neon District');
   });
 });
