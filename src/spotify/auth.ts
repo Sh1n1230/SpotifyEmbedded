@@ -1,4 +1,7 @@
 import { config } from '../config.js';
+import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
+
+const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 interface TokenState {
   accessToken: string;
@@ -58,17 +61,22 @@ async function fetchAccessToken(): Promise<TokenState> {
     `${config.spotify.clientId}:${config.spotify.clientSecret}`
   ).toString('base64');
 
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+  const res = await fetchWithTimeout(
+    TOKEN_URL,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: config.spotify.refreshToken,
+      }),
     },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: config.spotify.refreshToken,
-    }),
-  });
+    SPOTIFY_TIMEOUT_MS,
+    TOKEN_URL
+  );
 
   if (!res.ok) {
     const body = await res.text();

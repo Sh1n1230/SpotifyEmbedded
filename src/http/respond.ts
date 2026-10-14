@@ -1,6 +1,11 @@
 import type { Context } from 'hono';
 import yaml from 'js-yaml';
-import { SpotifyApiError, SpotifyAuthError, SpotifyRateLimitError } from '../spotify/client.js';
+import {
+  SpotifyApiError,
+  SpotifyAuthError,
+  SpotifyRateLimitError,
+  SpotifyTimeoutError,
+} from '../spotify/client.js';
 
 function wantsYaml(c: Context): boolean {
   if (c.req.query('format') === 'yaml') return true;
@@ -40,6 +45,12 @@ export function handleError(err: unknown, c: Context): Response {
   // Spotify 由来の失敗は、こちらのバグではなく相手側の応答なので 502 で返し、
   // ステータス（403 など）だけ伝える。本文の詳細はサーバーのログにだけ出す
   // （外部 API の応答本文を公開エンドポイントにそのまま流さない）。
+  // Spotify が時間内に応答しなかった。上流の時間切れなので 504。
+  if (err instanceof SpotifyTimeoutError) {
+    console.error('[spotify]', err.message);
+    return c.json({ error: 'Spotify API timed out' }, 504);
+  }
+
   if (err instanceof SpotifyApiError) {
     console.error('[spotify]', err.message);
     return c.json({ error: 'Spotify API request failed', spotify_status: err.status }, 502);
