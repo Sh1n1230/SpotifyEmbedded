@@ -1,0 +1,39 @@
+{
+  "state": "recent",
+  "source": "history",
+  "track": {
+    "id": "76gcXhY3Zv6wW0BTe9nHJo",
+    "name": "TIL FURTHER NOTICE (feat. James Blake & 21 Savage)",
+    "artist": "Travis Scott, James Blake, 21 Savage",
+    "album": "UTOPIA",
+    "album_art_url": "https://i.scdn.co/image/ab67616d0000b27304481c826dd292e5e4983b3f",
+    "duration_ms": 314836,
+    "popularity": null,
+    "spotify_url": "https://open.spotify.com/track/76gcXhY3Zv6wW0BTe9nHJo",
+    "preview_url": null
+  },
+  "mood": {
+    "text": "ダークで気だるいビートに浸っているようです",
+    "generated_at": "2026-10-17T10:33:07.188Z"
+  },
+  "observed_at": "2026-10-17T10:41:52.381Z",
+  "ranking_mood": {
+    "range": "short_term",
+    "track_ids": [
+      "2k6OpEcFV2VvXdVmPRNCiw",
+      "6gzIcEUuswJQGfJNPYMjjv",
+      "40T5GIqQ1CegGm2PTEl8Bu",
+      "7vG8zjbeQmwCe4azzU77oU",
+      "3VlnuNS63lYRcttmEJpLb0",
+      "285pBltuF7vW8TeWk8hdRR",
+      "3g787Pbss2un5f6kgbuqol",
+      "1Is7yXk0ROtMfqbvsclKCA",
+      "6Vbl17X8kTUmZDqaZXqC07",
+      "1mdY7BAmjQ2DLsjGKG33az"
+    ],
+    "mood": {
+      "text": "最近、ダークでノイジーなサウンドに没入しているようです",
+      "generated_at": "2026-10-13T12:59:11.033Z"
+    }
+  }
+}
