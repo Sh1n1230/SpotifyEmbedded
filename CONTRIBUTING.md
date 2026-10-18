@@ -44,4 +44,4 @@ git tag v1.0.1
 git push origin v1.0.1
 ```
 
-Release のワークフローが型検査とビルドを行い、npm パッケージのアーカイブを添付して、GitHub Release のリリースノートを自動生成します。
+Release のワークフローは、タグと `package.json`・`package-lock.json` の `version` が一致しないと失敗します。一致していれば、CI と同じ型検査・lint・テスト・ビルドを行い、npm パッケージのアーカイブを添付して、GitHub Release のリリースノートを自動生成します。

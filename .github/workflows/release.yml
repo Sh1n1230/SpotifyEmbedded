@@ -24,7 +24,19 @@ jobs:
           cache: npm
 
       - run: npm ci --ignore-scripts
+
+      - name: タグと package.json の版が一致しているか確かめる
+        run: |
+          package_version="v$(node -p "require('./package.json').version")"
+          lock_version="v$(node -p "require('./package-lock.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$package_version" ] || [ "$GITHUB_REF_NAME" != "$lock_version" ]; then
+            echo "::error::タグ $GITHUB_REF_NAME と package.json（$package_version）・package-lock.json（$lock_version）の版が一致しません"
+            exit 1
+          fi
+
       - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
       - run: npm run build
 
       - name: Pack npm artifact
