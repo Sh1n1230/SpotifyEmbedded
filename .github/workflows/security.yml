@@ -21,4 +21,4 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: Sh1n1230/security-checker@491dbb07119b5ad9823d92c3bbc95855c65b6149 # v1.1.0
+      - uses: Sh1n1230/security-checker@318c3995733ddb59dc065b497ac9ac07bbe49484 # v2.1.0
