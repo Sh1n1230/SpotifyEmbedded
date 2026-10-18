@@ -52,19 +52,6 @@ export function resolveTheme(name: string | undefined): ThemeName {
 export const FONT_STACK =
   "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', 'Segoe UI', 'Yu Gothic UI', sans-serif";
 
-/** 「たった今」「約2時間前」のような相対時刻。静的モードの鮮度表示に使う。 */
-export function relativeTimeJa(from: Date, now: Date = new Date()): string {
-  const minutes = Math.floor((now.getTime() - from.getTime()) / 60000);
-  if (minutes < 1) return 'たった今';
-  if (minutes < 60) return `${minutes}分前`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `約${hours}時間前`;
-
-  const days = Math.floor(hours / 24);
-  return `${days}日前`;
-}
-
 /**
  * 表示は日本語向けなので日本時間に固定する。実行環境のローカル時刻に任せると、
  * UTC で動く GitHub Actions では 0〜9 時（JST）の生成が前日の日付になる。
@@ -79,4 +66,24 @@ const DATE_FORMAT_JST = new Intl.DateTimeFormat('en-CA', {
 /** SVGのタイトル等に使う日付表記（YYYY-MM-DD、日本時間）。 */
 export function formatDateJa(date: Date): string {
   return DATE_FORMAT_JST.format(date);
+}
+
+const DATETIME_FORMAT_JST = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Tokyo',
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/**
+ * 「10/16 21:04」のような日時（日本時間）。静的モードの「最後に聴いた」時刻に使う。
+ * 静的な生成物は数時間おきにしか作り直されないので、生成時刻を基準にした
+ * 「約1時間前」を焼き込むと、閲覧時には実際より新しく見えてしまう。
+ */
+export function formatDateTimeJa(date: Date): string {
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    DATETIME_FORMAT_JST.formatToParts(date).find((p) => p.type === type)?.value ?? '';
+  return `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
 }

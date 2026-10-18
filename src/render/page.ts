@@ -16,7 +16,7 @@ import {
   type TopTracksResponse,
 } from '../types/index.js';
 import { rangeLabelEn } from '../core/topTracksParams.js';
-import { THEMES, FONT_STACK, relativeTimeJa, formatDateJa, type ThemeName } from './theme.js';
+import { THEMES, FONT_STACK, formatDateTimeJa, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
 import { albumArtAtSize } from './image.js';
 import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, type PlaybackState } from './card.js';
@@ -55,7 +55,7 @@ export function renderEmbedPage(input: PageInput): string {
     : state === 'playing'
       ? 'NOW PLAYING'
       : state === 'recent'
-        ? `LAST PLAYED${input.since ? ` · ${relativeTimeJa(new Date(input.since))}` : ''}`
+        ? `LAST PLAYED${input.since ? ` · ${formatDateTimeJa(new Date(input.since))}` : ''}`
         : 'NOTHING PLAYING';
   const idleText = unavailable ? UNAVAILABLE_TEXT : '再生していません';
 
