@@ -655,6 +655,39 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
     expect(svg).toContain('1 YEAR');
   });
 
+  it('「◯◯時点」の日付は、実行環境のタイムゾーンによらず日本時間で出る', () => {
+    // GitHub Actions は UTC。21:30Z は日本時間で翌日の 6:30
+    const originalTz = process.env['TZ'];
+    process.env['TZ'] = 'UTC';
+    try {
+      const fetchedAt = '2026-10-16T21:30:00Z';
+      const svg = renderRankingCard({
+        tracks: [aTopTrackEntry()],
+        fetchedAt,
+        range: 'short_term',
+        count: 5,
+      });
+      const html = renderEmbedPage({
+        nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: fetchedAt },
+        topTracks: {
+          range: 'short_term',
+          limit: 10,
+          fetched_at: fetchedAt,
+          mood: null,
+          tracks: [aTopTrackEntry()],
+        },
+        state: 'idle',
+      });
+
+      expect(svg).toContain('2026-10-17 時点');
+      expect(svg).not.toContain('2026-10-16');
+      expect(html).toContain('2026-10-17 時点');
+    } finally {
+      if (originalTz === undefined) delete process.env['TZ'];
+      else process.env['TZ'] = originalTz;
+    }
+  });
+
   it('dark / light の2テーマを描ける', () => {
     const dark = render([aTopTrackEntry()]);
     const light = renderRankingCard({
