@@ -109,7 +109,8 @@ npm run setup
 ```html
 <!-- Webサイトへの埋め込み（ホバー表示やSpotifyリンクが動作します） -->
 <iframe src="https://<username>.github.io/SpotifyEmbedded/"
-        width="500" height="180" frameborder="0" loading="lazy"></iframe>
+        title="Spotify で最後に聴いた曲"
+        width="500" height="180" style="border: 0" loading="lazy"></iframe>
 ```
 
 ```js
@@ -207,7 +208,8 @@ npm run dev        # http://localhost:3000
 
 ```html
 <iframe src="https://your-api.example.com/embed?theme=dark"
-        width="500" height="180" frameborder="0"></iframe>
+        title="Spotify で再生中の曲"
+        width="500" height="180" style="border: 0" loading="lazy"></iframe>
 ```
 
 **SVG画像**（GitHub README等への埋め込み用）
