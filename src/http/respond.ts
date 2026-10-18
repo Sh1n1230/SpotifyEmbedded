@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { accepts } from 'hono/accepts';
 import yaml from 'js-yaml';
 import {
   SpotifyApiError,
@@ -9,8 +10,13 @@ import {
 
 function wantsYaml(c: Context): boolean {
   if (c.req.query('format') === 'yaml') return true;
-  const accept = c.req.header('accept') ?? '';
-  return accept.includes('application/yaml') || accept.includes('text/yaml');
+  // 品質値を見る（`application/yaml;q=0` は「受け付けない」）。ヘッダー無しや */* は JSON
+  const type = accepts(c, {
+    header: 'Accept',
+    supports: ['application/json', 'application/yaml', 'text/yaml'],
+    default: 'application/json',
+  });
+  return type !== 'application/json';
 }
 
 /** JSON / YAML のコンテンツネゴシエーション。スキーマはどちらも同じ。 */
