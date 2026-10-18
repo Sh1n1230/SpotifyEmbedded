@@ -922,9 +922,13 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
 
       expect(snapshot['state']).toBe('recent');
       expect((snapshot['track'] as { name: string }).name).toBe('Morning Light');
-      // 「◯時間前」は聴き終えた時刻から数える
+      // 表示する時刻は聴き終えた時刻
       expect(snapshot['observed_at']).toBe(playedAt);
       expect(read('now-playing.svg')).toContain('Morning Light');
+      // 生成時刻を基準にした相対時刻ではなく、日本時間の日時を焼き込む（14:00Z = 23:00 JST）
+      expect(read('now-playing.svg')).toContain('LAST PLAYED · 9/21 23:00');
+      expect(read('now-playing-light.svg')).toContain('LAST PLAYED · 9/21 23:00');
+      expect(read('index.html')).toContain('LAST PLAYED · 9/21 23:00');
     });
 
     it('履歴が前回の観測より古ければ、前回の観測を引き継ぐ', async () => {
