@@ -30,7 +30,7 @@
     },
     light: {
       bg: '#ffffff', fg: '#11151a', sub: '#39424d', muted: '#6b7681',
-      accent: '#1aa34a', border: '#e4e8ed', placeholder: '#eceff3'
+      accent: '#15803d', border: '#e4e8ed', placeholder: '#eceff3'
     }
   };
 

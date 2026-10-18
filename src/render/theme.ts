@@ -33,7 +33,7 @@ export const THEMES = {
     fg: '#11151a',
     sub: '#39424d',
     muted: '#6b7681',
-    accent: '#1aa34a',
+    accent: '#15803d',
     border: '#e4e8ed',
     placeholder: '#eceff3',
   },
