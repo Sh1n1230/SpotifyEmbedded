@@ -719,10 +719,21 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
         'last-played.json',
         'last-played.yaml',
         'index.html',
+        'index-light.html',
         'snapshot.json',
       ]) {
         expect(read(name).length).toBeGreaterThan(0);
       }
+    });
+
+    it('iframe 用ページは、SVG と同じくダーク（index.html）とライト（index-light.html）の両方を書き出す', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+
+      await runGenerate();
+
+      expect(read('index.html')).toContain('<meta name="color-scheme" content="dark">');
+      expect(read('index-light.html')).toContain('<meta name="color-scheme" content="light">');
     });
 
     it('書き出したSVGはXMLとして妥当である', async () => {

@@ -191,19 +191,22 @@ export async function generate(options: GenerateOptions): Promise<void> {
   write(outDir, 'last-played.json', JSON.stringify(lastPlayed, null, 2) + '\n');
   write(outDir, 'last-played.yaml', yaml.dump(lastPlayed, { lineWidth: 120 }));
 
-  // iframe 用ページ（ホバー・Spotifyリンクが効く）
-  write(
-    outDir,
-    'index.html',
-    renderEmbedPage({
-      nowPlaying: snapshotToResponse(snapshot, nowPlaying),
-      topTracks,
-      state: snapshot.state,
-      since: snapshot.observed_at,
-      theme: options.theme === 'light' ? 'light' : 'dark',
-      rankingCount: options.count,
-    })
-  );
+  // iframe 用ページ（ホバー・Spotifyリンクが効く）。both のときはライトを -light に分ける
+  // （SVG と同じ命名）。単独指定のときは今までどおり index.html だけ
+  for (const theme of themes) {
+    write(
+      outDir,
+      theme === 'light' && options.theme === 'both' ? 'index-light.html' : 'index.html',
+      renderEmbedPage({
+        nowPlaying: snapshotToResponse(snapshot, nowPlaying),
+        topTracks,
+        state: snapshot.state,
+        since: snapshot.observed_at,
+        theme,
+        rankingCount: options.count,
+      })
+    );
+  }
 
   write(outDir, SNAPSHOT_FILE, JSON.stringify(snapshot, null, 2) + '\n');
 
