@@ -20,7 +20,8 @@
     target: script.getAttribute('data-target'),
     theme: script.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
     transparent: script.getAttribute('data-transparent') === 'true',
-    refresh: Math.max(parseInt(script.getAttribute('data-refresh') || '30', 10) || 30, 10)
+    // /embed の ?refresh= と同じく 10〜3600 秒。setInterval は約24.8日を超えると 0 扱いになる
+    refresh: Math.min(Math.max(parseInt(script.getAttribute('data-refresh') || '30', 10) || 30, 10), 3600)
   };
 
   var THEMES = {

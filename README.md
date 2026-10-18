@@ -201,7 +201,7 @@ npm run dev        # http://localhost:3000
 | `data-target` | (スクリプトの直後) | 描画先のCSSセレクタ |
 | `data-theme` | `dark` | テーマ（`dark` / `light`） |
 | `data-transparent` | `false` | `true` で背景を透過 |
-| `data-refresh` | `30` | 更新間隔（秒、最小値10） |
+| `data-refresh` | `30` | 更新間隔（秒、10〜3600） |
 
 **iframe**
 
@@ -273,7 +273,7 @@ if (data.is_playing) {
 
 | パス | 内容 | クエリパラメータ |
 |---|---|---|
-| `GET /embed` | iframe用HTML | `theme` `transparent` `refresh` |
+| `GET /embed` | iframe用HTML | `theme` `transparent` `refresh`（秒、10〜3600、既定30） |
 | `GET /badge.svg` | now-playingカード画像 | `theme` |
 | `GET /embed.js` | JavaScript埋め込みスクリプト | — |
 
