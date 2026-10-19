@@ -65,10 +65,18 @@ export function relativeTimeJa(from: Date, now: Date = new Date()): string {
   return `${days}日前`;
 }
 
-/** SVGのタイトル等に使う日付表記。 */
+/**
+ * 表示は日本語向けなので日本時間に固定する。実行環境のローカル時刻に任せると、
+ * UTC で動く GitHub Actions では 0〜9 時（JST）の生成が前日の日付になる。
+ */
+const DATE_FORMAT_JST = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** SVGのタイトル等に使う日付表記（YYYY-MM-DD、日本時間）。 */
 export function formatDateJa(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return DATE_FORMAT_JST.format(date);
 }
