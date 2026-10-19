@@ -111,6 +111,11 @@ npm run setup
 <iframe src="https://<username>.github.io/SpotifyEmbedded/"
         title="Spotify で最後に聴いた曲"
         width="500" height="180" style="border: 0" loading="lazy"></iframe>
+
+<!-- 明るい背景のサイトにはライトテーマ版 -->
+<iframe src="https://<username>.github.io/SpotifyEmbedded/index-light.html"
+        title="Spotify で最後に聴いた曲"
+        width="500" height="180" style="border: 0" loading="lazy"></iframe>
 ```
 
 ```js
@@ -125,7 +130,7 @@ const res = await fetch('https://<username>.github.io/SpotifyEmbedded/now-playin
 | `now-playing.json` / `.yaml` | ライブAPIと同一スキーマのJSON/YAML |
 | `last-played.json` / `.yaml` | カード画像と同じ「最後に聴いた曲」（`track` / `mood` / `played_at`）。静的モード限定 |
 | `top-tracks.json` / `.yaml` | ランキングデータ（静的モード限定） |
-| `index.html` | iframe用HTMLページ |
+| `index.html` / `index-light.html` | iframe用HTMLページ（ダーク / ライト） |
 
 楽曲の再生が停止している状態では、Spotifyの再生履歴（`recently-played`）から最後に聴き終えた楽曲を取得して表示します。ワークフローの実行が数時間おきでも、その間に聴いた曲を取りこぼしません。履歴を取得できない場合も、直前の観測結果を `snapshot.json` から引き継ぐため、非再生状態のプレースホルダーにはなりません。
 
