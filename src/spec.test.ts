@@ -1988,6 +1988,30 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(res.headers.get('vary')).toContain('Accept');
   });
 
+  it.each([
+    ['application/json, application/yaml;q=0.1', 'application/json'],
+    ['application/json, application/yaml;q=0', 'application/json'],
+    ['*/*', 'application/json'],
+    ['application/yaml', 'application/yaml'],
+    ['text/yaml', 'application/yaml'],
+  ])('Accept: %s には品質値に従って %s を返す', async (accept, expected) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing', { headers: { Accept: accept } });
+
+    expect(res.headers.get('content-type')).toContain(expected);
+  });
+
+  it('?format=yaml は Accept によらず YAML を返す', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing?format=yaml', {
+      headers: { Accept: 'application/json' },
+    });
+
+    expect(res.headers.get('content-type')).toContain('application/yaml');
+  });
+
   it('Spotify のエラー本文は応答に含めず、ステータスだけ返す', async () => {
     respondWith((url) =>
       url.includes('/me/player/currently-playing')
