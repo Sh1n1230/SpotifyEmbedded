@@ -6,7 +6,7 @@
  * その下に添える。
  */
 import type { TrackSummary, MoodResult } from '../types/index.js';
-import { THEMES, FONT_STACK, relativeTimeJa, type ThemeName } from './theme.js';
+import { THEMES, FONT_STACK, formatDateTimeJa, type ThemeName } from './theme.js';
 import { escapeXml, wrapToWidth, truncateToWidth } from './text.js';
 
 export type PlaybackState =
@@ -80,7 +80,7 @@ function labelFor(state: PlaybackState, since: string | undefined): string {
   if (state === 'playing') return 'NOW PLAYING';
   if (state === 'recent') {
     const at = since ? new Date(since) : null;
-    const when = at && !Number.isNaN(at.getTime()) ? relativeTimeJa(at) : null;
+    const when = at && !Number.isNaN(at.getTime()) ? formatDateTimeJa(at) : null;
     return when ? `LAST PLAYED · ${when}` : 'LAST PLAYED';
   }
   return 'NOTHING PLAYING';
