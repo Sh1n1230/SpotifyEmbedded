@@ -234,7 +234,7 @@ if (data.is_playing) {
 
 ## APIリファレンス
 
-全エンドポイントがJSON（デフォルト）とYAML（`?format=yaml` または `Accept: application/yaml`）に対応しています。
+`GET /api/now-playing` は JSON（デフォルト）と YAML（`?format=yaml` または `Accept: application/yaml`）に対応しています。エラー応答は常に JSON です。
 
 ### `GET /api/now-playing`
 
