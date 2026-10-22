@@ -29,7 +29,7 @@ The same core powers both. This split is the product's core idea — don't colla
   track from `snapshot.json`, so the JSON consumers get "last played" without changing that schema.
 - **Live API mode is now-playing only** (`/api/now-playing`, `/badge.svg`, `/embed`, `embed.js`).
   Rankings are static-only by design: they aggregate weeks-to-a-year, so they don't need
-  per-second freshness. Don't add ranking routes back to the live API.
+  per-second freshness. Don't add ranking routes to the live API.
 - **Live API mode**: the Hono app in `src/app.ts`, run by two entries — `src/index.ts` (Node:
   `npm run dev`, Docker) and `src/worker.ts` (Cloudflare Workers, the recommended host; config in
   `wrangler.jsonc`, `npm run deploy`). Runtime differences (static files, rate limiter, KV) are
@@ -56,8 +56,8 @@ The same core powers both. This split is the product's core idea — don't colla
     `reasoning_effort` for Gemini. Add a branch rather than sending it to everyone.
   - Gemini's OpenAI-compatible base URL is `https://generativelanguage.googleapis.com/v1beta/openai`
     — not `/v1beta`, not `/v1beta/interactions`.
-  - `client.ts` retries once on 5xx or timeout (Gemini's `gemini-3.x-flash` 503s under load; the
-    `-lite` models are markedly more reliable).
+  - `client.ts` retries once on 5xx or timeout, because Gemini returns 503 under load. Gemini's
+    `-lite` models hit this far less, which is why `DEFAULT_MODEL` in `providers.ts` is a `-lite` one.
 - `src/core/rankingMood.ts` — ranking-wide mood. **Invalidated by content, not time**: the
   record stores the top-10 track IDs it was generated from, and is regenerated only when ≥3 of
   the current top 10 are absent from that basis (order ignored). Don't replace this with a TTL.
@@ -81,7 +81,7 @@ The same core powers both. This split is the product's core idea — don't colla
 ## Key constraints
 
 - Spotify `/audio-features` is deprecated for new apps (post Nov 2024) — do not use it
-- **The same restriction now covers more fields.** On a post-Nov-2024 app, `/artists?ids=`
+- **The same restriction covers more than audio features.** On a post-Nov-2024 app, `/artists?ids=`
   returns 403, single-artist responses omit `genres`, and `popularity` / `preview_url` are
   absent from both `/me/player/currently-playing` and `/me/top/tracks`. `src/spotify/artists.ts`
   keeps the genre lookup for extended-quota apps but latches "unavailable" after the first 403
