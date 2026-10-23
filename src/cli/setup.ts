@@ -8,13 +8,14 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface, type Interface } from 'node:readline';
 import { resolve } from 'node:path';
 
 import {
   AUTH_ENV,
   AUTH_FIELDS,
+  authEnvNames,
   authStorePath,
   resolveAuthValue,
   saveStoredAuth,
@@ -66,8 +67,9 @@ export async function setup(): Promise<void> {
     saveStoredAuth(values);
     console.log(`✓ ${authStorePath()} に保存しました (0600)`);
 
-    upsertEnvFile(resolve('.env'), values);
+    const removed = upsertEnvFile(resolve('.env'), values);
     console.log('✓ .env を更新しました');
+    if (removed.length > 0) console.log(`  （削除した行: ${removed.join(', ')}）`);
 
     await offerGitHubSecrets(rl, values);
 
@@ -363,23 +365,29 @@ function resultPage(message: string, ok: boolean): string {
  *
  * 値が空文字の場合は「明示的に消す」という意味なので、行そのものを削除する。
  * 環境変数は data/auth.json より優先されるため、ここを残すと入れ替えたはずの
- * 古いキーが生き続けてしまう。
+ * 古いキーが生き続けてしまう。別名（GROQ_API_KEY など）も読まれるので、消すときは別名の行も消す。
+ *
+ * @returns 削除した行の変数名
  */
-function upsertEnvFile(path: string, values: StoredAuth): void {
-  const lines = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
+export function upsertEnvFile(path: string, values: StoredAuth): string[] {
+  let lines = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
+  const removed: string[] = [];
 
   for (const field of AUTH_FIELDS) {
     const value = values[field];
     if (value === undefined) continue;
 
-    const key = AUTH_ENV[field];
-    const index = lines.findIndex((line) => line.trimStart().startsWith(`${key}=`));
-
     if (value === '') {
-      if (index >= 0) lines.splice(index, 1);
+      for (const name of authEnvNames(field)) {
+        const before = lines.length;
+        lines = lines.filter((line) => !line.trimStart().startsWith(`${name}=`));
+        if (lines.length < before) removed.push(name);
+      }
       continue;
     }
 
+    const key = AUTH_ENV[field];
+    const index = lines.findIndex((line) => line.trimStart().startsWith(`${key}=`));
     const entry = `${key}=${value}`;
     if (index >= 0) lines[index] = entry;
     else lines.push(entry);
@@ -387,6 +395,9 @@ function upsertEnvFile(path: string, values: StoredAuth): void {
 
   const content = lines.join('\n');
   writeFileSync(path, content.endsWith('\n') ? content : content + '\n', { mode: 0o600 });
+  // 既存ファイルがある場合 writeFileSync の mode は適用されないため明示的に絞る
+  chmodSync(path, 0o600);
+  return removed;
 }
 
 /** gh CLI があれば GitHub Secrets への登録まで済ませる。 */

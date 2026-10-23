@@ -54,7 +54,7 @@ export function renderNowPlayingCard(input: CardInput): string {
   const bgFill = isTransparent ? 'none' : theme.bg;
 
   const unavailable = input.unavailable === true;
-  const label = unavailable ? UNAVAILABLE_LABEL : labelFor(state, input.since);
+  const label = unavailable ? UNAVAILABLE_LABEL : playbackLabel(state, input.since);
   const hasArt = state !== 'idle' && !unavailable;
   const idleText = unavailable ? UNAVAILABLE_TEXT : IDLE_TEXT;
 
@@ -76,7 +76,8 @@ export function renderNowPlayingCard(input: CardInput): string {
 `;
 }
 
-function labelFor(state: PlaybackState, since: string | undefined): string {
+/** カードと埋め込みページで共通の見出し。日時として読めない since は時刻を省く。 */
+export function playbackLabel(state: PlaybackState, since: string | undefined): string {
   if (state === 'playing') return 'NOW PLAYING';
   if (state === 'recent') {
     const at = since ? new Date(since) : null;

@@ -77,6 +77,11 @@ The same core powers both. This split is the product's core idea — don't colla
 - `src/spec.test.ts` — the executable spec: `describe` headings read as requirements. Mock at the
   `fetch` layer, never by replacing modules — which URL, query and headers we hit is part of
   what's being verified. Fixtures default to a post-Nov-2024 app (restricted fields absent).
+  - The Spotify access token is cached at module level and `Date` is frozen, so a token request
+    happens only in the first test that needs one. To observe it, return 401 from the API first
+    (see `givenTokenRefreshForced`). Same for the `/artists` 403 latch: `beforeEach` resets it.
+  - CLI specs spawn `src/cli/index.ts` through `node_modules/tsx/dist/loader.mjs` in an empty temp
+    dir with only `PATH`, so a developer's local config never leaks in.
 
 ## Key constraints
 

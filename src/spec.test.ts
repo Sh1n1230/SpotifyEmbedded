@@ -18,14 +18,16 @@
  *   スキーマ契約が既定ケースで検証される。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { XMLValidator } from 'fast-xml-parser';
 import yaml from 'js-yaml';
 
-import { loadStoredAuth } from './authStore.js';
+import { loadStoredAuth, saveStoredAuth } from './authStore.js';
 import {
   artCache,
   moodCache,
@@ -37,8 +39,10 @@ import { collectNowPlaying, collectRecentlyPlayed, collectTopTracks } from './co
 import { resolveRankingMood, type RankingMoodRecord } from './core/rankingMood.js';
 import { isTopTracksLimit, isTopTracksRange } from './core/topTracksParams.js';
 import { generate } from './cli/generate.js';
+import { upsertEnvFile } from './cli/setup.js';
 import { chatCompletion } from './llm/client.js';
 import { createApp } from './app.js';
+import worker from './worker.js';
 import { escapeXml } from './render/text.js';
 import { renderNowPlayingCard } from './render/card.js';
 import { renderRankingCard } from './render/ranking.js';
@@ -962,6 +966,37 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
 
       expect(snapshot['state']).toBe('recent');
       expect((snapshot['track'] as { name: string }).name).toBe('Midnight Drive');
+    });
+
+    // snapshot.json は公開ブランチから毎回復元される。ここで落ちると、壊れたまま次の実行も落ち続ける。
+    it('observed_at が日時として読めない snapshot.json は捨て、生成を続ける', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+      const broken = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+      writeFileSync(join(outDir, 'snapshot.json'), JSON.stringify({ ...broken, observed_at: 'garbage' }));
+
+      handlers = [];
+      calls = [];
+      installDefaultHandlers();
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+
+      const snapshot = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+      expect(Number.isNaN(Date.parse(snapshot['observed_at'] as string))).toBe(false);
+      expect(read('index.html')).toContain('<!DOCTYPE html>');
+    });
+
+    it('埋め込みページは、日時として読めない since でも時刻を省いて描ける', () => {
+      const html = renderEmbedPage({
+        nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+        state: 'recent',
+        since: 'garbage',
+      });
+
+      expect(html).toContain('LAST PLAYED');
+      expect(html).not.toContain('LAST PLAYED ·');
     });
 
     it('再生中なら履歴は見に行かない', async () => {
@@ -2365,5 +2400,367 @@ describe('カードの文字色は、どちらのテーマでも背景に対し�
         expect(value, `${name}.${key}`).toBe(THEMES[name][key as keyof (typeof THEMES)[typeof name]]);
       }
     }
+  });
+});
+
+describe('設定は「環境変数 → data/auth.json」の順に解決し、.env だけで動いている構成を変えない', () => {
+  let dir: string;
+  let storePath: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'spotify-embedded-auth-'));
+    storePath = join(dir, 'auth.json');
+    vi.stubEnv('AUTH_STORE_PATH', storePath);
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function givenAuthFile(content: Record<string, unknown>): void {
+    writeFileSync(storePath, JSON.stringify(content));
+    loadStoredAuth(true);
+  }
+
+  /** トークンはモジュール内にキャッシュされるので、API の 401 で取り直しを起こす */
+  function givenTokenRefreshForced(track: SpotifyTrack | null): void {
+    let attempt = 0;
+    respondWith((url) => {
+      if (!url.includes('/me/player/currently-playing')) return null;
+      attempt += 1;
+      if (attempt === 1) return new Response('expired', { status: 401 });
+      if (!track) return new Response(null, { status: 204 });
+      return jsonOk({ is_playing: true, progress_ms: 1000, item: track, timestamp: NOW.getTime() });
+    });
+  }
+
+  function refreshTokenSent(): string | null {
+    const body = callsTo('accounts.spotify.com/api/token').at(-1)?.init?.body;
+    return body instanceof URLSearchParams ? body.get('refresh_token') : null;
+  }
+
+  it('環境変数があれば、data/auth.json の値より優先する', async () => {
+    givenAuthFile({ spotifyRefreshToken: 'from-file' });
+    givenTokenRefreshForced(null);
+
+    await collectNowPlaying();
+
+    expect(refreshTokenSent()).toBe('spec-refresh-token');
+  });
+
+  it('環境変数が無い項目は data/auth.json から補う', async () => {
+    vi.stubEnv('SPOTIFY_REFRESH_TOKEN', '');
+    givenAuthFile({ spotifyRefreshToken: 'from-file' });
+    givenTokenRefreshForced(null);
+
+    await collectNowPlaying();
+
+    expect(refreshTokenSent()).toBe('from-file');
+  });
+
+  it('壊れた data/auth.json は無視し、環境変数だけで動く', async () => {
+    writeFileSync(storePath, '{ not json');
+    loadStoredAuth(true);
+    givenTokenRefreshForced(aSpotifyTrack());
+
+    const result = await collectNowPlaying();
+
+    expect(result.track?.id).toBe('track-1');
+    expect(refreshTokenSent()).toBe('spec-refresh-token');
+  });
+
+  describe('LLM の APIキー', () => {
+    beforeEach(() => {
+      vi.stubEnv('LLM_BASE_URL', 'https://api.groq.com/openai/v1');
+      givenLlmReplies('今チルな気分になっています');
+      givenNowPlaying(aSpotifyTrack());
+    });
+
+    function llmKeySent(): string | undefined {
+      const call = callsTo('/chat/completions')[0];
+      return call ? headerOf(call, 'Authorization') : undefined;
+    }
+
+    it.each(['OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'])(
+      'よくある名前の %s に入っていても、そのまま拾う',
+      async (name) => {
+        vi.stubEnv(name, 'alias-key');
+
+        await collectNowPlaying();
+
+        expect(llmKeySent()).toBe('Bearer alias-key');
+      }
+    );
+
+    it('LLM_API_KEY があれば、別名より優先する', async () => {
+      vi.stubEnv('GROQ_API_KEY', 'alias-key');
+      vi.stubEnv('LLM_API_KEY', 'canonical-key');
+
+      await collectNowPlaying();
+
+      expect(llmKeySent()).toBe('Bearer canonical-key');
+    });
+
+    it('旧バージョンの data/auth.json（groqApiKey）もそのまま読める', async () => {
+      givenAuthFile({ groqApiKey: 'legacy-key' });
+
+      await collectNowPlaying();
+
+      expect(llmKeySent()).toBe('Bearer legacy-key');
+    });
+  });
+
+  describe('npm run setup による保存', () => {
+    it('既存の内容に上書きでマージする', () => {
+      givenAuthFile({ spotifyClientId: 'kept', spotifyRefreshToken: 'old' });
+
+      saveStoredAuth({ spotifyRefreshToken: 'new' });
+
+      expect(JSON.parse(readFileSync(storePath, 'utf8'))).toEqual({
+        spotifyClientId: 'kept',
+        spotifyRefreshToken: 'new',
+      });
+    });
+
+    it.skipIf(process.platform === 'win32')(
+      '秘密情報を含むので、既存のファイルでも本人だけが読める権限（0600）にする',
+      () => {
+        writeFileSync(storePath, '{}', { mode: 0o644 });
+
+        saveStoredAuth({ spotifyRefreshToken: 'secret' });
+
+        expect(statSync(storePath).mode & 0o777).toBe(0o600);
+      }
+    );
+
+    describe('設定ファイル（.env）の書き換え', () => {
+      let envPath: string;
+      beforeEach(() => {
+        envPath = join(mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-envfile-')), 'env');
+      });
+
+      it('LLM を外すと、別名で書かれたキーの行も消す（残すと別名から読まれて有効なままになる）', () => {
+        writeFileSync(envPath, '# メモ\nSPOTIFY_CLIENT_ID=id\nGROQ_API_KEY=old\nGROQ_MODEL=m\n');
+
+        const removed = upsertEnvFile(envPath, { llmApiKey: '', llmBaseUrl: '', llmModel: '' });
+
+        expect(readFileSync(envPath, 'utf8')).toBe('# メモ\nSPOTIFY_CLIENT_ID=id\n');
+        expect(removed).toEqual(['GROQ_API_KEY', 'GROQ_MODEL']);
+      });
+
+      it('値の差し替えは正規名の行だけを書き換え、他の行は触らない', () => {
+        writeFileSync(envPath, '# メモ\nLLM_API_KEY=old\nOTHER=x\n');
+
+        upsertEnvFile(envPath, { llmApiKey: 'new' });
+
+        expect(readFileSync(envPath, 'utf8')).toBe('# メモ\nLLM_API_KEY=new\nOTHER=x\n');
+      });
+
+      it.skipIf(process.platform === 'win32')('既存のファイルでも本人だけが読める権限（0600）にする', () => {
+        writeFileSync(envPath, '', { mode: 0o644 });
+
+        upsertEnvFile(envPath, { spotifyRefreshToken: 'secret' });
+
+        expect(statSync(envPath).mode & 0o777).toBe(0o600);
+      });
+    });
+  });
+});
+
+describe('ライブAPIの境界: 他サイトの iframe に入れてよいのは /embed だけ', () => {
+  it.each(['/api/now-playing', '/badge.svg', '/health'])('%s は X-Frame-Options: DENY を返す', async (path) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request(path);
+
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('/embed はフレーム禁止を付けない（埋め込まれるためのページなので）', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/embed');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-frame-options')).toBeNull();
+    expect(res.headers.get('content-security-policy')).not.toContain('frame-ancestors');
+  });
+
+  it('Workers の静的ファイル（Worker を通らない）にも public/_headers で同じヘッダーを付ける', () => {
+    const source = readFileSync(new URL('../public/_headers', import.meta.url), 'utf8');
+    const lines = source.split('\n').filter((line) => !line.startsWith('#'));
+    const rule = lines.slice(lines.indexOf('/*') + 1).map((line) => line.trim());
+
+    expect(lines).toContain('/*');
+    expect(rule).toContain('X-Frame-Options: DENY');
+    expect(rule).toContain('X-Content-Type-Options: nosniff');
+    expect(rule).toContain('Referrer-Policy: no-referrer');
+  });
+});
+
+describe('ライブAPIの境界: ランキングは出さない（静的モード専用）', () => {
+  it.each(['/api/top-tracks', '/ranking.svg', '/api/recently-played'])('%s は存在せず、Spotify も叩かない', async (path) => {
+    const res = await createApp().request(path);
+
+    expect(res.status).toBe(404);
+    expect(callsTo('api.spotify.com')).toHaveLength(0);
+  });
+});
+
+describe('ライブAPIの境界: レート制限を超えたリクエストは、Spotify を叩かずに 429 を返す', () => {
+  it.each(['/api/now-playing', '/badge.svg', '/embed'])('%s', async (path) => {
+    givenNowPlaying(aSpotifyTrack());
+    const app = createApp({ rateLimiter: () => Promise.resolve(false) });
+
+    const res = await app.request(path);
+
+    expect(res.status).toBe(429);
+    expect(callsTo('api.spotify.com')).toHaveLength(0);
+  });
+
+  it('/health は数えない（利用者と同じ枠を共有していても、死活監視が 429 で落ちないように）', async () => {
+    let counted = 0;
+    const app = createApp({
+      rateLimiter: () => {
+        counted += 1;
+        return Promise.resolve(false);
+      },
+    });
+
+    const res = await app.request('/health');
+
+    expect(res.status).toBe(200);
+    expect(counted).toBe(0);
+  });
+
+  it('制限内なら通常どおり応答する', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const app = createApp({ rateLimiter: () => Promise.resolve(true) });
+
+    const res = await app.request('/api/now-playing');
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('CLI（spotify-embedded）', () => {
+  /** 実際のプロセスとして起動する。.env を拾わないよう、空の作業ディレクトリと最小の環境変数で動かす。 */
+  function runCli(args: string[]): { status: number | null; stdout: string; stderr: string; cwd: string } {
+    const cwd = mkdtempSync(join(tmpdir(), 'spotify-embedded-cli-'));
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        new URL('../node_modules/tsx/dist/loader.mjs', import.meta.url).href,
+        fileURLToPath(new URL('./cli/index.ts', import.meta.url)),
+        ...args,
+      ],
+      { cwd, env: { PATH: process.env['PATH'] ?? '' }, encoding: 'utf8', timeout: 20_000 }
+    );
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr, cwd };
+  }
+
+  const cwds: string[] = [];
+  afterEach(() => {
+    for (const dir of cwds.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('設定が何も無くても、読み込みだけでは落ちない（npm run setup が動くために必要）', () => {
+    const run = runCli(['help']);
+    cwds.push(run.cwd);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain('npm run setup');
+  }, 30_000);
+
+  describe('generate は Spotify が受け付けない指定を、取得を始める前に弾く', () => {
+    it.each([
+      [['--range', 'two_weeks'], '--range'],
+      [['--limit', '20'], '--limit'],
+      [['--count', '0'], '--count'],
+      [['--count', '51'], '--count'],
+      [['--theme', 'sepia'], '--theme'],
+      [['--out'], '--out'],
+      [['--verbose'], '--verbose'],
+    ])('%j', (args, mentioned) => {
+      const run = runCli(['generate', ...args]);
+      cwds.push(run.cwd);
+
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(mentioned);
+      // 出力先（既定の ./out）すら作らない
+      expect(readdirSync(run.cwd)).toEqual([]);
+    }, 30_000);
+  });
+
+  it('不明なコマンドは使い方を出して失敗する', () => {
+    const run = runCli(['deploy']);
+    cwds.push(run.cwd);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('不明なコマンド: deploy');
+    expect(run.stderr).toContain('使い方');
+  }, 30_000);
+});
+
+describe('Workers のエントリ（src/worker.ts）は、バインディングを KV とレート制限に繋ぐ', () => {
+  it('ムード文は期限付きで KV に書き、レート制限は接続元 IP ごとに数える', async () => {
+    const puts: { key: string; value: string; options: unknown }[] = [];
+    const moods = {
+      get: () => Promise.resolve(null),
+      put: (key: string, value: string, options: unknown) => {
+        puts.push({ key, value, options });
+        return Promise.resolve();
+      },
+    };
+    let allow = true;
+    const limitedKeys: string[] = [];
+    const rateLimiter = {
+      limit: ({ key }: { key: string }) => {
+        limitedKeys.push(key);
+        return Promise.resolve({ success: allow });
+      },
+    };
+    const env = { MOODS: moods, RATE_LIMITER: rateLimiter } as unknown as Parameters<typeof worker.fetch>[1];
+    const ctx = {} as Parameters<typeof worker.fetch>[2];
+    const request = () =>
+      new Request('https://spotify-embedded.example/api/now-playing', {
+        headers: { 'cf-connecting-ip': '203.0.113.7' },
+      });
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack());
+
+    const ok = await worker.fetch(request(), env, ctx);
+
+    expect(ok.status).toBe(200);
+    expect(puts).toEqual([
+      {
+        key: 'mood:track-1',
+        value: JSON.stringify({ text: '今チルな気分になっています', generated_at: NOW_ISO }),
+        // KV の無料枠は書き込みが 1,000回/日。期限なしで溜め込まない
+        options: { expirationTtl: 86400 },
+      },
+    ]);
+    expect(limitedKeys).toEqual(['203.0.113.7']);
+
+    allow = false;
+    const limited = await worker.fetch(request(), env, ctx);
+
+    expect(limited.status).toBe(429);
+  });
+});
+
+describe('dotenv を読むのは Node のエントリだけ（Workers では使えない）', () => {
+  it('src/index.ts と src/cli/index.ts 以外は dotenv を import しない', () => {
+    const srcDir = fileURLToPath(new URL('.', import.meta.url));
+    const importers = (readdirSync(srcDir, { recursive: true }) as string[])
+      .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
+      .filter((file) => /from ['"]dotenv|import ['"]dotenv/.test(readFileSync(join(srcDir, file), 'utf8')))
+      .map((file) => file.split('\\').join('/'))
+      .sort();
+
+    expect(importers).toEqual(['cli/index.ts', 'index.ts']);
   });
 });

@@ -112,7 +112,7 @@ export interface MoodResult {
  *   album: string
  *   album_art_url: string
  *   duration_ms: number
- *   popularity: number
+ *   popularity: number | null
  *   spotify_url: string
  *   preview_url: string | null
  * mood:
@@ -179,7 +179,7 @@ export interface TopTrackEntry extends TrackSummary {
 }
 
 /**
- * YAML schema for /api/top-tracks:
+ * YAML schema for top-tracks.json / .yaml（静的モード専用。ライブAPIには無い）:
  *
  * range: "short_term" | "medium_term" | "long_term"
  * limit: 10 | 30 | 50     # リクエストした取得件数（実際の件数は tracks.length）

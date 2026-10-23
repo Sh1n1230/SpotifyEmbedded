@@ -16,10 +16,10 @@ import {
   type TopTracksResponse,
 } from '../types/index.js';
 import { rangeLabelEn } from '../core/topTracksParams.js';
-import { THEMES, FONT_STACK, formatDateTimeJa, formatDateJa, type ThemeName } from './theme.js';
+import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
 import { albumArtAtSize } from './image.js';
-import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, type PlaybackState } from './card.js';
+import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, playbackLabel, type PlaybackState } from './card.js';
 
 export interface PageInput {
   nowPlaying: NowPlayingResponse;
@@ -52,11 +52,7 @@ export function renderEmbedPage(input: PageInput): string {
   const unavailable = input.unavailable === true && !track;
   const label = unavailable
     ? UNAVAILABLE_LABEL
-    : state === 'playing'
-      ? 'NOW PLAYING'
-      : state === 'recent'
-        ? `LAST PLAYED${input.since ? ` · ${formatDateTimeJa(new Date(input.since))}` : ''}`
-        : 'NOTHING PLAYING';
+    : playbackLabel(state, input.since);
   const idleText = unavailable ? UNAVAILABLE_TEXT : '再生していません';
 
   const rankingSection = topTracks && topTracks.tracks.length > 0

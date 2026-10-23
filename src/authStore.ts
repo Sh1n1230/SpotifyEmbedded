@@ -46,6 +46,11 @@ const AUTH_ENV_NAMES: Record<AuthField, string[]> = {
   llmModel: ['LLM_MODEL', 'GROQ_MODEL'],
 };
 
+/** 正規名と別名のすべて。設定ファイルから項目を消すときは、別名の行も消さないと値が生き残る。 */
+export function authEnvNames(field: AuthField): readonly string[] {
+  return AUTH_ENV_NAMES[field];
+}
+
 /** 保存や表示に使う正規の環境変数名。 */
 export const AUTH_ENV: Record<AuthField, string> = {
   spotifyClientId: 'SPOTIFY_CLIENT_ID',

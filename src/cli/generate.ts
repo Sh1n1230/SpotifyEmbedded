@@ -278,7 +278,8 @@ function readSnapshot(outDir: string): Snapshot | null {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Snapshot;
     if (!parsed || typeof parsed !== 'object') return null;
-    if (typeof parsed.observed_at !== 'string') return null;
+    // 日時として読めない observed_at は描画で落ちるうえ、毎回復元されて直らないので捨てる。
+    if (typeof parsed.observed_at !== 'string' || Number.isNaN(Date.parse(parsed.observed_at))) return null;
     // 壊れていたら無視して作り直す（1回余分に LLM を呼ぶだけで済む）。
     if (!isRankingMoodRecord(parsed.ranking_mood)) parsed.ranking_mood = null;
     return parsed;
