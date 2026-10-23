@@ -55,6 +55,14 @@ jobs:
 
       - if: steps.secrets.outputs.configured == 'true'
         run: npm ci --ignore-scripts
+      # ci.yml とは並行して走り、その結果を待たない。テストが落ちたコミットを
+      # 本番に出さないよう、ここでも同じ検証を通してからデプロイする。
+      - if: steps.secrets.outputs.configured == 'true'
+        run: npm run typecheck
+      - if: steps.secrets.outputs.configured == 'true'
+        run: npm run lint
+      - if: steps.secrets.outputs.configured == 'true'
+        run: npm test
       - if: steps.secrets.outputs.configured == 'true'
         run: npm run build
 
