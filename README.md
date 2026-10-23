@@ -190,6 +190,8 @@ npm run setup      # 初期設定が未完了の場合
 npm run dev        # http://localhost:3000
 ```
 
+レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外）。超えると 429 を返します。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません。
+
 ### 埋め込み方
 
 **JavaScript埋め込み（推奨）**：Webサイトの既存CSSとのスタイル干渉を防ぐため、カードコンポーネントはShadow DOM内部に描画されます。

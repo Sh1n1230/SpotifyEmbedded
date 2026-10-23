@@ -24,7 +24,7 @@
 			"binding": "MOODS"
 		}
 	],
-	// IPごとに 60 秒あたり 100 リクエストまで
+	// IPごとに 60 秒あたり 100 リクエストまで（Node 版の src/index.ts も同じ値）
 	"ratelimits": [
 		{
 			"name": "RATE_LIMITER",

@@ -11,7 +11,9 @@ import { createApp, type RateLimiter } from './app.js';
 import { config } from './config.js';
 import { missingAuthValues, hasLlmConfigured } from './authStore.js';
 
-const WINDOW_MS = 15 * 60 * 1000;
+// Workers 版（wrangler.jsonc の ratelimits）と同じ「IPごとに 60 秒あたり 100 リクエスト」。
+// Workers のバインディングは期間を 10 秒か 60 秒しか取れないので、こちらを合わせている。
+const WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS = 100;
 
 /**
