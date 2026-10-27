@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { XMLValidator } from 'fast-xml-parser';
 
+import { TtlCache } from '../cache/index.js';
 import { collectNowPlaying } from '../core/collect.js';
 import { Hono, type Context } from 'hono';
 import { createApp } from '../app.js';
@@ -11,6 +12,7 @@ import { DEMO_PAGE_CSP, HSTS, PERMISSIONS_POLICY } from '../http/securityHeaders
 import { openCorsWarning, parseCorsOrigins } from '../http/cors.js';
 import { escapeXml } from '../render/text.js';
 import {
+  NOW,
   respondWith,
   jsonOk,
   callsTo,
@@ -619,5 +621,70 @@ describe('ライブAPIのレート制限の数え方（Node 版のメモリ実�
       expect(rateLimitKey('2001:db8:1:2::1')).toBe(rateLimitKey('2001:db8:1:2:ffff::9'));
       expect(rateLimitKey('2001:db8:1:3::1')).not.toBe(rateLimitKey('2001:db8:1:2::1'));
     });
+  });
+});
+
+describe('ライブAPIのメモリキャッシュ（TtlCache）は、期限と上限を守る', () => {
+  // now-playing 30 秒、ムード文 24 時間・200 件、ジャケ写 24 時間・100 件がこれに乗っている。
+  // 上限があるのでムード文やジャケ写のキャッシュが際限なく伸びない。
+  it('期限内は値を返し、期限を過ぎたら undefined を返す', () => {
+    const cache = new TtlCache(30);
+    cache.set('k', 'v');
+
+    vi.setSystemTime(NOW.getTime() + 29_999);
+    expect(cache.get('k')).toBe('v');
+    vi.setSystemTime(NOW.getTime() + 30_000);
+    expect(cache.get('k')).toBeUndefined();
+  });
+
+  it('ttlSeconds = 0 は期限なし', () => {
+    const cache = new TtlCache(0);
+    cache.set('k', 'v');
+
+    vi.setSystemTime(NOW.getTime() + 365 * 86_400_000);
+    expect(cache.get('k')).toBe('v');
+  });
+
+  it('満杯で新しいキーを set すると throw する（呼び出し側はキャッシュミスとして扱う）', () => {
+    const cache = new TtlCache(60, 2);
+    cache.set('a', 1);
+    cache.set('b', 2);
+
+    expect(() => cache.set('c', 3)).toThrow();
+    expect(cache.get('c')).toBeUndefined();
+  });
+
+  it('満杯でも、既存のキーの上書きは通る', () => {
+    const cache = new TtlCache(60, 2);
+    cache.set('a', 1);
+    cache.set('b', 2);
+
+    cache.set('a', 10);
+
+    expect(cache.get('a')).toBe(10);
+  });
+
+  it('満杯でも、期限切れがあれば掃除してから入れる', () => {
+    const cache = new TtlCache(60, 2);
+    cache.set('a', 1);
+    vi.setSystemTime(NOW.getTime() + 30_000);
+    cache.set('b', 2);
+    vi.setSystemTime(NOW.getTime() + 61_000);
+
+    cache.set('c', 3);
+
+    expect(cache.get('a')).toBeUndefined();
+    expect(cache.get('b')).toBe(2);
+    expect(cache.get('c')).toBe(3);
+  });
+
+  it('flushAll で空になる', () => {
+    const cache = new TtlCache(0, 1);
+    cache.set('a', 1);
+
+    cache.flushAll();
+
+    expect(cache.get('a')).toBeUndefined();
+    expect(() => cache.set('b', 2)).not.toThrow();
   });
 });

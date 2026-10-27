@@ -1,5 +1,5 @@
 /** カード・ページの描画（テーマの色・フォント・URL の扱いなど）と、起動時の案内。方針は ./support.ts の冒頭を参照。 */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { XMLValidator } from 'fast-xml-parser';
@@ -9,8 +9,9 @@ import { renderNowPlayingCard } from '../render/card.js';
 import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
 import { portInUseHelp } from '../http/portInUse.js';
 import { truncateToWidth, visualWidth, wrapToWidth } from '../render/text.js';
+import { fetchImageDataUri } from '../render/image.js';
 import type { NowPlayingResponse } from '../types/index.js';
-import { NOW_ISO, ART_640, aTopTrackEntry } from './support.js';
+import { NOW_ISO, ART_640, aTopTrackEntry, calls, callsTo, respondWith } from './support.js';
 
 describe('カードの文字色は、どちらのテーマでも背景に対して WCAG AA（4.5:1）を満たす', () => {
   /** WCAG 2.2 の相対輝度とコントラスト比 */
@@ -258,5 +259,112 @@ describe('now-playing カードの再生中インジケータは、OS の「視�
 
   it('再生中でなければインジケータを描かない', () => {
     expect(renderNowPlayingCard({ state: 'idle', track: null, mood: null })).not.toContain('<style>');
+  });
+});
+
+describe('SVG に焼き込む画像は Spotify の CDN の画像だけ（README に貼られる SVG の安全上の境界）', () => {
+  function givenImage(status: number, contentType: string): void {
+    respondWith((url) =>
+      url.includes('.scdn.co') ? new Response('img', { status, headers: { 'content-type': contentType } }) : null
+    );
+  }
+
+  it('https の i.scdn.co の小さい jpeg は data URI になる', async () => {
+    await expect(fetchImageDataUri(ART_640)).resolves.toBe(
+      `data:image/jpeg;base64,${Buffer.from('fake-jpeg-bytes').toString('base64')}`
+    );
+    expect(callsTo('.scdn.co')[0]?.init?.redirect).toBe('manual');
+  });
+
+  it.each([
+    ['http の Spotify の CDN', 'http://i.scdn.co/image/abc'],
+    ['別のホスト', 'https://example.com/a.jpg'],
+    ['紛らわしいホスト', 'https://scdn.co.example.com/a.jpg'],
+    ['サブドメインでない scdn.co', 'https://scdn.co/a.jpg'],
+    ['data URI', 'data:image/png;base64,AAAA'],
+    ['URL として読めない値', 'not a url'],
+  ])('%s は取得しない（fetch も呼ばない）', async (_, url) => {
+    await expect(fetchImageDataUri(url)).resolves.toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each(['image/svg+xml', 'text/html', 'application/octet-stream', ''])(
+    'content-type が %j なら埋め込まない（SVG の中に別の SVG を埋め込まない）',
+    async (type) => {
+      givenImage(200, type);
+
+      await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
+    }
+  );
+
+  it.each([404, 500])('%d なら null', async (status) => {
+    givenImage(status, 'image/jpeg');
+
+    await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
+  });
+
+  it('Content-Length が上限（512KB）を超えていれば、本文を読まずに断る', async () => {
+    const cancel = vi.fn(() => Promise.resolve());
+    respondWith((url) => {
+      if (!url.includes('.scdn.co')) return null;
+      const res = new Response('small', {
+        headers: { 'content-type': 'image/jpeg', 'content-length': String(10 * 1024 * 1024) },
+      });
+      Object.defineProperty(res.body, 'cancel', { value: cancel });
+      return res;
+    });
+
+    await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('Content-Length が無くても、読みながら上限を超えた時点で打ち切る', async () => {
+    let pulled = 0;
+    respondWith((url) => {
+      if (!url.includes('.scdn.co')) return null;
+      // 64KB ずつ、いくらでも返す本文
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new Uint8Array(64 * 1024));
+        },
+      });
+      return new Response(body, { headers: { 'content-type': 'image/jpeg' } });
+    });
+
+    await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
+    expect(pulled).toBeLessThan(20);
+  });
+
+  it('許可しないホストへのリダイレクトは辿らない', async () => {
+    respondWith((url) =>
+      url.includes('.scdn.co')
+        ? new Response(null, { status: 302, headers: { location: 'https://evil.example/a.jpg' } })
+        : null
+    );
+
+    await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
+    expect(callsTo('evil.example')).toHaveLength(0);
+  });
+
+  it('Spotify の CDN の中でのリダイレクトは辿る', async () => {
+    const moved = 'https://mosaic.scdn.co/640/abc';
+    respondWith((url) =>
+      url === ART_640 ? new Response(null, { status: 301, headers: { location: moved } }) : null
+    );
+
+    await expect(fetchImageDataUri(ART_640)).resolves.toMatch(/^data:image\/jpeg;base64,/);
+    expect(callsTo(moved)).toHaveLength(1);
+  });
+
+  it('リダイレクトが続くなら、上限（3回）で諦める', async () => {
+    respondWith((url) =>
+      url.includes('.scdn.co')
+        ? new Response(null, { status: 302, headers: { location: `${url}x` } })
+        : null
+    );
+
+    await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
+    expect(callsTo('.scdn.co')).toHaveLength(4);
   });
 });
