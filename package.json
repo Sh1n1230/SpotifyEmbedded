@@ -80,8 +80,6 @@
   },
   "overrides": {
     "source-map-js": "1.2.2",
-    "miniflare": {
-      "undici": "7.30.1"
-    }
+    "undici": "7.30.1"
   }
 }
