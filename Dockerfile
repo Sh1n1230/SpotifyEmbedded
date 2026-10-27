@@ -1,6 +1,6 @@
 # Fly.io / Google Cloud Run / VPS など、Docker が動く環境ならどこでも使えます。
 # 秘密情報は COPY しません（.dockerignore で .env を除外）。実行時に
-# 環境変数として渡してください（例: fly secrets set / docker run -e ...）。
+# 環境変数として渡してください（例: fly secrets set / docker run --env-file）。
 
 # ベースイメージは digest で固定する（タグは中身が差し替わるため）。
 # 更新は Dependabot（.github/dependabot.yml の docker）が PR にする。

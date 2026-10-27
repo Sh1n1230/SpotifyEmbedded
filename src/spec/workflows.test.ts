@@ -93,3 +93,20 @@ describe('ワークフロー定義 (.github/workflows/ci.yml)', () => {
     for (const job of Object.values(ci.jobs)) expect(job.permissions).toBeUndefined();
   });
 });
+
+describe('リリースは CHANGELOG.md に版の見出しがあるときだけ作る', () => {
+  it('release.yml がタグの版の見出しを確かめる', () => {
+    const runs = loadWorkflow('release.yml').jobs['release']!.steps.map((step) => step.run ?? '').join('\n');
+
+    expect(runs).toContain('CHANGELOG.md');
+    expect(runs).toContain('## [$version]');
+  });
+
+  it('CHANGELOG.md には package.json の今の版の見出しがある', () => {
+    const changelog = readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8');
+    const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+
+    expect(changelog).toContain(`## [${pkg.version}]`);
+    expect(changelog).toContain('## [Unreleased]');
+  });
+});

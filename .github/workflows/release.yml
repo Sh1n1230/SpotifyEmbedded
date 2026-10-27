@@ -35,6 +35,15 @@ jobs:
             exit 1
           fi
 
+      # 利用者向けの変更履歴を書き忘れたままリリースしない
+      - name: CHANGELOG.md にこの版の見出しがあるか確かめる
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "## [$version]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md に「## [$version]」の見出しがありません。[Unreleased] をこの版の見出しに変えてからタグを付けてください"
+            exit 1
+          fi
+
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
