@@ -1,5 +1,6 @@
 import { getAccessToken, SpotifyAuthError } from './auth.js';
 import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
+import { discardBody } from '../http/body.js';
 
 export { SpotifyAuthError } from './auth.js';
 export { SpotifyTimeoutError } from './timeout.js';
@@ -42,6 +43,18 @@ export class SpotifyRateLimitError extends Error {
   }
 }
 
+/**
+ * 429 の Retry-After を秒に直す。形式は秒数か HTTP-date（RFC 9110 §10.2.3）。
+ * 読めない値・ヘッダー無しは 1 秒（Retry-After: NaN のような不正な値を利用者に渡さない）。
+ */
+export function parseRetryAfter(value: string | null, now = Date.now()): number {
+  const raw = value?.trim() ?? '';
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  if (!Number.isNaN(at)) return Math.max(0, Math.ceil((at - now) / 1000));
+  return 1;
+}
+
 async function spotifyFetchOnce(path: string, token: string): Promise<Response> {
   return fetchWithTimeout(
     `${BASE_URL}${path}`,
@@ -56,14 +69,18 @@ export async function spotifyFetch(path: string): Promise<Response | null> {
   let res = await spotifyFetchOnce(path, token);
 
   if (res.status === 401) {
+    await discardBody(res);
     token = await getAccessToken(true);
     res = await spotifyFetchOnce(path, token);
-    if (res.status === 401) throw new SpotifyAuthError();
+    if (res.status === 401) {
+      await discardBody(res);
+      throw new SpotifyAuthError();
+    }
   }
 
   if (res.status === 429) {
-    const retryAfter = parseInt(res.headers.get('Retry-After') ?? '1', 10);
-    throw new SpotifyRateLimitError(retryAfter);
+    await discardBody(res);
+    throw new SpotifyRateLimitError(parseRetryAfter(res.headers.get('Retry-After')));
   }
 
   // 再生していない・デバイスが無い場合は 204（本文なし）

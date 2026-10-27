@@ -6,6 +6,7 @@
  * 焼き込む必要がある。
  */
 import { IMAGE_TIMEOUT_MS } from '../spotify/timeout.js';
+import { discardBody } from '../http/body.js';
 
 /** これを超える画像は埋め込まない（SVGが肥大化してレンダリングが不安定になる）。 */
 const MAX_IMAGE_BYTES = 512 * 1024;
@@ -60,12 +61,14 @@ export async function fetchImageDataUri(url: string): Promise<string | null> {
     const res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS) });
     if (!res.ok) {
       console.warn(`[image] 取得に失敗しました (${res.status}): ${url}`);
+      await discardBody(res);
       return null;
     }
 
     const contentType = (res.headers.get('content-type') ?? '').split(';')[0]?.trim() ?? '';
     if (!ALLOWED_TYPES.has(contentType)) {
       console.warn(`[image] 未対応の content-type です: ${contentType}`);
+      await discardBody(res);
       return null;
     }
 

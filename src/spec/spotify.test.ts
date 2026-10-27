@@ -1,11 +1,14 @@
 /** Spotify から取得する（要件1・2）と、その土台の spotifyFetch の契約。方針は ./support.ts の冒頭を参照。 */
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { XMLValidator } from 'fast-xml-parser';
 
+import { loadStoredAuth } from '../authStore.js';
 import { nowPlayingCache } from '../cache/index.js';
+import { artistGenresAvailable } from '../spotify/artists.js';
+import { getAccessToken } from '../spotify/auth.js';
 import { collectNowPlaying, collectRecentlyPlayed, collectTopTracks } from '../core/collect.js';
 import { isTopTracksLimit, isTopTracksRange } from '../core/topTracksParams.js';
 import { generate } from '../cli/generate.js';
@@ -279,6 +282,39 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       expect(result.tracks[0]!.name).toBe('Midnight Drive');
     });
 
+    it.each([
+      ['503', () => new Response('unavailable', { status: 503 })],
+      [
+        'タイムアウト',
+        (): Response => {
+          throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+        },
+      ],
+    ])('/artists が一時的に失敗（%s）しても、次の呼び出しでは再び /artists を呼ぶ', async (_, fail) => {
+      givenTopTracks([aSpotifyTrack()]);
+      respondWith((url) => (url.includes('/artists?ids=') ? fail() : null));
+
+      const first = await collectTopTracks();
+      expect(first.tracks[0]!.name).toBe('Midnight Drive');
+      expect(artistGenresAvailable()).toBe(true);
+
+      givenArtistGenres({ 'artist-1': ['city pop'] });
+      const second = await collectTopTracks();
+
+      expect(callsTo('/artists?ids=')).toHaveLength(2);
+      expect(second.tracks[0]!.genres).toEqual(['city pop']);
+    });
+
+    it('/artists が 403 なら、以降そのプロセスでは呼ばない', async () => {
+      givenTopTracks([aSpotifyTrack()]);
+
+      await collectTopTracks();
+      await collectTopTracks();
+
+      expect(callsTo('/artists?ids=')).toHaveLength(1);
+      expect(artistGenresAvailable()).toBe(false);
+    });
+
     it('ジャンルが返る環境（extended quota mode）ではそのまま載る', async () => {
       givenTopTracks([aSpotifyTrack()]);
       givenArtistGenres({ 'artist-1': ['city pop', 'synthwave'] });
@@ -452,17 +488,63 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     await expect(spotifyFetch('/me/player/currently-playing')).resolves.toBeNull();
   });
 
-  it('429 は Retry-After 付きの SpotifyRateLimitError', async () => {
-    respondWith((url) =>
-      url.includes('/me/top/tracks')
-        ? new Response('slow down', { status: 429, headers: { 'Retry-After': '7' } })
-        : null
-    );
+  describe('429 は Retry-After 付きの SpotifyRateLimitError', () => {
+    function givenRateLimited(retryAfter: string | null): void {
+      respondWith((url) =>
+        url.includes('/me/top/tracks') || url.includes('/me/player/currently-playing')
+          ? new Response('slow down', {
+              status: 429,
+              headers: retryAfter === null ? {} : { 'Retry-After': retryAfter },
+            })
+          : null
+      );
+    }
 
-    await expect(spotifyFetch('/me/top/tracks')).rejects.toMatchObject({
-      name: 'SpotifyRateLimitError',
-      retryAfter: 7,
+    it.each([
+      ['7', 7],
+      ['30', 30],
+      // HTTP-date（RFC 9110 §10.2.3）は現在時刻との差を秒にする
+      [new Date(NOW.getTime() + 30 * 1000).toUTCString(), 30],
+      [new Date(NOW.getTime() - 30 * 1000).toUTCString(), 0],
+      ['abc', 1],
+      ['', 1],
+      [null, 1],
+    ])('Retry-After: %j → %d 秒', async (header, expected) => {
+      givenRateLimited(header);
+
+      await expect(spotifyFetch('/me/top/tracks')).rejects.toMatchObject({
+        name: 'SpotifyRateLimitError',
+        retryAfter: expected,
+      });
     });
+
+    it('秒数として読めなくても、ライブAPIの Retry-After と retry_after は数値になる', async () => {
+      givenRateLimited('Wed, 21 Oct 2015 07:28:00 GMT');
+
+      const res = await createApp().request('/api/now-playing');
+
+      expect(res.status).toBe(429);
+      expect(res.headers.get('retry-after')).toBe('0');
+      expect(await res.json()).toEqual({ error: 'Spotify rate limit exceeded', retry_after: 0 });
+    });
+  });
+
+  it('401 で取り直す前に、使わない1本目の応答の本文を捨てる（Node で接続を解放するため）', async () => {
+    const cancel = vi.fn(() => Promise.resolve());
+    let attempt = 0;
+    respondWith((url) => {
+      if (!url.includes('/me/top/tracks')) return null;
+      attempt += 1;
+      if (attempt > 1) return jsonOk({ items: [] });
+      const expired = new Response('expired', { status: 401 });
+      Object.defineProperty(expired.body, 'cancel', { value: cancel });
+      return expired;
+    });
+
+    await spotifyFetch('/me/top/tracks');
+
+    expect(attempt).toBe(2);
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it('その他の非2xx は SpotifyApiError として投げる', async () => {
@@ -481,5 +563,121 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     );
 
     await expect(spotifyFetch('/artists?ids=a')).rejects.toThrow(/2024年11月/);
+  });
+});
+
+describe('アクセストークンの更新', () => {
+  function tokenRequests() {
+    return callsTo('accounts.spotify.com/api/token');
+  }
+
+  function refreshTokenSent(index: number): string | null {
+    const body = tokenRequests()[index]?.init?.body;
+    return body instanceof URLSearchParams ? body.get('refresh_token') : null;
+  }
+
+  it('トークンが無い状態で同時に呼ばれても、更新のリクエストは1回だけ', async () => {
+    const tokens = await Promise.all([getAccessToken(), getAccessToken(), getAccessToken()]);
+
+    expect(tokenRequests()).toHaveLength(1);
+    expect(new Set(tokens)).toEqual(new Set(['spec-access-token']));
+  });
+
+  it('generate の1回の実行で、トークン更新は1回しか送られない', async () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-token-'));
+    try {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: true });
+
+      expect(tokenRequests()).toHaveLength(1);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it('更新が失敗したら待っていた呼び出しすべてに同じエラーが返り、次の呼び出しで改めて更新する', async () => {
+    let fail = true;
+    respondWith((url) => {
+      if (!url.includes('accounts.spotify.com/api/token')) return null;
+      return fail
+        ? new Response('{"error":"invalid_grant"}', { status: 400 })
+        : jsonOk({ access_token: 'second-try', expires_in: 3600 });
+    });
+
+    const results = await Promise.allSettled([getAccessToken(), getAccessToken()]);
+
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+    expect(results.map((r) => (r as PromiseRejectedResult).reason as unknown)).toEqual([
+      expect.any(SpotifyAuthError),
+      expect.any(SpotifyAuthError),
+    ]);
+    expect(tokenRequests()).toHaveLength(1);
+
+    fail = false;
+    await expect(getAccessToken()).resolves.toBe('second-try');
+    expect(tokenRequests()).toHaveLength(2);
+  });
+
+  describe('Spotify が新しい refresh_token を返したら（ローテーション）', () => {
+    function givenRotation(): void {
+      respondWith((url) =>
+        url.includes('accounts.spotify.com/api/token')
+          ? jsonOk({ access_token: 'rotated-access', expires_in: 3600, refresh_token: 'rotated-refresh' })
+          : null
+      );
+    }
+
+    it('このプロセスでは以降、新しい refresh_token で更新する', async () => {
+      givenRotation();
+
+      await getAccessToken();
+      await getAccessToken(true);
+
+      expect(refreshTokenSent(0)).toBe('spec-refresh-token');
+      expect(refreshTokenSent(1)).toBe('rotated-refresh');
+    });
+
+    it('環境変数で設定しているなら、登録値の更新が必要だと警告する（値はログに出さない）', async () => {
+      givenRotation();
+
+      await getAccessToken();
+
+      const warned = vi.mocked(console.warn).mock.calls.map((args) => args.join(' ')).join('\n');
+      expect(warned).toContain('SPOTIFY_REFRESH_TOKEN');
+      expect(warned).not.toContain('rotated-refresh');
+    });
+
+    it('data/auth.json から読んでいるなら、そこへ書き戻す', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-rotate-'));
+      try {
+        const storePath = join(dir, 'auth.json');
+        writeFileSync(storePath, JSON.stringify({ spotifyRefreshToken: 'from-file' }));
+        vi.stubEnv('AUTH_STORE_PATH', storePath);
+        vi.stubEnv('SPOTIFY_REFRESH_TOKEN', '');
+        loadStoredAuth(true);
+        givenRotation();
+
+        await getAccessToken();
+
+        expect(refreshTokenSent(0)).toBe('from-file');
+        expect(JSON.parse(readFileSync(storePath, 'utf8'))).toEqual({ spotifyRefreshToken: 'rotated-refresh' });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('同じ refresh_token が返ってきただけなら何もしない', async () => {
+      respondWith((url) =>
+        url.includes('accounts.spotify.com/api/token')
+          ? jsonOk({ access_token: 'a', expires_in: 3600, refresh_token: 'spec-refresh-token' })
+          : null
+      );
+
+      await getAccessToken();
+
+      expect(vi.mocked(console.warn)).not.toHaveBeenCalled();
+    });
   });
 });

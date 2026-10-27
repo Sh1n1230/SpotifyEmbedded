@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import { loadStoredAuth } from '../authStore.js';
 import { artCache, moodCache, nowPlayingCache, setDurableStore } from '../cache/index.js';
 import { resetArtistGenreAvailability } from '../spotify/artists.js';
+import { resetAccessToken } from '../spotify/auth.js';
 import type { SpotifyTrack, TopTrackEntry } from '../types/index.js';
 
 // ── 固定値 ───────────────────────────────────────────────────────────────────
@@ -284,8 +285,9 @@ beforeEach(() => {
     cache.flushAll();
   }
   setDurableStore(null);
-  // /artists の 403 latch はプロセス単位の状態。
+  // /artists の 403 latch とアクセストークンはプロセス単位の状態。
   resetArtistGenreAvailability();
+  resetAccessToken();
 
   handlers = [];
   calls = [];

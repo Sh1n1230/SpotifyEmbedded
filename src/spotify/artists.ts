@@ -10,7 +10,7 @@
  * では二度と呼ばない」ようにしている。毎リクエストごとに失敗する呼び出しを
  * 投げ続けると、ムード文にも使えないまま往復が増えるだけになる。
  */
-import { spotifyFetch } from './client.js';
+import { spotifyFetch, SpotifyApiError } from './client.js';
 import type { SpotifyArtist } from '../types/index.js';
 
 /** 403 を一度見たら以降スキップする。プロセス単位で持てば十分。 */
@@ -21,7 +21,7 @@ export function resetArtistGenreAvailability(): void {
   unavailable = false;
 }
 
-/** ジャンルが取得できる環境か（一度失敗したら false）。 */
+/** ジャンルが取得できる環境か（一度 403 を見たら false）。 */
 export function artistGenresAvailable(): boolean {
   return !unavailable;
 }
@@ -42,7 +42,11 @@ export async function fetchArtistGenres(artistIds: string[]): Promise<Map<string
     try {
       res = await spotifyFetch(`/artists?ids=${ids}`);
     } catch (err) {
-      markUnavailable(err instanceof Error ? err.message : String(err));
+      const reason = err instanceof Error ? err.message : String(err);
+      // 「この環境では取れない」と言えるのは 403 だけ。タイムアウト・429・5xx は一時的な
+      // 失敗なので、今回はジャンル無しで続け、次の呼び出しでまた試す。
+      if (err instanceof SpotifyApiError && err.status === 403) markUnavailable(reason);
+      else console.warn(`[spotify] ジャンルタグを取得できませんでした（次回また試します）: ${reason}`);
       return genreMap;
     }
     if (!res) continue;

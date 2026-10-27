@@ -4,6 +4,7 @@
  * 専用SDKを使わないのは、OpenAI / OpenRouter / Gemini / ローカルのサーバーを
  * 同じコードで扱うため。必要なのは `POST {baseUrl}/chat/completions` ひとつ。
  */
+import { discardBody } from '../http/body.js';
 
 export interface ChatMessage {
   role: 'system' | 'user';
@@ -80,6 +81,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   // 503 "high demand" や、混雑時に応答が返ってこないケース）。
   // 一度だけ間を置いて引き直す。それでも駄目ならムード文を諦める。
   if (res === 'timeout' || res.status >= 500) {
+    if (res !== 'timeout') await discardBody(res);
     await new Promise((done) => setTimeout(done, 900));
     res = await send();
   }
