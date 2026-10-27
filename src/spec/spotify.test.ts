@@ -13,7 +13,28 @@ import { createApp } from '../app.js';
 import { renderNowPlayingCard } from '../render/card.js';
 import { SpotifyApiError, SpotifyAuthError, spotifyFetch } from '../spotify/client.js';
 import { TOP_TRACKS_RANGES, type TopTracksRange } from '../types/index.js';
-import { NOW_ISO, ART_640, ART_300, TRACK_SUMMARY_KEYS, TOP_TRACK_ENTRY_KEYS, respondWith, jsonOk, callsTo, headerOf, installDefaultHandlers, clearHandlers, aSpotifyTrack, aLocalFileTrack, givenNowPlaying, givenRecentlyPlayed, givenTopTracks, givenArtistGenres, givenLlmConfigured, givenLlmReplies } from './support.js';
+import {
+  NOW,
+  NOW_ISO,
+  ART_640,
+  ART_300,
+  TRACK_SUMMARY_KEYS,
+  TOP_TRACK_ENTRY_KEYS,
+  respondWith,
+  jsonOk,
+  callsTo,
+  headerOf,
+  installDefaultHandlers,
+  clearHandlers,
+  aSpotifyTrack,
+  aLocalFileTrack,
+  givenNowPlaying,
+  givenRecentlyPlayedItems,
+  givenTopTracks,
+  givenArtistGenres,
+  givenLlmConfigured,
+  givenLlmReplies,
+} from './support.js';
 
 describe('要件1: Spotify API を叩いて、直近3種類のランキングを取得できる', () => {
   it.each(TOP_TRACKS_RANGES)(
@@ -172,13 +193,44 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       }
     });
 
-    it('再生履歴の先頭がローカルファイルなら採らない', async () => {
+    it('再生履歴の先頭がローカルファイルなら、その前に聴いたカタログの曲を採る', async () => {
+      const earlier = new Date(NOW.getTime() - 10 * 60 * 1000).toISOString();
       givenNowPlaying(null);
-      givenRecentlyPlayed(aLocalFileTrack(), NOW_ISO);
+      givenRecentlyPlayedItems([
+        { track: aLocalFileTrack(), playedAt: NOW_ISO },
+        { track: aSpotifyTrack({ id: 'catalog', name: 'Catalog Song' }), playedAt: earlier },
+      ]);
+
+      const recent = await collectRecentlyPlayed({ previous: null });
+
+      expect(callsTo('/me/player/recently-played')[0]!.url).toContain('limit=10');
+      expect(recent?.track.name).toBe('Catalog Song');
+      expect(recent?.played_at).toBe(earlier);
+    });
+
+    it('取得した範囲がすべてローカルファイルなら採らない', async () => {
+      givenNowPlaying(null);
+      givenRecentlyPlayedItems([
+        { track: aLocalFileTrack(), playedAt: NOW_ISO },
+        { track: aLocalFileTrack(), playedAt: NOW_ISO },
+      ]);
 
       const recent = await collectRecentlyPlayed({ previous: null });
 
       expect(recent).toBeNull();
+    });
+
+    it('再生履歴の先頭がカタログの曲なら、その曲を採る', async () => {
+      givenNowPlaying(null);
+      givenRecentlyPlayedItems([
+        { track: aSpotifyTrack(), playedAt: NOW_ISO },
+        { track: aSpotifyTrack({ id: 'older', name: 'Older' }), playedAt: NOW_ISO },
+      ]);
+
+      const recent = await collectRecentlyPlayed({ previous: null });
+
+      expect(recent?.track.id).toBe('track-1');
+      expect(recent?.played_at).toBe(NOW_ISO);
     });
   });
 

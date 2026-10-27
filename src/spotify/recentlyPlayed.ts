@@ -11,8 +11,14 @@
  * 呼び出し側は従来どおり前回のスナップショットを引き継ぐ。
  */
 import { spotifyFetch } from './client.js';
-import { isCatalogTrack, toTrackSummary } from './nowPlaying.js';
+import { isCatalogTrack, toTrackSummary } from './track.js';
 import type { SpotifyTrack, TrackSummary } from '../types/index.js';
+
+/**
+ * 新しい順に何件まで見るか。先頭がローカルファイルでも、その前に聴いたカタログの曲を拾えるように
+ * 1件より多く取る（Spotify は 1〜50 を受け付ける）。
+ */
+const HISTORY_LIMIT = 10;
 
 interface RecentlyPlayedResponse {
   items: { track: SpotifyTrack; played_at: string }[];
@@ -25,13 +31,16 @@ export interface RecentlyPlayedData {
 }
 
 export async function fetchRecentlyPlayed(): Promise<RecentlyPlayedData | null> {
-  const res = await spotifyFetch('/me/player/recently-played?limit=1');
+  const res = await spotifyFetch(`/me/player/recently-played?limit=${HISTORY_LIMIT}`);
   if (!res) return null;
 
   const data = (await res.json()) as RecentlyPlayedResponse;
-  const item = data.items?.[0];
-  // ローカルファイルやエピソードは id が無いことがある（now-playing と同じ判定）
-  if (!item?.track || !isCatalogTrack(item.track)) return null;
-
-  return { track: toTrackSummary(item.track), playedAt: item.played_at };
+  // ローカルファイルやエピソードは id が無いことがある（now-playing と同じ判定）。
+  // 新しい順に並んでいるので、最初のカタログの曲が「最後に聴いた曲」になる。
+  for (const item of data.items ?? []) {
+    if (item?.track && isCatalogTrack(item.track)) {
+      return { track: toTrackSummary(item.track), playedAt: item.played_at };
+    }
+  }
+  return null;
 }

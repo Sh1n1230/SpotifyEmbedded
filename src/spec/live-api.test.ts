@@ -9,7 +9,14 @@ import { createApp } from '../app.js';
 import { escapeXml } from '../render/text.js';
 import { renderEmbedPage } from '../render/page.js';
 import type { NowPlayingResponse } from '../types/index.js';
-import { NOW_ISO, ART_640, respondWith, callsTo, aSpotifyTrack, givenNowPlaying } from './support.js';
+import {
+  NOW_ISO,
+  ART_640,
+  respondWith,
+  callsTo,
+  aSpotifyTrack,
+  givenNowPlaying,
+} from './support.js';
 
 describe('ライブAPIは公開エンドポイントとして余計なものを漏らさない', () => {
   it('キャッシュ切れの瞬間の同時アクセスは、Spotify を1回だけ叩いて結果を共有する', async () => {

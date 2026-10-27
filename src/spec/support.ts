@@ -175,13 +175,14 @@ export function aSpotifyTrack(overrides: Partial<SpotifyTrack> = {}): SpotifyTra
 
 /**
  * Spotify クライアントに取り込んだローカルファイル。Spotify はこれを id・external_urls・
- * アーティストの id が空の形で返す（型の上では string だが、実際は null）。
+ * アーティストの id が空（null）の形で返す。
  * https://developer.spotify.com/documentation/web-api/concepts/playlists#local-files
  */
 export function aLocalFileTrack(): SpotifyTrack {
+  // アーティストの id も実際は null（型の上では string。カタログの曲にしか使わないため）
   const none = null as unknown as string;
   return aSpotifyTrack({
-    id: none,
+    id: null,
     is_local: true,
     name: 'My Demo',
     artists: [{ id: none, name: 'Local Artist', external_urls: {} as { spotify: string } }],
@@ -219,9 +220,14 @@ export function givenNowPlaying(track: SpotifyTrack | null): void {
 }
 
 export function givenRecentlyPlayed(track: SpotifyTrack, playedAt: string): void {
+  givenRecentlyPlayedItems([{ track, playedAt }]);
+}
+
+/** 再生履歴を新しい順に並べて返す。 */
+export function givenRecentlyPlayedItems(items: { track: SpotifyTrack; playedAt: string }[]): void {
   respondWith((url) =>
     url.includes('/me/player/recently-played')
-      ? jsonOk({ items: [{ track, played_at: playedAt }] })
+      ? jsonOk({ items: items.map(({ track, playedAt }) => ({ track, played_at: playedAt })) })
       : null
   );
 }

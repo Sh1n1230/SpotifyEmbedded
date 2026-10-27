@@ -30,9 +30,9 @@ export interface SpotifyArtist extends SpotifyArtistRef {
 export interface SpotifyTrack {
   /**
    * ローカルファイル（`is_local: true`）では実際には null が返り、`external_urls` も空になる。
-   * 公開スキーマに載せる前に `isCatalogTrack()`（src/spotify/nowPlaying.ts）で弾く。
+   * 公開スキーマに載せる前に `isCatalogTrack()`（src/spotify/track.ts）で弾く。
    */
-  id: string;
+  id: string | null;
   /** Spotify クライアントに取り込んだローカルファイルなら true。 */
   is_local?: boolean;
   name: string;
@@ -51,10 +51,11 @@ export interface SpotifyTrack {
   preview_url?: string | null;
 }
 
+/** 再生中のものが無い・広告などのときは item / progress_ms が null になる。 */
 export interface SpotifyPlaybackState {
   is_playing: boolean;
-  progress_ms: number;
-  item: SpotifyTrack;
+  progress_ms: number | null;
+  item: SpotifyTrack | null;
   timestamp: number;
 }
 

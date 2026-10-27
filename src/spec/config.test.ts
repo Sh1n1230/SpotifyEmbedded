@@ -8,7 +8,16 @@ import { loadStoredAuth, saveStoredAuth } from '../authStore.js';
 import { collectNowPlaying } from '../core/collect.js';
 import { upsertEnvFile } from '../cli/setup.js';
 import type { SpotifyTrack } from '../types/index.js';
-import { NOW, respondWith, jsonOk, callsTo, headerOf, aSpotifyTrack, givenNowPlaying, givenLlmReplies } from './support.js';
+import {
+  NOW,
+  respondWith,
+  jsonOk,
+  callsTo,
+  headerOf,
+  aSpotifyTrack,
+  givenNowPlaying,
+  givenLlmReplies,
+} from './support.js';
 
 describe('設定は「環境変数 → data/auth.json」の順に解決し、.env だけで動いている構成を変えない', () => {
   let dir: string;

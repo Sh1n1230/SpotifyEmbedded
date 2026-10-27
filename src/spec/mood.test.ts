@@ -12,7 +12,24 @@ import { generate } from '../cli/generate.js';
 import { chatCompletion } from '../llm/client.js';
 import { renderRankingCard } from '../render/ranking.js';
 import type { SpotifyTrack, TopTrackEntry, TopTracksRange } from '../types/index.js';
-import { NOW, NOW_ISO, respondWith, jsonOk, callsTo, bodyOf, installDefaultHandlers, clearHandlers, clearCalls, aSpotifyTrack, aTopTrackEntry, givenNowPlaying, givenTopTracks, givenLlmConfigured, givenLlmReplies, type RecordedCall } from './support.js';
+import {
+  NOW,
+  NOW_ISO,
+  respondWith,
+  jsonOk,
+  callsTo,
+  bodyOf,
+  installDefaultHandlers,
+  clearHandlers,
+  clearCalls,
+  aSpotifyTrack,
+  aTopTrackEntry,
+  givenNowPlaying,
+  givenTopTracks,
+  givenLlmConfigured,
+  givenLlmReplies,
+  type RecordedCall,
+} from './support.js';
 
 describe('要件5: LLM は任意機能であり、何が起きても曲情報は出る', () => {
   it('LLM が未設定なら、そもそも呼びに行かず mood: null で返す', async () => {

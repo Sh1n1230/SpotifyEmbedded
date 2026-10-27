@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import worker from '../worker.js';
-import { NOW_ISO, aSpotifyTrack, givenNowPlaying, givenLlmConfigured, givenLlmReplies } from './support.js';
+import {
+  NOW_ISO,
+  aSpotifyTrack,
+  givenNowPlaying,
+  givenLlmConfigured,
+  givenLlmReplies,
+} from './support.js';
 
 describe('Workers のエントリ（src/worker.ts）は、バインディングを KV とレート制限に繋ぐ', () => {
   it('ムード文は期限付きで KV に書き、レート制限は接続元 IP ごとに数える', async () => {

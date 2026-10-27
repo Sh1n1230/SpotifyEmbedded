@@ -12,7 +12,22 @@ import { generate } from '../cli/generate.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
 import type { TopTrackEntry } from '../types/index.js';
-import { NOW, NOW_ISO, respondWith, callsTo, installDefaultHandlers, clearHandlers, clearCalls, aSpotifyTrack, aTopTrackEntry, givenNowPlaying, givenRecentlyPlayed, givenTopTracks, givenLlmConfigured, givenLlmReplies } from './support.js';
+import {
+  NOW,
+  NOW_ISO,
+  respondWith,
+  callsTo,
+  installDefaultHandlers,
+  clearHandlers,
+  clearCalls,
+  aSpotifyTrack,
+  aTopTrackEntry,
+  givenNowPlaying,
+  givenRecentlyPlayed,
+  givenTopTracks,
+  givenLlmConfigured,
+  givenLlmReplies,
+} from './support.js';
 
 describe('要件3: ランキングの静的な画像を得られる', () => {
   function render(tracks: TopTrackEntry[], count = 5): string {
