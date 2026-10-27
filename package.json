@@ -29,7 +29,7 @@
     "deploy": "wrangler deploy",
     "setup": "tsx src/cli/index.ts setup",
     "generate": "tsx src/cli/index.ts generate",
-    "auth": "ENABLE_AUTH_ROUTES=true tsx src/index.ts",
+    "auth": "tsx src/authServer.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "test": "vitest run",

@@ -5,6 +5,7 @@
  * 同じコードで扱うため。必要なのは `POST {baseUrl}/chat/completions` ひとつ。
  */
 import { discardBody } from '../http/body.js';
+import { llmBaseUrlProblem } from './endpoint.js';
 
 export interface ChatMessage {
   role: 'system' | 'user';
@@ -48,6 +49,10 @@ function noReasoningParams(baseUrl: string): Record<string, unknown> {
 
 /** 応答テキストを返す。失敗時は原因が分かるメッセージを添えて throw。 */
 export async function chatCompletion(params: ChatCompletionParams): Promise<string> {
+  // http のリモートには API キーを送らない（呼び出し側は LLM の失敗と同じくムード文なしに落ちる）
+  const problem = llmBaseUrlProblem(params.baseUrl);
+  if (problem) throw new Error(problem);
+
   const url = `${params.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const send = async (): Promise<Response | 'timeout'> => {

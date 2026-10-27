@@ -25,8 +25,23 @@ import {
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
 import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
 import { chatCompletion } from '../llm/client.js';
+import { isLocalLlmEndpoint, llmBaseUrlProblem } from '../llm/endpoint.js';
+import { formatDateJa } from '../render/theme.js';
 
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Spotify の refresh_token の寿命。使い続けても延びない。
+ * https://developer.spotify.com/documentation/web-api/tutorials/refreshing-tokens
+ */
+const REFRESH_TOKEN_LIFETIME_MONTHS = 6;
+
+/** 取り直しの目安の日付（取得日から6か月後、日本時間の YYYY-MM-DD）。 */
+export function refreshTokenRenewalDate(issuedAt: Date): string {
+  const renewal = new Date(issuedAt);
+  renewal.setUTCMonth(renewal.getUTCMonth() + REFRESH_TOKEN_LIFETIME_MONTHS);
+  return formatDateJa(renewal);
+}
 
 export async function setup(): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -56,6 +71,10 @@ export async function setup(): Promise<void> {
     console.log('\nブラウザで Spotify の承認画面を開きます...');
     const refreshToken = await runOAuthFlow(app);
     console.log('✓ refresh_token を取得しました');
+    console.log(
+      `  有効期限は承認から${REFRESH_TOKEN_LIFETIME_MONTHS}か月です。` +
+        `${refreshTokenRenewalDate(new Date())} ごろまでに \`npm run setup\` で取り直してください。`
+    );
 
     const values: StoredAuth = {
       spotifyClientId: clientId,
@@ -112,10 +131,65 @@ async function ensureValue(
   else console.log(`\n${options.label}`);
 
   for (;;) {
-    const answer = (await ask(rl, `  ${options.label}: `, options.secret)).trim();
+    const answer = await askValue(prompter(rl), `  ${options.label}: `, options.secret ? 'token' : 'text');
     if (answer) return answer;
     if (options.optional) return '';
     console.log('  値を入力してください。');
+  }
+}
+
+/**
+ * 入力として受け付けられない理由。受け付けられれば null。
+ *
+ * 値は設定ファイルに `KEY=value` の1行として書くので、改行が入ると別の行（別の環境変数）を
+ * 差し込めてしまう。制御文字も同じく弾く。トークン・キーは空白も含まない。
+ */
+export function invalidInputReason(value: string, kind: 'text' | 'token'): string | null {
+  // eslint-disable-next-line no-control-regex -- 改行・制御文字を弾くため、意図して指定している
+  if (/[\u0000-\u001f\u007f]/.test(value)) return '改行や制御文字は使えません。';
+  if (kind === 'token' && /\s/.test(value)) return '空白は使えません。';
+  return null;
+}
+
+/** 1行を聞く関数。テストでは決まった答えを返すものに差し替える。 */
+export type Prompt = (query: string, secret: boolean) => Promise<string>;
+
+function prompter(rl: Interface): Prompt {
+  return (query, secret) => ask(rl, query, secret);
+}
+
+/** 1行を聞き、受け付けられない値なら理由を出して聞き直す。前後の空白は落とす。 */
+async function askValue(prompt: Prompt, query: string, kind: 'text' | 'token'): Promise<string> {
+  for (;;) {
+    const answer = (await prompt(query, kind === 'token')).trim();
+    const reason = invalidInputReason(answer, kind);
+    if (!reason) return answer;
+    console.log(`  ${reason}もう一度入力してください。`);
+  }
+}
+
+/**
+ * 「その他」で入力されたエンドポイント URL を確かめる。API キーはここへ送られるので、
+ * 形式・スキームを検査し、プリセットにもローカルにも無いホストなら送り先を見せて確認を取る。
+ * 空なら null（LLM なしで進める）。
+ */
+export async function askCustomBaseUrl(prompt: Prompt): Promise<string | null> {
+  for (;;) {
+    const baseUrl = await askValue(prompt, '  エンドポイントURL (例: http://localhost:11434/v1): ', 'text');
+    if (!baseUrl) return null;
+
+    const problem = llmBaseUrlProblem(baseUrl);
+    if (problem) {
+      console.log(`  ✗ ${problem}`);
+      continue;
+    }
+
+    const known = PROVIDERS.some((provider) => provider.baseUrl && baseUrl.startsWith(provider.baseUrl));
+    if (known || isLocalLlmEndpoint(baseUrl)) return baseUrl;
+
+    console.log(`  このホストに API キーが送信されます: ${new URL(baseUrl).host}`);
+    const answer = (await prompt('  このホストで合っていますか？ (y/N): ', false)).trim().toLowerCase();
+    if (answer === 'y' || answer === 'yes') return baseUrl;
   }
 }
 
@@ -165,17 +239,16 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
 
   let baseUrl = preset.baseUrl;
   if (!baseUrl) {
-    baseUrl = (
-      await ask(rl, '  エンドポイントURL (例: http://localhost:11434/v1): ', false)
-    ).trim();
-    if (!baseUrl) {
+    const custom = await askCustomBaseUrl(prompter(rl));
+    if (!custom) {
       console.log('  → URLが空のため、ムード文なしで進めます。');
       return {};
     }
+    baseUrl = custom;
   }
 
   if (preset.signupUrl) console.log(`\n  APIキーの発行: ${preset.signupUrl}`);
-  const apiKey = (await ask(rl, '  APIキー: ', true)).trim();
+  const apiKey = await askValue(prompter(rl), '  APIキー: ', 'token');
   if (!apiKey) {
     console.log('  → キーが空のため、ムード文なしで進めます。');
     return {};
@@ -184,7 +257,7 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
   const modelPrompt = preset.defaultModel
     ? `  モデル名 [${preset.defaultModel}]: `
     : '  モデル名: ';
-  const model = (await ask(rl, modelPrompt, false)).trim() || preset.defaultModel;
+  const model = (await askValue(prompter(rl), modelPrompt, 'text')) || preset.defaultModel;
 
   if (!model) {
     console.log('  → モデル名が空のため、ムード文なしで進めます。');
@@ -329,9 +402,24 @@ async function runOAuthFlow(app: OAuthApp): Promise<string> {
   });
 }
 
+/**
+ * 既定のブラウザで URL を開くコマンド。
+ *
+ * Windows で `cmd.exe /c start "" <url>` にすると、cmd.exe が URL の `&` をコマンドの区切りとして
+ * 解釈し、認可 URL が `?response_type=code` で切れる（spawn は空白を含まない引数を引用符で囲まない）。
+ * cmd.exe を通さず、rundll32 の FileProtocolHandler に URL を1つの引数として渡す。
+ */
+export function browserCommand(
+  url: string,
+  platform: NodeJS.Platform
+): { command: string; args: string[] } {
+  if (platform === 'darwin') return { command: 'open', args: [url] };
+  if (platform === 'win32') return { command: 'rundll32.exe', args: ['url.dll,FileProtocolHandler', url] };
+  return { command: 'xdg-open', args: [url] };
+}
+
 function openBrowser(url: string): void {
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd.exe' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const { command, args } = browserCommand(url, process.platform);
 
   try {
     const child = spawn(command, args, {
@@ -370,6 +458,14 @@ function resultPage(message: string, ok: boolean): string {
  * @returns 削除した行の変数名
  */
 export function upsertEnvFile(path: string, values: StoredAuth): string[] {
+  // 入力の段階でも弾いているが、改行の入った値は別の行（別の環境変数）を差し込めるので、書く直前にも確かめる
+  for (const field of AUTH_FIELDS) {
+    const value = values[field];
+    if (value !== undefined && invalidInputReason(value, 'text')) {
+      throw new Error(`${AUTH_ENV[field]} に改行や制御文字が含まれているため、書き込みません。`);
+    }
+  }
+
   let lines = existsSync(path) ? readFileSync(path, 'utf8').split('\n') : [];
   const removed: string[] = [];
 

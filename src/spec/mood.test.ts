@@ -230,6 +230,35 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       });
     }
 
+    it('http のリモートには API キーを送らない（平文で流れるため）', async () => {
+      givenLlmReplies('今チルな気分になっています');
+
+      await expect(callLlm('http://example.com/v1')).rejects.toThrow(/https の URL を指定してください/);
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+    });
+
+    it.each(['http://localhost:11434/v1', 'http://127.0.0.1:1234/v1'])(
+      'ローカルの %s は http のまま使える',
+      async (baseUrl) => {
+        givenLlmReplies('今チルな気分になっています');
+
+        await expect(callLlm(baseUrl)).resolves.toBe('今チルな気分になっています');
+      }
+    );
+
+    it('LLM_BASE_URL が http のリモートでも曲情報は返り、理由がログに出る', async () => {
+      givenLlmConfigured('http://example.com/v1');
+      givenLlmReplies('今チルな気分になっています');
+      givenNowPlaying(aSpotifyTrack());
+
+      const result = await collectNowPlaying();
+
+      expect(result.track?.name).toBe('Midnight Drive');
+      expect(result.mood).toBeNull();
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+      expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain('https の URL');
+    });
+
     it.each([
       [401, /APIキー/],
       [404, /モデル/],

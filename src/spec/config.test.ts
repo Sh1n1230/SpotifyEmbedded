@@ -164,6 +164,17 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
         expect(removed).toEqual(['GROQ_API_KEY', 'GROQ_MODEL']);
       });
 
+      it.each([
+        ['改行', 'new\nLLM_BASE_URL=https://evil.example'],
+        ['CR', 'new\rX=1'],
+        ['制御文字', 'new\u0000'],
+      ])('%s を含む値は書き込まない（別の行を差し込めてしまう）', (_, value) => {
+        writeFileSync(envPath, '# メモ\nLLM_API_KEY=old\n');
+
+        expect(() => upsertEnvFile(envPath, { llmApiKey: value })).toThrow(/LLM_API_KEY/);
+        expect(readFileSync(envPath, 'utf8')).toBe('# メモ\nLLM_API_KEY=old\n');
+      });
+
       it('値の差し替えは正規名の行だけを書き換え、他の行は触らない', () => {
         writeFileSync(envPath, '# メモ\nLLM_API_KEY=old\nOTHER=x\n');
 
