@@ -77,6 +77,24 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
 
     expect(XMLValidator.validate(svg)).toBe(true);
     expect(svg).toContain('データがありません');
+    expect(svg).toContain('<desc id="rank-desc">データがありません</desc>');
+  });
+
+  it('スクリーンリーダーにも、表示中の曲の順位・曲名・アーティストが <desc> で届く', () => {
+    // role="img" の中の <text> は読まれないので、要約（<title>）だけでは曲が伝わらない
+    const tracks = Array.from({ length: 5 }, (_, i) =>
+      aTopTrackEntry({ rank: i + 1, id: `track-${i}`, name: `Song ${i} & <b>`, artist: `Artist ${i}` })
+    );
+
+    const svg = render(tracks, 3);
+
+    expect(XMLValidator.validate(svg)).toBe(true);
+    expect(svg).toMatch(/<svg [^>]*role="img"[^>]*aria-labelledby="rank-title"[^>]*aria-describedby="rank-desc"/);
+    expect(svg).toContain('<title id="rank-title">');
+    expect(svg).toContain(
+      '<desc id="rank-desc">1位 Song 0 &amp; &lt;b&gt; / Artist 0。2位 Song 1 &amp; &lt;b&gt; / Artist 1。3位 Song 2 &amp; &lt;b&gt; / Artist 2</desc>'
+    );
+    expect(svg).not.toContain('Artist 3');
   });
 
   it('集計期間が見出しに出る', () => {

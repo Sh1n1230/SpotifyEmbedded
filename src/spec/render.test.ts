@@ -2,8 +2,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { XMLValidator } from 'fast-xml-parser';
 
 import { THEMES, FONT_STACK } from '../render/theme.js';
+import { renderNowPlayingCard } from '../render/card.js';
 import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
 import { portInUseHelp } from '../http/portInUse.js';
 import { truncateToWidth, visualWidth, wrapToWidth } from '../render/text.js';
@@ -212,5 +214,49 @@ describe('SVG の文字幅の見積もりと折り返し（<text> は自動で�
       'センチメンタルな夜を',
       '過ごしているようです',
     ]);
+  });
+});
+
+describe('now-playing カードの再生中インジケータは、OS の「視差効果を減らす」に従う', () => {
+  const playing = () =>
+    renderNowPlayingCard({
+      state: 'playing',
+      track: {
+        id: 'track-1',
+        name: 'Midnight Drive',
+        artist: 'Neon District',
+        album: 'After Hours',
+        album_art_url: ART_640,
+        duration_ms: 213_000,
+        popularity: null,
+        spotify_url: 'https://open.spotify.com/track/track-1',
+        preview_url: null,
+      },
+      mood: null,
+    });
+
+  it('SMIL（<animate>）ではなく CSS アニメーションで動かし、prefers-reduced-motion: reduce で止める', () => {
+    const svg = playing();
+
+    expect(XMLValidator.validate(svg)).toBe(true);
+    expect(svg).not.toContain('<animate');
+    expect(svg).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ \.spotify-embedded-eq rect \{ animation: none;/);
+    // 3本のバーがそれぞれの周期で動く（/embed の .eq span と同じ 0.9s / 1.25s / 0.75s）
+    for (const dur of ['0.9s', '1.25s', '0.75s']) expect(svg).toContain(`${dur} ease-in-out infinite`);
+    expect(svg.match(/<rect class="spotify-embedded-eq-\d"/g)).toHaveLength(3);
+  });
+
+  it('他の SVG と同じ文書に入っても衝突しないよう、クラス名と keyframes 名はカード固有にする', () => {
+    const svg = playing();
+    const style = /<style>([\s\S]*?)<\/style>/.exec(svg)![1]!;
+    const selectors = style.match(/(^|\s)\.[\w-]+/g)!.map((s) => s.trim());
+    const keyframes = style.match(/@keyframes [\w-]+/g)!;
+
+    expect(selectors.every((s) => s.startsWith('.spotify-embedded-eq'))).toBe(true);
+    expect(keyframes.every((k) => k.startsWith('@keyframes spotify-embedded-eq'))).toBe(true);
+  });
+
+  it('再生中でなければインジケータを描かない', () => {
+    expect(renderNowPlayingCard({ state: 'idle', track: null, mood: null })).not.toContain('<style>');
   });
 });

@@ -116,25 +116,47 @@ function renderLabel(
     <text x="${x + 20}" y="${baseline}" font-size="10" font-weight="600" letter-spacing="1.4" fill="${color}">${escapeXml(label)}</text>`;
 }
 
-/** 再生中インジケータ。SMILアニメーションはGitHubのcamo経由でも動く。 */
-function equalizer(x: number, baselineY: number, color: string): string {
-  const bars = [
-    { dx: 0, dur: '0.9s', heights: [4, 12, 4] },
-    { dx: 5.5, dur: '1.25s', heights: [11, 4, 11] },
-    { dx: 11, dur: '0.75s', heights: [6, 13, 6] },
-  ];
+/**
+ * 再生中インジケータの3本のバー。高さは [始め, 中間] で、始めと中間を行き来する。
+ * /embed・embed.js の CSS アニメーション（.eq span）と同じ動き。
+ */
+const EQ_BARS = [
+  { dx: 0, dur: '0.9s', heights: [4, 12] },
+  { dx: 5.5, dur: '1.25s', heights: [11, 4] },
+  { dx: 11, dur: '0.75s', heights: [6, 13] },
+] as const;
 
-  return bars
-    .map(({ dx, dur, heights }) => {
-      const h = heights.join(';');
-      // 下端を baselineY に固定するため y も height に合わせて動かす
-      const y = heights.map((v) => baselineY - v).join(';');
-      return `<rect x="${x + dx}" y="${baselineY - (heights[0] ?? 4)}" width="3" height="${heights[0] ?? 4}" rx="1.5" fill="${color}">
-      <animate attributeName="height" values="${h}" dur="${dur}" repeatCount="indefinite"/>
-      <animate attributeName="y" values="${y}" dur="${dur}" repeatCount="indefinite"/>
-    </rect>`;
-    })
-    .join('\n    ');
+/**
+ * 再生中インジケータ。SMIL（<animate>）は CSS のメディアクエリで止められず、OS の
+ * 「視差効果を減らす」（prefers-reduced-motion）を無視して動き続けるので、CSS アニメーションにする
+ * （WCAG 2.2 の 2.2.2、Technique C39）。SVG を <img> で読む GitHub の README でも CSS アニメーションは動く。
+ *
+ * 他の SVG と同じ HTML 文書にインラインで入っても衝突しないよう、クラス名と keyframes 名は
+ * このカード固有の接頭辞にする。/badge.svg の CSP は style-src 'unsafe-inline' を許している。
+ */
+function equalizer(x: number, baselineY: number, color: string): string {
+  const max = (heights: readonly number[]) => Math.max(...heights);
+  const keyframes = EQ_BARS.map(({ heights }, i) => {
+    const [from, mid] = heights.map((h) => (h / max(heights)).toFixed(3));
+    return `@keyframes spotify-embedded-eq-${i} { 0%, 100% { transform: scaleY(${from}); } 50% { transform: scaleY(${mid}); } }`;
+  });
+  const bars = EQ_BARS.map(({ dx, heights }, i) => {
+    const height = max(heights);
+    return `<rect class="spotify-embedded-eq-${i}" x="${x + dx}" y="${baselineY - height}" width="3" height="${height}" rx="1.5" fill="${color}"/>`;
+  });
+  const durations = EQ_BARS.map(
+    ({ dur }, i) => `.spotify-embedded-eq-${i} { animation: spotify-embedded-eq-${i} ${dur} ease-in-out infinite; }`
+  );
+
+  return `<style>
+      .spotify-embedded-eq rect { transform-box: fill-box; transform-origin: 50% 100%; }
+      ${durations.join('\n      ')}
+      ${keyframes.join('\n      ')}
+      @media (prefers-reduced-motion: reduce) { .spotify-embedded-eq rect { animation: none; transform: scaleY(0.667); } }
+    </style>
+    <g class="spotify-embedded-eq">
+      ${bars.join('\n      ')}
+    </g>`;
 }
 
 function renderTrackBody(track: TrackSummary, mood: MoodResult | null, theme: Theme): string {

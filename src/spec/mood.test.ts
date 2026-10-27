@@ -74,6 +74,19 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(result.mood?.text).toBe('今ノリノリなようです');
   });
 
+  it.each(['「今ノリノリなようです。」', '"今ノリノリなようです。"'])(
+    '%s のように括弧の内側に句点があっても、括弧と句点の両方を取り除く',
+    async (reply) => {
+      givenLlmConfigured();
+      givenLlmReplies(reply);
+      givenNowPlaying(aSpotifyTrack());
+
+      const result = await collectNowPlaying();
+
+      expect(result.mood?.text).toBe('今ノリノリなようです');
+    }
+  );
+
   it('「…」。 の形でも閉じ括弧まで取り除く', async () => {
     givenLlmConfigured();
     givenLlmReplies('「今ノリノリなようです」。');
