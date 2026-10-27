@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm';
 import { THEMES, FONT_STACK } from '../render/theme.js';
 import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
 import { portInUseHelp } from '../http/portInUse.js';
+import { truncateToWidth, visualWidth, wrapToWidth } from '../render/text.js';
 import type { NowPlayingResponse } from '../types/index.js';
 import { NOW_ISO, ART_640, aTopTrackEntry } from './support.js';
 
@@ -145,6 +146,71 @@ describe('npm run dev のポート衝突の案内は、そのプラットフォ�
       '✗ ポート 3000 はすでに別のプロセスが使用しています。',
       '   別のポートで起動する:  PORT=3001 npm run dev',
       '   使用中のプロセスを調べる:  lsof -nP -iTCP:3000 -sTCP:LISTEN',
+    ]);
+  });
+});
+
+describe('SVG の文字幅の見積もりと折り返し（<text> は自動で折り返さない）', () => {
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  const clusters = (text: string) => Array.from(segmenter.segment(text), (s) => s.segment);
+
+  // 家族（ZWJ シーケンス）・国旗（地域指示子2つ）・肌の色の修飾子・結合文字
+  const FAMILY = '\u{1F468}‍\u{1F469}‍\u{1F467}';
+  const FLAG_JP = '\u{1F1EF}\u{1F1F5}';
+  const THUMBS_UP_DARK = '\u{1F44D}\u{1F3FF}';
+  const E_ACUTE = 'é';
+
+  it.each([
+    ['家族の絵文字（ZWJ シーケンス）', FAMILY, 1],
+    ['国旗', FLAG_JP, 1],
+    ['肌の色つきの絵文字', THUMBS_UP_DARK, 1],
+    ['CJK 統合漢字拡張 B の 𠮷', '\u{20BB7}', 1],
+    ['Symbols and Pictographs Extended-A の 🫠', '\u{1FAE0}', 1],
+    ['既定で絵文字表示の ⚡', '⚡', 1],
+    ['キーキャップの 1️⃣', '1️⃣', 1],
+    ['結合文字つきの é', E_ACUTE, 0.5],
+    ['ASCII の #', '#', 0.5],
+    ['ASCII の数字', '7', 0.5],
+    ['かな', 'あ', 1],
+    ['全角英数', 'Ａ', 1],
+  ])('%s の幅は %s em', (_, text, width) => {
+    expect(visualWidth(text)).toBe(width);
+  });
+
+  it.each([
+    ['家族', `ab${FAMILY}${FAMILY}cd`],
+    ['国旗', `ab${FLAG_JP}${FLAG_JP}cd`],
+    ['肌の色', `ab${THUMBS_UP_DARK}${THUMBS_UP_DARK}cd`],
+    ['結合文字', `${E_ACUTE.repeat(8)}`],
+  ])('省略・折り返しは %s の途中で切らない', (_, text) => {
+    const original = clusters(text);
+    for (const width of [1, 1.5, 2, 2.5, 3]) {
+      const truncated = truncateToWidth(text, width).replace(/…$/, '');
+      expect(original.slice(0, clusters(truncated).length)).toEqual(clusters(truncated));
+
+      const wrapped = wrapToWidth(text, width, 10);
+      expect(wrapped.flatMap(clusters)).toEqual(original);
+    }
+  });
+
+  it('空白を含まない長い半角の語も、各行が枠に収まるよう文字単位で割る', () => {
+    const title = 'Supercalifragilisticexpialidocious_extended_remix_version_2024';
+
+    for (const [width, lines] of [[10, 2], [10, 10], [6.5, 3]] as const) {
+      const wrapped = wrapToWidth(title, width, lines);
+      for (const line of wrapped) expect(visualWidth(line)).toBeLessThanOrEqual(width);
+    }
+    expect(wrapToWidth(title, 10, 10).join('')).toBe(title);
+  });
+
+  it('空白で区切れる英文は、今までどおり単語の途中で折らない', () => {
+    expect(wrapToWidth('Midnight Drive Extended Mix', 5, 4)).toEqual(['Midnight', 'Drive', 'Extended', 'Mix']);
+  });
+
+  it('日本語は1文字単位で折る（今までどおり）', () => {
+    expect(wrapToWidth('センチメンタルな夜を過ごしているようです', 10, 2)).toEqual([
+      'センチメンタルな夜を',
+      '過ごしているようです',
     ]);
   });
 });
