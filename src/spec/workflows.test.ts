@@ -11,7 +11,7 @@ describe('ワークフロー定義 (.github/workflows/deploy-workers.yml)', () =
   const workflow = yaml.load(
     readFileSync(new URL('../../.github/workflows/deploy-workers.yml', import.meta.url), 'utf8')
   ) as { jobs: Record<string, { steps: Step[] }> };
-  const steps = workflow.jobs['deploy'].steps;
+  const steps = workflow.jobs['deploy']!.steps;
   const indexOfRun = (script: string) => steps.findIndex((step) => step.run === script);
 
   // CI（ci.yml）とは並行して走り、その結果を待たない

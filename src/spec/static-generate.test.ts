@@ -547,14 +547,14 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
     const workflow = yaml.load(
       readFileSync(new URL('../../.github/workflows/update-spotify.yml', import.meta.url), 'utf8')
     ) as Workflow;
-    const steps = workflow.jobs['update'].steps;
+    const steps = workflow.jobs['update']!.steps;
     const allRunScripts = steps.map((step) => step.run ?? '').join('\n');
 
     it('定期実行のスケジュールが設定されている', () => {
       // 間隔そのものは仕様ではない（GitHub 側で遅延・間引きされるため、
       // 30分という数字に意味を持たせていない）。定期実行の口があることを見る。
       expect(workflow.on.schedule?.length).toBeGreaterThan(0);
-      expect(workflow.on.schedule![0].cron).toMatch(/^\S+( \S+){4}$/);
+      expect(workflow.on.schedule![0]!.cron).toMatch(/^\S+( \S+){4}$/);
     });
 
     it('ランキング画像を生成するステップがある', () => {
@@ -584,7 +584,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(allRunScripts).toContain('spotify-data');
       expect(allRunScripts).toContain('git push');
       // 書き込み権限は push するジョブにだけ渡し、ワークフロー全体は読み取りのまま
-      expect(workflow.jobs['update'].permissions?.['contents']).toBe('write');
+      expect(workflow.jobs['update']!.permissions?.['contents']).toBe('write');
       expect(workflow.permissions['contents']).toBe('read');
     });
 

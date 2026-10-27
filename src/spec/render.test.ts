@@ -34,7 +34,7 @@ describe('カードの文字色は、どちらのテーマでも背景に対し�
     const embedThemes = runInNewContext(`(${literal})`) as Record<string, Record<string, string>>;
 
     for (const name of ['dark', 'light'] as const) {
-      for (const [key, value] of Object.entries(embedThemes[name])) {
+      for (const [key, value] of Object.entries(embedThemes[name]!)) {
         expect(value, `${name}.${key}`).toBe(THEMES[name][key as keyof (typeof THEMES)[typeof name]]);
       }
     }

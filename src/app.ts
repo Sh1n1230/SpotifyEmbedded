@@ -47,7 +47,7 @@ export function createApp(options: AppOptions = {}): Hono {
       if (!(await limiter(c))) {
         return c.json({ error: 'Too many requests, please try again later.' }, 429);
       }
-      await next();
+      return next();
     });
   }
 

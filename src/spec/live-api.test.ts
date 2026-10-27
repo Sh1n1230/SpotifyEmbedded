@@ -91,7 +91,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
   it('/embed のライブ更新は、タブが非表示の間は API を叩かず、表示に戻ったらすぐ取り直す', async () => {
     givenNowPlaying(aSpotifyTrack());
     const html = await (await createApp().request('/embed')).text();
-    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1];
+    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
 
     // ブラウザの代わりに、スクリプトが触るものだけを用意して実行する
     let hidden = true;
@@ -249,14 +249,14 @@ describe('/embed のライブ更新は、表示を取得した内容と食い違
       state: 'playing',
       liveEndpoint: '/api/now-playing',
     });
-    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1];
+    const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!;
 
     const elements: Record<string, { tagName: string; textContent: string; attrs: Record<string, string> }> =
       {};
     for (const id of ['card', 'label', 'label-text', 'mood', 'track', 'artist', 'art']) {
       elements[id] = { tagName: id === 'card' ? 'A' : id === 'art' ? 'IMG' : 'P', textContent: '', attrs: {} };
     }
-    if (initial.mood?.text) elements['mood'].textContent = initial.mood.text;
+    if (initial.mood?.text) elements['mood']!.textContent = initial.mood.text;
     else delete elements['mood'];
 
     let onInterval: (() => void) | undefined;
@@ -320,9 +320,9 @@ describe('/embed のライブ更新は、表示を取得した内容と食い違
     const result = await liveUpdate(aNowPlaying('A', 'A のムード'), aNowPlaying('B', 'B のムード'));
 
     expect(result.reloaded).toBe(false);
-    expect(result.elements['track'].textContent).toBe('B');
-    expect(result.elements['mood'].textContent).toBe('B のムード');
-    expect(result.elements['card'].attrs['aria-label']).toBe(
+    expect(result.elements['track']!.textContent).toBe('B');
+    expect(result.elements['mood']!.textContent).toBe('B のムード');
+    expect(result.elements['card']!.attrs['aria-label']).toBe(
       '再生中: B のムード — B / Neon District（Spotifyで開く）'
     );
     expect(result.title).toBe('Now Playing: B / Neon District');

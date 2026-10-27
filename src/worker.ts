@@ -40,9 +40,7 @@ export default {
     // バインディングは isolate 内で不変なので、最初のリクエストで一度だけ組み立てる
     if (!app) {
       setDurableStore(env.MOODS ? kvStore(env.MOODS) : null);
-      app = createApp({
-        rateLimiter: env.RATE_LIMITER ? bindingRateLimiter(env.RATE_LIMITER) : undefined,
-      });
+      app = createApp(env.RATE_LIMITER ? { rateLimiter: bindingRateLimiter(env.RATE_LIMITER) } : {});
     }
     return app.fetch(request, env, ctx);
   },

@@ -292,7 +292,7 @@ beforeEach(() => {
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     calls.push({ url, init });
     for (let i = handlers.length - 1; i >= 0; i -= 1) {
-      const res = handlers[i](url, init);
+      const res = handlers[i]!(url, init);
       if (res) return res;
     }
     throw new Error(`モックされていないリクエスト: ${url}`);

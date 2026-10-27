@@ -23,7 +23,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
 
       const result = await collectTopTracks({ range });
 
-      const [call] = callsTo('/me/top/tracks');
+      const call = callsTo('/me/top/tracks')[0]!;
       expect(call).toBeDefined();
       expect(call.url).toContain(`time_range=${range}`);
       expect(headerOf(call, 'Authorization')).toMatch(/^Bearer .+/);
@@ -42,7 +42,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
 
     for (const range of TOP_TRACKS_RANGES) {
       const result = await collectTopTracks({ range });
-      expect(result.tracks[0].name).toBe(range);
+      expect(result.tracks[0]!.name).toBe(range);
     }
     expect(callsTo('/me/top/tracks')).toHaveLength(3);
   });
@@ -66,7 +66,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
 
     const result = await collectTopTracks({ range: 'long_term', limit: 10 });
 
-    expect(callsTo('/me/top/tracks')[0].url).toContain('limit=10');
+    expect(callsTo('/me/top/tracks')[0]!.url).toContain('limit=10');
     expect(result.limit).toBe(10);
   });
 
@@ -76,7 +76,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
     const result = await collectTopTracks();
 
     expect(result.tracks.map((t) => t.rank)).toEqual([1, 2]);
-    expect(Object.keys(result.tracks[0]).sort()).toEqual(TOP_TRACK_ENTRY_KEYS);
+    expect(Object.keys(result.tracks[0]!).sort()).toEqual(TOP_TRACK_ENTRY_KEYS);
   });
 });
 
@@ -223,8 +223,8 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       const result = await collectTopTracks();
 
       expect(callsTo('/artists?ids=')).toHaveLength(1);
-      expect(result.tracks[0].genres).toEqual([]);
-      expect(result.tracks[0].name).toBe('Midnight Drive');
+      expect(result.tracks[0]!.genres).toEqual([]);
+      expect(result.tracks[0]!.name).toBe('Midnight Drive');
     });
 
     it('ジャンルが返る環境（extended quota mode）ではそのまま載る', async () => {
@@ -233,7 +233,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
       const result = await collectTopTracks();
 
-      expect(result.tracks[0].genres).toEqual(['city pop', 'synthwave']);
+      expect(result.tracks[0]!.genres).toEqual(['city pop', 'synthwave']);
     });
   });
 
@@ -288,7 +288,7 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     expect(res).not.toBeNull();
     expect(attempt).toBe(2);
     // 再試行は取り直した新しいトークンで行う
-    const retry = callsTo('/me/top/tracks')[1];
+    const retry = callsTo('/me/top/tracks')[1]!;
     expect(headerOf(retry, 'Authorization')).toBe(`Bearer refreshed-token-${issued}`);
   });
 
