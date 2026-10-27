@@ -193,3 +193,25 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
     });
   });
 });
+
+describe('秘密情報を書いたファイルは、git にも Docker イメージにも入らない', () => {
+  function patterns(file: string): string[] {
+    return readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+  }
+
+  it('.gitignore は .env* と .dev.vars*（環境ごとの派生ファイルも）を除き、例のファイルだけ戻す', () => {
+    const ignore = patterns('.gitignore');
+
+    expect(ignore).toEqual(expect.arrayContaining(['.env*', '!.env.example', '.dev.vars*', '!.dev.vars.example']));
+    expect(ignore).toContain('data/');
+  });
+
+  it('.dockerignore も同じ範囲を除く', () => {
+    const ignore = patterns('.dockerignore');
+
+    expect(ignore).toEqual(expect.arrayContaining(['.env', '.env.*', '!.env.example', '.dev.vars*', 'data']));
+  });
+});

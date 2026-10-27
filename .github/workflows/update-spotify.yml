@@ -44,6 +44,8 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    # 通常は20秒程度。止まると同じ concurrency の後続を最大6時間（既定の上限）待たせるので短く切る
+    timeout-minutes: 10
     permissions:
       contents: write # spotify-data ブランチへの push
     steps:
@@ -100,7 +102,12 @@ jobs:
           fi
 
       # 毎回1コミットに潰して force push する。
-      # 30分おきの更新で履歴が肥大化するのを防ぐため。
+      # 30分おきの更新で履歴が肥大化するのを防ぐため。前のスナップショットへ戻す手段は持たない:
+      # 中身は次の実行で作り直され、壊れた snapshot.json は generate が捨てて作り直すため。
+      #
+      # トークンは URL にも .git/config にも書かない。git が認証を求めたときだけ、
+      # 環境変数から読むクレデンシャルヘルパーで渡す（ヘルパーの中の変数はヘルパーの
+      # 実行時に展開されるので、git のコマンドラインにもトークンの値は載らない）。
       - name: Publish to spotify-data branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -113,6 +120,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "Update Spotify snapshot ($(date -u '+%Y-%m-%d %H:%M UTC'))"
-          git push -q --force \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            spotify-data
+          git -c credential.helper= \
+            -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' \
+            push -q --force "https://github.com/${GITHUB_REPOSITORY}.git" spotify-data

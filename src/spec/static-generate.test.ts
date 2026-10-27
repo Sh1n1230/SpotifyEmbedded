@@ -574,7 +574,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       on: { schedule?: { cron: string }[] };
       concurrency: { 'cancel-in-progress': boolean };
       permissions: Record<string, string>;
-      jobs: Record<string, { steps: Step[]; permissions?: Record<string, string> }>;
+      jobs: Record<string, { steps: Step[]; permissions?: Record<string, string>; 'timeout-minutes'?: number }>;
     }
 
     const workflow = yaml.load(
@@ -615,10 +615,23 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
 
     it('公開ブランチへ push する', () => {
       expect(allRunScripts).toContain('spotify-data');
-      expect(allRunScripts).toContain('git push');
+      expect(allRunScripts).toMatch(/git [\s\S]*\bpush -q --force /);
       // 書き込み権限は push するジョブにだけ渡し、ワークフロー全体は読み取りのまま
       expect(workflow.jobs['update']!.permissions?.['contents']).toBe('write');
       expect(workflow.permissions['contents']).toBe('read');
+    });
+
+    it('push の URL・コマンドラインにトークンを埋め込まない（クレデンシャルヘルパーで渡す）', () => {
+      const publish = steps.find((step) => step.name === 'Publish to spotify-data branch')!.run ?? '';
+
+      expect(publish).not.toMatch(/x-access-token:\$\{?GITHUB_TOKEN/);
+      expect(publish).not.toMatch(/https:\/\/[^"\s]*@github\.com/);
+      expect(publish).toContain('credential.helper=');
+    });
+
+    it('止まったジョブが後続の更新を何時間も塞がないよう、timeout-minutes を付ける', () => {
+      expect(workflow.jobs['update']!['timeout-minutes']).toBeGreaterThan(0);
+      expect(workflow.jobs['update']!['timeout-minutes']).toBeLessThanOrEqual(10);
     });
 
     it('実行中のジョブを途中で中断しない', () => {

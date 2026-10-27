@@ -1,6 +1,10 @@
 node_modules/
 dist/
-.env
+coverage/
+# 秘密情報。Wrangler は .env.<環境名>・.dev.vars.<環境名> も読むので、派生ファイルもまとめて除く
+# （Cloudflare の推奨: https://developers.cloudflare.com/workers/configuration/environment-variables/#local-development-with-secrets）
+.env*
+!.env.example
 *.log
 .DS_Store
 .claude/
@@ -12,5 +16,6 @@ data/
 out/
 
 # Cloudflare Workers
-.dev.vars
+.dev.vars*
+!.dev.vars.example
 .wrangler/

@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   {
-    ignores: ['dist/', 'out/', 'data/', '.wrangler/'],
+    ignores: ['dist/', 'out/', 'data/', '.wrangler/', 'coverage/'],
   },
   {
     files: ['src/**/*.ts'],

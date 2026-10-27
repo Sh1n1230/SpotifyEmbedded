@@ -15,4 +15,5 @@ CLAUDE.md
 data
 out
 .wrangler
-.dev.vars
+.dev.vars*
+coverage

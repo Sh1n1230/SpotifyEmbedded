@@ -1,0 +1,9 @@
+# 本番へ出るもの・権限を持つもの・依存とビルドの設定は、オーナーのレビューを通す
+# （GitHub の CODEOWNERS。ブランチ保護で「Code Owners のレビュー必須」を有効にすると強制される）
+* @Sh1n1230
+/.github/ @Sh1n1230
+/wrangler.jsonc @Sh1n1230
+/package.json @Sh1n1230
+/package-lock.json @Sh1n1230
+/Dockerfile @Sh1n1230
+/public/_headers @Sh1n1230
