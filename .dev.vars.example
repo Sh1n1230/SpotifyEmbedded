@@ -9,5 +9,6 @@ LLM_API_KEY=
 LLM_BASE_URL=
 LLM_MODEL=
 
-# 任意。本番では自分のサイトのURLに限定することを推奨
+# 任意。本番では自分のサイトのURLに限定することを推奨（未設定のままだと起動時に警告が出る）
+# カンマ区切りで複数書ける（例: https://a.example,https://b.example）
 CORS_ORIGIN=

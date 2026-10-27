@@ -58,6 +58,17 @@ describe('Workers のエントリ（src/worker.ts）は、バインディング�
     const limited = await worker.fetch(request(), env, ctx);
 
     expect(limited.status).toBe(429);
+
+    // IPv6 はアドレスを変えるだけで上限を超えられないよう /64 で数える
+    allow = true;
+    await worker.fetch(
+      new Request('https://spotify-embedded.example/api/now-playing', {
+        headers: { 'cf-connecting-ip': '2001:db8:1:2:ffff::9' },
+      }),
+      env,
+      ctx
+    );
+    expect(limitedKeys.at(-1)).toBe('2001:db8:1:2::/64');
   });
 });
 

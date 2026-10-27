@@ -90,58 +90,6 @@
     <p id="status-msg"></p>
   </section>
 
-  <script>
-    const $ = id => document.getElementById(id);
-
-    // ── Now Playing ───────────────────────────────
-    async function fetchNowPlaying() {
-      try {
-        const res = await fetch('/api/now-playing');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        renderNowPlaying(data);
-      } catch (e) {
-        $('status-msg').textContent = '再生中の曲を取得できませんでした';
-      }
-    }
-
-    function renderNowPlaying(data) {
-      const placeholder = $('album-art-placeholder');
-      const img = $('album-art');
-
-      if (!data.is_playing || !data.track) {
-        img.hidden = true;
-        placeholder.hidden = false;
-        placeholder.textContent = '再生中の曲はありません';
-        $('track-name').textContent = '';
-        $('artist-name').textContent = '';
-        $('mood-text').textContent = '';
-        $('status-msg').textContent = '';
-        return;
-      }
-
-      const t = data.track;
-
-      // アルバムアート。ローカルファイルの再生中などは URL が無い
-      if (t.album_art_url) {
-        img.src = t.album_art_url;
-        img.hidden = false;
-        placeholder.hidden = true;
-      } else {
-        img.hidden = true;
-        placeholder.hidden = false;
-        placeholder.textContent = '';
-      }
-
-      $('track-name').textContent = t.name;
-      $('artist-name').textContent = t.artist;
-      $('mood-text').textContent = data.mood ? data.mood.text : '';
-      $('status-msg').textContent = '再生中';
-    }
-
-    // ── ポーリング ────────────────────────────────
-    fetchNowPlaying();
-    setInterval(fetchNowPlaying, 30_000);
-  </script>
+  <script src="/demo.js" defer></script>
 </body>
 </html>

@@ -6,52 +6,13 @@ import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { getConnInfo } from '@hono/node-server/conninfo';
-import type { Context } from 'hono';
-import { createApp, type RateLimiter } from './app.js';
+import { createApp } from './app.js';
 import { config } from './config.js';
 import { missingAuthValues, hasLlmConfigured } from './authStore.js';
-
-// Workers 版（wrangler.jsonc の ratelimits）と同じ「IPごとに 60 秒あたり 100 リクエスト」。
-// Workers のバインディングは期間を 10 秒か 60 秒しか取れないので、こちらを合わせている。
-const WINDOW_MS = 60 * 1000;
-const MAX_REQUESTS = 100;
-
-/**
- * レート制限のキー。既定は接続元アドレス。TRUSTED_PROXY_HEADER があればそのヘッダーを使う。
- * x-forwarded-for のような列挙は、信頼するプロキシが最後に足した右端を採る
- * （左側はクライアントが自由に書ける）。
- */
-function clientKey(c: Context): string {
-  const header = config.server.trustedProxyHeader;
-  if (header) {
-    const value = c.req.header(header)?.split(',').at(-1)?.trim();
-    if (value) return value;
-  }
-  return getConnInfo(c).remote.address ?? 'unknown';
-}
-
-/** IPごとの固定ウィンドウ。単一プロセスなのでメモリで足りる。 */
-function memoryRateLimiter(): RateLimiter {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  // RateLimiter は KV を待つ Workers 版と同じ Promise を返す型なので、await が無くても async にしておく
-  // eslint-disable-next-line @typescript-eslint/require-await -- 型を揃えるため
-  return async (c) => {
-    const key = clientKey(c);
-    const now = Date.now();
-    let window = windows.get(key);
-    if (!window || window.resetAt <= now) {
-      // 期限切れの枠を掃除してから作り直す（Map が際限なく伸びないように）
-      for (const [k, w] of windows) if (w.resetAt <= now) windows.delete(k);
-      window = { count: 0, resetAt: now + WINDOW_MS };
-      windows.set(key, window);
-    }
-    window.count += 1;
-    c.header('RateLimit-Limit', String(MAX_REQUESTS));
-    c.header('RateLimit-Remaining', String(Math.max(0, MAX_REQUESTS - window.count)));
-    c.header('RateLimit-Reset', String(Math.ceil((window.resetAt - now) / 1000)));
-    return window.count <= MAX_REQUESTS;
-  };
-}
+import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
+import { openCorsWarning } from './http/cors.js';
+import { portInUseHelp } from './http/portInUse.js';
+import { DEMO_PAGE_CSP } from './http/securityHeaders.js';
 
 // 設定漏れは起動時に気づけるようにする（値の解決自体は遅延評価）
 const missing = missingAuthValues();
@@ -68,10 +29,26 @@ if (!hasLlmConfigured()) {
   console.warn('   有効にするには `npm run setup` を実行してください。\n');
 }
 
+// ローカル開発では * のままでよいので、本番相当（NODE_ENV=production、Docker の既定）でだけ警告する
+const corsWarning = process.env['NODE_ENV'] === 'production' ? openCorsWarning(config.server.corsOrigins) : null;
+if (corsWarning) console.warn(`⚠️  ${corsWarning}\n`);
+
 const app = createApp({
-  rateLimiter: memoryRateLimiter(),
-  // デモフロントエンド + ワンタグ埋め込み用の embed.js
-  staticFiles: serveStatic({ root: './public' }),
+  rateLimiter: memoryRateLimiter({
+    key: (c) => {
+      const key = clientKey(c, config.server.trustedProxyHeader, (ctx) => getConnInfo(ctx).remote.address);
+      warnIfUnknown(key);
+      return key;
+    },
+  }),
+  // デモフロントエンド + ワンタグ埋め込み用の embed.js。
+  // デモ画面の CSP は Workers の public/_headers と同じ値（src/http/securityHeaders.ts）
+  staticFiles: serveStatic({
+    root: './public',
+    onFound: (path, c) => {
+      if (path.endsWith('.html')) c.header('Content-Security-Policy', DEMO_PAGE_CSP);
+    },
+  }),
 });
 
 if (config.server.enableAuthRoutes) {
@@ -85,9 +62,7 @@ const server = serve({ fetch: app.fetch, port: config.server.port }, () => {
 // ポート衝突は開発中によく起きる。スタックトレースではなく対処法を出す。
 server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`\n✗ ポート ${config.server.port} はすでに別のプロセスが使用しています。`);
-    console.error('   別のポートで起動する:  PORT=3001 npm run dev');
-    console.error(`   使用中のプロセスを調べる:  lsof -nP -iTCP:${config.server.port} -sTCP:LISTEN\n`);
+    console.error(`\n${portInUseHelp(config.server.port, process.platform).join('\n')}\n`);
     process.exit(1);
   }
   throw err;

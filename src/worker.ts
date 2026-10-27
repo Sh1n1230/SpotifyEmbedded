@@ -8,7 +8,10 @@
  * process.env に入るので、config.ts はそのまま使える。
  */
 import type { ExecutionContext, KVNamespace, RateLimit } from '@cloudflare/workers-types';
-import { createApp, type RateLimiter } from './app.js';
+import { createApp } from './app.js';
+import { bindingRateLimiter } from './http/rateLimit.js';
+import { openCorsWarning } from './http/cors.js';
+import { config } from './config.js';
 import { setDurableStore, type DurableStore } from './cache/index.js';
 
 interface Env {
@@ -25,14 +28,6 @@ function kvStore(kv: KVNamespace): DurableStore {
   };
 }
 
-function bindingRateLimiter(binding: RateLimit): RateLimiter {
-  return async (c) => {
-    const key = c.req.header('cf-connecting-ip') ?? 'unknown';
-    const { success } = await binding.limit({ key });
-    return success;
-  };
-}
-
 let app: ReturnType<typeof createApp> | null = null;
 
 export default {
@@ -40,6 +35,9 @@ export default {
     // バインディングは isolate 内で不変なので、最初のリクエストで一度だけ組み立てる
     if (!app) {
       setDurableStore(env.MOODS ? kvStore(env.MOODS) : null);
+      // Workers は本番として扱う。isolate ごとに一度だけ出る
+      const corsWarning = openCorsWarning(config.server.corsOrigins);
+      if (corsWarning) console.warn(corsWarning);
       app = createApp(env.RATE_LIMITER ? { rateLimiter: bindingRateLimiter(env.RATE_LIMITER) } : {});
     }
     return app.fetch(request, env, ctx);
