@@ -74,7 +74,9 @@ The same core powers both. This split is the product's core idea — don't colla
   handler
 - `src/routes/` — `/api/now-playing`, `/auth/*`, `/embed`, `/badge.svg`
 - `public/embed.js` — one-tag embed; renders into a Shadow DOM so host CSS can't leak in
-- `src/spec.test.ts` — the executable spec: `describe` headings read as requirements. Mock at the
+- `src/spec/*.test.ts` — the executable spec, one file per area (ADR 0013): `describe` headings read
+  as requirements. Shared fetch mock, fixtures and the common `beforeEach` live in `src/spec/support.ts`
+  (importing it registers the hooks). Mock at the
   `fetch` layer, never by replacing modules — which URL, query and headers we hit is part of
   what's being verified. Fixtures default to a post-Nov-2024 app (restricted fields absent).
   - The Spotify access token is cached at module level and `Date` is frozen, so a token request
