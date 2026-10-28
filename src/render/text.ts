@@ -26,20 +26,42 @@ export function escapeXml(value: string): string {
 }
 
 /**
+ * 書記素クラスタ（見た目の1文字）に分ける。絵文字の ZWJ シーケンス・国旗・肌の色の修飾子・
+ * 結合文字は複数のコードポイントで1文字になるので、コードポイント単位で数えたり切ったりすると
+ * 幅を見誤り、途中で切れて別の文字に化ける。Node 22 と Cloudflare Workers の両方で使える。
+ */
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+function graphemes(text: string): string[] {
+  return Array.from(graphemeSegmenter.segment(text), (s) => s.segment);
+}
+
+/**
  * 文字幅を em 単位で見積もる。
- * 全角（CJK・かな・全角記号）を 1em、それ以外を 0.5em として扱う。
+ * 全角（CJK・かな・全角記号・絵文字）を 1em、それ以外を 0.5em として扱う。
  * 正確な字送りはフォント依存なので、あくまで折り返し判定用の近似。
  */
 export function visualWidth(text: string): number {
   let width = 0;
-  for (const char of text) {
-    width += isFullWidth(char) ? 1 : 0.5;
-  }
+  for (const cluster of graphemes(text)) width += clusterWidth(cluster);
   return width;
 }
 
-function isFullWidth(char: string): boolean {
-  const code = char.codePointAt(0);
+/**
+ * 1文字（書記素クラスタ）の幅。先頭のコードポイントで判定し、絵文字として表示される並び
+ * （ZWJ シーケンス・異体字セレクタ U+FE0F・キーキャップ U+20E3）は全角1つ分とする。
+ */
+function clusterWidth(cluster: string): number {
+  if (isFullWidth(cluster)) return 1;
+  return /\u200d|\ufe0f|\u20e3/.test(cluster) ? 1 : 0.5;
+}
+
+/** 既定で絵文字として表示される文字（⚡ ☕ 🫠 国旗の地域指示子など）。# * 0-9 は含まない。 */
+const EMOJI_PRESENTATION = /^\p{Emoji_Presentation}/u;
+
+/** 先頭のコードポイントが全角（East Asian Width の W / F）か。 */
+function isFullWidth(text: string): boolean {
+  const code = text.codePointAt(0);
   if (code === undefined) return false;
   return (
     (code >= 0x1100 && code <= 0x115f) || // ハングル字母
@@ -53,27 +75,34 @@ function isFullWidth(char: string): boolean {
     (code >= 0xfe30 && code <= 0xfe6f) ||
     (code >= 0xff00 && code <= 0xff60) || // 全角英数・記号
     (code >= 0xffe0 && code <= 0xffe6) ||
-    (code >= 0x1f300 && code <= 0x1f9ff) // 絵文字
+    (code >= 0x1f300 && code <= 0x1f9ff) || // 絵文字
+    (code >= 0x1fa70 && code <= 0x1faff) || // 絵文字（Symbols and Pictographs Extended-A）
+    (code >= 0x20000 && code <= 0x2fffd) || // CJK拡張B〜（人名・地名の異体字など）
+    (code >= 0x30000 && code <= 0x3fffd) ||
+    EMOJI_PRESENTATION.test(text)
   );
 }
 
-/** 指定幅(em)に収まるよう末尾を省略する。 */
+/** 指定幅(em)に収まるよう末尾を省略する。文字（書記素クラスタ）の途中では切らない。 */
 export function truncateToWidth(text: string, maxWidthEm: number): string {
   if (visualWidth(text) <= maxWidthEm) return text;
 
   const ellipsis = '…';
-  const budget = maxWidthEm - visualWidth(ellipsis);
-  let width = 0;
-  let result = '';
+  const [head] = splitAtWidth(text, maxWidthEm - visualWidth(ellipsis));
+  return head + ellipsis;
+}
 
-  for (const char of text) {
-    const next = width + (isFullWidth(char) ? 1 : 0.5);
-    if (next > budget) break;
-    result += char;
+/** 幅 maxWidthEm に収まる先頭と、残りに分ける。文字（書記素クラスタ）の途中では切らない。 */
+function splitAtWidth(text: string, maxWidthEm: number): [string, string] {
+  const clusters = graphemes(text);
+  let width = 0;
+  let i = 0;
+  for (; i < clusters.length; i++) {
+    const next = width + clusterWidth(clusters[i] ?? '');
+    if (next > maxWidthEm) break;
     width = next;
   }
-
-  return result + ellipsis;
+  return [clusters.slice(0, i).join(''), clusters.slice(i).join('')];
 }
 
 /**
@@ -81,6 +110,8 @@ export function truncateToWidth(text: string, maxWidthEm: number): string {
  * 行数が maxLines を超える場合は最終行を省略記号で締める。
  *
  * 日本語は単語境界が無いため、半角語は単語単位・全角文字は1文字単位で折る。
+ * 1語だけで幅を超える半角の語（URL 風の曲名・_ でつないだリミックス名など）は、
+ * CSS の overflow-wrap: anywhere と同じく文字単位で割る（SVG にはクリップが無く、枠からはみ出すため）。
  */
 export function wrapToWidth(text: string, maxWidthEm: number, maxLines: number): string[] {
   const all = wrapUnbounded(text, maxWidthEm);
@@ -92,26 +123,58 @@ export function wrapToWidth(text: string, maxWidthEm: number, maxLines: number):
   return kept;
 }
 
+/** 半角の文字（ラテン文字まで）か。半角の連続は途中で割らない1語として扱う。 */
+function isHalfWidthWordChar(cluster: string): boolean {
+  const code = cluster.codePointAt(0) ?? 0;
+  return code <= 0x024f && clusterWidth(cluster) === 0.5;
+}
+
+/**
+ * 折り返しの単位に分ける。半角の連続（英単語・数字）はひとかたまりにし、空白の直後で区切る。
+ * 全角文字は1文字ずつ。どちらも書記素クラスタの途中では切らない。
+ */
+function wrapPieces(text: string): string[] {
+  const pieces: string[] = [];
+  let word = '';
+  for (const cluster of graphemes(text)) {
+    if (isHalfWidthWordChar(cluster)) {
+      word += cluster;
+      if (cluster === ' ') {
+        pieces.push(word);
+        word = '';
+      }
+      continue;
+    }
+    if (word) pieces.push(word);
+    word = '';
+    pieces.push(cluster);
+  }
+  if (word) pieces.push(word);
+  return pieces;
+}
+
 function wrapUnbounded(text: string, maxWidthEm: number): string[] {
   const lines: string[] = [];
   let current = '';
 
-  // 半角の連続（英単語・数字）は途中で割らないよう、ひとかたまりとして扱う。
-  // 全角文字は1文字ずつ折り返せる。
-  // eslint-disable-next-line no-control-regex -- U+0000 からの範囲（ラテン文字まで）を表すため
-  const tokens = text.match(/[^\x00-\u024F]|[\x00-\u024F]+/g) ?? [];
+  for (const piece of wrapPieces(text)) {
+    if (current !== '' && visualWidth(current + piece) > maxWidthEm) {
+      lines.push(current.trimEnd());
+      current = piece.trimStart();
+    } else {
+      current += piece;
+    }
 
-  for (const rawToken of tokens) {
-    // 半角のかたまりは空白の直後で分割し、単語の途中で折らないようにする
-    const pieces = rawToken.includes(' ') ? rawToken.split(/(?<= )/) : [rawToken];
-
-    for (const piece of pieces) {
-      if (current !== '' && visualWidth(current + piece) > maxWidthEm) {
-        lines.push(current.trimEnd());
-        current = piece.trimStart();
-      } else {
-        current += piece;
+    // 1語だけで幅を超えるなら、収まるところで行を確定して残りを続ける
+    while (visualWidth(current.trimEnd()) > maxWidthEm) {
+      let [line, rest] = splitAtWidth(current, maxWidthEm);
+      if (line === '') {
+        // 1文字すら入らない幅でも止まらないよう、最低1文字は進める
+        const first = graphemes(current)[0] ?? '';
+        [line, rest] = [first, current.slice(first.length)];
       }
+      lines.push(line.trimEnd());
+      current = rest.trimStart();
     }
   }
 

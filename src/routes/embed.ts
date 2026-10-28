@@ -94,6 +94,22 @@ async function nowPlayingOrNull(c: Context): Promise<NowPlayingResponse | null> 
   }
 }
 
+/**
+ * レート制限を超えたときの /badge.svg と /embed。Spotify 側の失敗と同じく「取得できませんでした」の
+ * カードを 200 で返し、理由はヘッダーで示す（camo は 2xx 以外の画像を表示しない）。
+ * /embed のライブ更新は残すので、制限が解ければ次の周期で回復する。
+ * それ以外のパスなら null（呼び出し側が JSON の 429 を返す）。
+ */
+export function rateLimitedEmbedResponse(c: Context): Response | null {
+  if (c.req.path !== '/badge.svg' && c.req.path !== '/embed') return null;
+  c.header(ERROR_HEADER, 'rate_limited');
+  const theme = resolveTheme(c.req.query('theme'));
+  if (c.req.path === '/badge.svg') {
+    return sendSvg(c, renderNowPlayingCard({ state: 'idle', track: null, mood: null, theme, unavailable: true }));
+  }
+  return sendEmbedPage(c, null);
+}
+
 router.get('/badge.svg', async (c) => {
   const theme = resolveTheme(c.req.query('theme'));
   const data = await nowPlayingOrNull(c);
@@ -117,8 +133,10 @@ router.get('/badge.svg', async (c) => {
   );
 });
 
-router.get('/embed', async (c) => {
-  const fetched = await nowPlayingOrNull(c);
+router.get('/embed', async (c) => sendEmbedPage(c, await nowPlayingOrNull(c)));
+
+/** /embed のページ。fetched が null なら「取得できませんでした」のカードにする。 */
+function sendEmbedPage(c: Context, fetched: NowPlayingResponse | null): Response {
   const nowPlaying: NowPlayingResponse = fetched ?? {
     is_playing: false,
     track: null,
@@ -144,7 +162,7 @@ router.get('/embed', async (c) => {
       unavailable: fetched === null,
     })
   );
-});
+}
 
 function parseRefresh(raw: string | undefined): number {
   const value = Number.parseInt(raw ?? '', 10);

@@ -158,6 +158,9 @@ async function requestMood(system: string, prompt: string): Promise<string> {
     // モデルによっては付けてくる（Gemini など）ので、ここで揃える。
     .replace(/[。．]$/, '')
     .replace(/^["「]|["」]$/g, '')
+    .trim()
+    // 「…です。」のように括弧の内側に句点があると、括弧を外した後に残るのでもう一度落とす
+    .replace(/[。．]$/, '')
     .trim();
 
   if (!isAcceptableMood(mood)) {

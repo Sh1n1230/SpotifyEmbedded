@@ -87,7 +87,7 @@ function parseGenerateArgs(args: string[]): Parameters<typeof generate>[0] {
       }
 
       case '--limit': {
-        const limit = Number.parseInt(requireValue(args, ++i, '--limit'), 10);
+        const limit = parseIntStrict(requireValue(args, ++i, '--limit'));
         if (!isTopTracksLimit(limit)) {
           throw new Error(`--limit は ${TOP_TRACKS_LIMITS.join(' / ')} のいずれかです。`);
         }
@@ -97,7 +97,7 @@ function parseGenerateArgs(args: string[]): Parameters<typeof generate>[0] {
 
       case '--count': {
         const raw = requireValue(args, ++i, '--count');
-        const count = Number.parseInt(raw, 10);
+        const count = parseIntStrict(raw);
         if (Number.isNaN(count) || count < 1 || count > MAX_RANKING_COUNT) {
           throw new Error(`--count は 1〜${MAX_RANKING_COUNT} の整数で指定してください。`);
         }
@@ -124,6 +124,14 @@ function parseGenerateArgs(args: string[]): Parameters<typeof generate>[0] {
   }
 
   return options;
+}
+
+/**
+ * 整数として妥当な文字列だけを数にする。Number.parseInt は先頭の数字だけを読むので、
+ * 10abc・7.5・1e2 のような打ち間違いが黙って 10・7・1 になる。それ以外は NaN。
+ */
+function parseIntStrict(raw: string): number {
+  return /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
 }
 
 function requireValue(args: string[], index: number, flag: string): string {

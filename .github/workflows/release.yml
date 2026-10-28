@@ -11,6 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write # GitHub Release の作成
     steps:
@@ -31,6 +32,15 @@ jobs:
           lock_version="v$(node -p "require('./package-lock.json').version")"
           if [ "$GITHUB_REF_NAME" != "$package_version" ] || [ "$GITHUB_REF_NAME" != "$lock_version" ]; then
             echo "::error::タグ $GITHUB_REF_NAME と package.json（$package_version）・package-lock.json（$lock_version）の版が一致しません"
+            exit 1
+          fi
+
+      # 利用者向けの変更履歴を書き忘れたままリリースしない
+      - name: CHANGELOG.md にこの版の見出しがあるか確かめる
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "## [$version]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md に「## [$version]」の見出しがありません。[Unreleased] をこの版の見出しに変えてからタグを付けてください"
             exit 1
           fi
 

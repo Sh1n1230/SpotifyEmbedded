@@ -1,5 +1,6 @@
 import { requireAuthValue, resolveAuthValue } from './authStore.js';
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from './llm/providers.js';
+import { parseCorsOrigins } from './http/cors.js';
 
 function optional_env(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
@@ -50,8 +51,9 @@ export const config = {
     get port(): number {
       return parseInt(optional_env('PORT', '3000'), 10);
     },
-    get corsOrigin(): string {
-      return optional_env('CORS_ORIGIN', '*');
+    /** 許可するオリジン。CORS_ORIGIN はカンマ区切りで複数書ける。未設定なら ['*']。 */
+    get corsOrigins(): string[] {
+      return parseCorsOrigins(process.env['CORS_ORIGIN']);
     },
     /**
      * レート制限のキーに使うクライアントIPのヘッダー（例: fly-client-ip, x-forwarded-for）。

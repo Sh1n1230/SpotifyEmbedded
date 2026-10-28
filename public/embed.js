@@ -37,9 +37,22 @@
 
   var theme = THEMES[options.theme];
 
+  // src/render/theme.ts の FONT_STACK と同じ（一致は spec で確かめている）
+  var FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', 'Segoe UI', 'Yu Gothic UI', sans-serif";
+
   var host = document.createElement('div');
   host.className = 'spotify-embedded';
-  var mount = options.target ? document.querySelector(options.target) : null;
+  var mount = null;
+  if (options.target) {
+    // 不正なセレクタ（"#" や数字で始まる ID など）は querySelector が SyntaxError を投げる。
+    // 一致する要素が無いときと同じく、スクリプトの直後に描く。
+    try {
+      mount = document.querySelector(options.target);
+      // eslint-disable-next-line no-unused-vars -- ES5 では catch の束縛を省けない
+    } catch (err) {
+      if (window.console) console.warn('[spotify-embedded] data-target が CSS セレクタとして不正です: ' + options.target);
+    }
+  }
   if (mount) mount.appendChild(host);
   else if (script.parentNode) script.parentNode.insertBefore(host, script.nextSibling);
   else return;
@@ -54,7 +67,7 @@
     '  padding: 14px; border: 1px solid ' + theme.border + '; border-radius: 12px;',
     '  background: ' + (options.transparent ? 'transparent' : theme.bg) + ';',
     '  color: ' + theme.fg + '; text-decoration: none;',
-    "  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', 'Segoe UI', sans-serif;",
+    '  font-family: ' + FONT_STACK + ';',
     '  transition: border-color .18s ease, transform .18s ease;',
     '}',
     'a.card:hover { border-color: ' + theme.accent + '; transform: translateY(-1px); }',
@@ -110,6 +123,11 @@
     return typeof url === 'string' && /^https:\/\//i.test(url);
   }
 
+  // 取得できなかったときの表示。/badge.svg・/embed と同じ文言（src/render/card.ts）
+  var UNAVAILABLE_LABEL = 'UNAVAILABLE';
+  var UNAVAILABLE_TEXT = '取得できませんでした';
+
+  /** data が null なら「取得できませんでした」のカードを描く。 */
   function renderCard(data) {
     var track = data && data.track;
     var mood = data && data.mood;
@@ -151,11 +169,12 @@
       eq.appendChild(el('i'));
       label.appendChild(eq);
     }
-    label.appendChild(el('span', null, track ? (playing ? 'NOW PLAYING' : 'LAST PLAYED') : 'NOTHING PLAYING'));
+    var labelText = !data ? UNAVAILABLE_LABEL : track ? (playing ? 'NOW PLAYING' : 'LAST PLAYED') : 'NOTHING PLAYING';
+    label.appendChild(el('span', null, labelText));
     body.appendChild(label);
 
     if (!track) {
-      body.appendChild(el('p', 'idle', '再生していません'));
+      body.appendChild(el('p', 'idle', data ? '再生していません' : UNAVAILABLE_TEXT));
     } else {
       if (mood && mood.text) body.appendChild(el('p', 'mood', mood.text));
       body.appendChild(el('p', 'track', track.name));
@@ -166,34 +185,79 @@
     return card;
   }
 
+  // 取得の方針は /embed（src/render/page.ts）・public/demo.js と揃えている:
+  // 非表示のタブでは取得しない・表示に戻ったらすぐ取り直す・1回の取得は TIMEOUT_MS で
+  // 打ち切る・続けて失敗したら間隔を倍々に伸ばす（上限 MAX_DELAY_MS）。
+  var TIMEOUT_MS = 10000;
+  var MAX_DELAY_MS = Math.max(options.refresh * 1000, 15 * 60 * 1000);
+
   function get(path) {
-    return fetch(base + path, { headers: { Accept: 'application/json' } }).then(function (res) {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var abort = setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
+    return fetch(base + path, {
+      headers: { Accept: 'application/json' },
+      signal: controller ? controller.signal : undefined
+    }).then(function (res) {
       if (!res.ok) throw new Error('request failed: ' + res.status);
       return res.json();
-    });
+    }).then(
+      function (data) { clearTimeout(abort); return data; },
+      function (err) { clearTimeout(abort); throw err; }
+    );
   }
 
   function clear(node) {
     while (node.firstChild) node.removeChild(node.firstChild);
   }
 
+  // 前回描いた内容。同じなら DOM に触らない（作り直すとキーボードのフォーカスと
+  // スクリーンリーダーの読み上げ位置が失われる）
+  var lastKey = null;
+
+  function show(data) {
+    var key = JSON.stringify(data ? [
+      !!data.is_playing,
+      data.track ? [data.track.id, data.track.name, data.track.artist, data.track.album_art_url, data.track.spotify_url] : null,
+      data.mood && data.mood.text ? data.mood.text : null
+    ] : 'unavailable');
+    if (key === lastKey) return;
+    lastKey = key;
+    clear(container);
+    container.appendChild(renderCard(data));
+  }
+
+  var failures = 0;
+  var timer = null;
+  var loading = false;
+
+  function schedule() {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(refresh, Math.min(options.refresh * 1000 * Math.pow(2, failures), MAX_DELAY_MS));
+  }
+
   function refresh() {
-    return get('/api/now-playing')
+    timer = null;
+    // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
+    // 表示に戻ったら下の visibilitychange ですぐ取り直す。
+    if (document.hidden || loading) return;
+    loading = true;
+    get('/api/now-playing')
       .then(function (data) {
-        clear(container);
-        container.appendChild(renderCard(data));
+        failures = 0;
+        show(data);
+      }, function () {
+        failures = Math.min(failures + 1, 10);
+        // まだ何も描いていなければ「取得できませんでした」を出す。
+        // 描いたものがあれば残し、次の更新に任せる
+        if (lastKey === null) show(null);
       })
-      .catch(function () {
-        /* 一時的な失敗は次の更新に任せる */
+      .then(function () {
+        loading = false;
+        schedule();
       });
   }
 
   refresh();
-  // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
-  // 表示に戻ったら下の visibilitychange ですぐ取り直す。
-  setInterval(function () {
-    if (!document.hidden) refresh();
-  }, options.refresh * 1000);
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) refresh();
   });

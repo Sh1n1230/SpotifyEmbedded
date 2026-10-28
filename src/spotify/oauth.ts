@@ -2,6 +2,8 @@
  * Authorization Code フローの共通部分。
  * ライブAPIの /auth ルートと CLI の setup の両方から使う。
  */
+import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
+import { discardBody } from '../http/body.js';
 
 // user-read-recently-played は v1.3.0 で追加。それ以前に発行した refresh_token には
 // 含まれないが、静的モードは「取れなければ従来どおり」で動くので再認証は任意。
@@ -28,6 +30,8 @@ export function buildAuthorizeUrl(app: OAuthApp, state: string): string {
   return `https://accounts.spotify.com/authorize?${params}`;
 }
 
+const TOKEN_URL = 'https://accounts.spotify.com/api/token';
+
 export interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -41,20 +45,27 @@ export async function exchangeCodeForTokens(
 ): Promise<TokenResponse> {
   const credentials = Buffer.from(`${app.clientId}:${app.clientSecret}`).toString('base64');
 
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+  // 応答が無いと setup は5分のタイマーまで待ち、原因を「承認のタイムアウト」と取り違える
+  const res = await fetchWithTimeout(
+    TOKEN_URL,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: app.redirectUri,
+      }),
     },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: app.redirectUri,
-    }),
-  });
+    SPOTIFY_TIMEOUT_MS,
+    TOKEN_URL
+  );
 
   if (!res.ok) {
+    await discardBody(res);
     const detail = res.status === 400
       ? 'Client ID / Client Secret、または Redirect URI の登録内容を確認してください。'
       : '';

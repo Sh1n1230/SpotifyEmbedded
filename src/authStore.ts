@@ -138,6 +138,12 @@ export function resolveAuthValue(field: AuthField): string | undefined {
   return loadStoredAuth()[field];
 }
 
+/** その値をどこから読んでいるか。書き換えてよい保存先かを判断するために使う。 */
+export function authValueSource(field: AuthField): 'env' | 'file' | null {
+  if (AUTH_ENV_NAMES[field].some((name) => process.env[name])) return 'env';
+  return loadStoredAuth()[field] ? 'file' : null;
+}
+
 /** 解決できなければ、次に何をすべきかを示して throw する。 */
 export function requireAuthValue(field: AuthField): string {
   const value = resolveAuthValue(field);

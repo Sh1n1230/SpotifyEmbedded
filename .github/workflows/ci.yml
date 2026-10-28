@@ -11,6 +11,8 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # 止まったまま後続を待たせない（通常は1分前後）
+    timeout-minutes: 15
     strategy:
       matrix:
         # package.json の engines（>=22）の範囲にある各メジャーで確かめる
@@ -29,5 +31,87 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # カバレッジはレポートを残すだけで、ゲートにはしない（#119）
+      - run: npm run test:coverage
       - run: npm run build
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.node-version == '24'
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  # Workers が実際に使う src/worker.ts からのバンドル。main に入ってからの
+  # deploy-workers.yml で初めて壊れていると分かるのを防ぐ。--dry-run は認証なしで
+  # バンドルと検査までを行い、アップロードはしない。
+  workers-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker-bundle"
+
+  # README で案内している Docker の配布形態。ビルドして起動し、/health を確かめる（push はしない）。
+  # /health は Spotify を呼ばないのでダミーの値で足りる（必須の設定が無いと起動時に終了するため渡す）。
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: docker build -t spotify-embedded:ci .
+
+      - name: 起動して /health を確かめる
+        run: |
+          docker run -d --name app -p 3000:3000 \
+            -e SPOTIFY_CLIENT_ID=dummy -e SPOTIFY_CLIENT_SECRET=dummy -e SPOTIFY_REFRESH_TOKEN=dummy \
+            spotify-embedded:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://localhost:3000/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs app
+          exit 1
+
+  # npm pack の成果物を、リポジトリの外の空のフォルダに入れて CLI が起動するかを確かめる。
+  # package.json の files の漏れや、shebang・実行権限の問題は配布して初めて表に出るため。
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node-version: ['22', '24']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: mkdir -p "$RUNNER_TEMP/pkg" && npm pack --pack-destination "$RUNNER_TEMP/pkg"
+
+      - name: 空のフォルダに入れて spotify-embedded help を実行する
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir app && cd app
+          npm init -y >/dev/null
+          npm install --ignore-scripts "$RUNNER_TEMP"/pkg/*.tgz
+          npx --no-install spotify-embedded help | tee help.txt
+          grep -q 'npm run setup' help.txt

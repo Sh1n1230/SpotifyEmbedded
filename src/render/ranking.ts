@@ -77,10 +77,16 @@ export function renderRankingCard(input: RankingInput): string {
         .join('\n    ')
     : `<text x="${PAD}" y="${headerHeight + 30}" font-size="13" fill="${theme.muted}">データがありません</text>`;
 
-  const ariaLabel = `${rangeLabelJa(range)}のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}${input.mood?.text ? `: ${input.mood.text}` : ''}`;
+  const title = `${rangeLabelJa(range)}のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}${input.mood?.text ? `: ${input.mood.text}` : ''}`;
+  // role="img" の中の <text> は支援技術に公開されない（WAI-ARIA の img role は Children Presentational）。
+  // 曲名とアーティストは <desc> に並べ、aria-describedby で結び付ける（SVG-AAM）。
+  const description = tracks.length
+    ? tracks.map((track, i) => `${i + 1}位 ${track.name} / ${track.artist}`).join('。')
+    : 'データがありません';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-label="${escapeXml(ariaLabel)}">
-  <title>${escapeXml(ariaLabel)}</title>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="rank-title" aria-describedby="rank-desc">
+  <title id="rank-title">${escapeXml(title)}</title>
+  <desc id="rank-desc">${escapeXml(description)}</desc>
   <defs>
     <clipPath id="rank-art"><rect x="0" y="0" width="${ART_SIZE}" height="${ART_SIZE}" rx="5"/></clipPath>
   </defs>

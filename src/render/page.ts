@@ -42,6 +42,24 @@ export interface PageInput {
   unavailable?: boolean | undefined;
 }
 
+/**
+ * 静的モード（GitHub Pages）の CSP。Pages はレスポンスヘッダーを付けられないので meta で付ける。
+ * 静的ページはスクリプトを持たないので全面禁止できる。ライブAPIの /embed はヘッダーの CSP（nonce つき）
+ * を使い、meta は出さない（二重に付くと両方の積になり、nonce の付け方次第で壊れるため）。
+ * frame-ancestors は meta では効かないが、iframe に入るためのページなので不要。
+ */
+export const STATIC_PAGE_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'";
+
+/**
+ * href / src に入れてよい URL（https のみ）。それ以外は null。
+ * 値の出どころは Spotify API だが、エスケープだけでは javascript: や data: のスキームは防げないので、
+ * クライアント側の更新（isHttps）と同じ条件をサーバー側の描画にも掛ける。
+ */
+function httpsUrl(url: string | null | undefined): string | null {
+  return typeof url === 'string' && /^https:\/\//i.test(url) ? url : null;
+}
+
 export function renderEmbedPage(input: PageInput): string {
   const themeName: ThemeName = input.theme ?? 'dark';
   const theme = THEMES[themeName];
@@ -62,7 +80,7 @@ export function renderEmbedPage(input: PageInput): string {
   return `<!DOCTYPE html>
 <html lang="ja" data-state="${escapeXml(state)}">
 <head>
-<meta charset="utf-8">
+<meta charset="utf-8">${input.liveEndpoint ? '' : `\n<meta http-equiv="Content-Security-Policy" content="${STATIC_PAGE_CSP}">`}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="${themeName}">
 <title>${escapeXml(unavailable ? idleText : buildTitle(state, track?.name, track?.artist))}</title>
@@ -184,7 +202,7 @@ export function renderEmbedPage(input: PageInput): string {
   .ranking li { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
   .ranking li + li { border-top: 1px solid var(--border); }
   .rank { font-size: 13px; font-weight: 700; color: var(--muted); width: 16px; text-align: right; flex: none; }
-  .ranking img { width: 40px; height: 40px; border-radius: 5px; flex: none; background: var(--placeholder); }
+  .ranking img, .rank-art-placeholder { display: block; width: 40px; height: 40px; border-radius: 5px; flex: none; background: var(--placeholder); }
   .ranking .meta { min-width: 0; }
   .ranking .name { font-size: 13px; font-weight: 600; }
   .ranking .by { font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -196,7 +214,7 @@ export function renderEmbedPage(input: PageInput): string {
 <body>
 ${renderCardMarkup(track, mood, state, label, idleText)}
 ${rankingSection}
-${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, track !== null, Boolean(mood?.text), input.scriptNonce) : ''}
+${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, { hasTrack: track !== null, hasMood: Boolean(mood?.text), hasArt: Boolean(httpsUrl(track?.album_art_url)) }, input.scriptNonce) : ''}
 </body>
 </html>
 `;
@@ -227,13 +245,20 @@ function renderCardMarkup(
   // ジャケ写は装飾。曲名はテキストとして隣にあるので alt は空にし、
   // 読み上げはリンク全体の aria-label に任せる（画像が落ちても崩れない）。
   // 112pxで表示するので300px版を使う。640px版だと表示が目に見えて遅れる。
-  const art = track.album_art_url
-    ? `<img class="art" id="art" src="${escapeXml(albumArtAtSize(track.album_art_url, 300))}" alt="" decoding="async">`
+  const artUrl = httpsUrl(track.album_art_url);
+  const art = artUrl
+    ? `<img class="art" id="art" src="${escapeXml(albumArtAtSize(artUrl, 300))}" alt="" decoding="async">`
     : '<div class="art-placeholder" id="art">no art</div>';
 
   const ariaLabel = `${state === 'playing' ? '再生中' : '最後に再生'}: ${mood?.text ? `${mood.text} — ` : ''}${track.name} / ${track.artist}（Spotifyで開く）`;
 
-  return `<a class="card" id="card"${mood?.text ? '' : ' data-no-mood'} href="${escapeXml(track.spotify_url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeXml(ariaLabel)}">
+  // https でないリンクは張らない（カードは <div> にする）
+  const href = httpsUrl(track.spotify_url);
+  const open = href
+    ? `<a class="card" id="card"${mood?.text ? '' : ' data-no-mood'} href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeXml(ariaLabel)}">`
+    : `<div class="card" id="card"${mood?.text ? '' : ' data-no-mood'}>`;
+
+  return `${open}
   ${art}
   <div class="body">
     <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
@@ -241,7 +266,7 @@ function renderCardMarkup(
     <p class="track" id="track">${escapeXml(track.name)}</p>
     <p class="artist" id="artist">${escapeXml(track.artist)}</p>
   </div>
-</a>`;
+${href ? '</a>' : '</div>'}`;
 }
 
 function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): string {
@@ -252,18 +277,25 @@ function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): str
 
   const items = topTracks.tracks
     .slice(0, count)
-    .map(
-      (track) => `    <li>
-      <span class="rank">${track.rank}</span>
-      <a href="${escapeXml(track.spotify_url)}" target="_blank" rel="noopener noreferrer" style="display:flex;gap:12px;align-items:center;min-width:0">
-        <img src="${escapeXml(albumArtAtSize(track.album_art_url, 64))}" alt="" decoding="async">
+    .map((track) => {
+      // ジャケ写が無い（または https でない）曲は、src の空の <img> ではなく同じ大きさの枠を置く
+      const artUrl = httpsUrl(track.album_art_url);
+      const art = artUrl
+        ? `<img src="${escapeXml(albumArtAtSize(artUrl, 64))}" alt="" decoding="async">`
+        : '<span class="rank-art-placeholder" aria-hidden="true"></span>';
+      const href = httpsUrl(track.spotify_url);
+      const row = `${art}
         <span class="meta">
           <span class="name" style="display:block">${escapeXml(track.name)}</span>
           <span class="by" style="display:block">${escapeXml(track.artist)}</span>
-        </span>
-      </a>
-    </li>`
-    )
+        </span>`;
+      return `    <li>
+      <span class="rank">${track.rank}</span>
+      ${href ? `<a href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer" style="display:flex;gap:12px;align-items:center;min-width:0">` : '<span style="display:flex;gap:12px;align-items:center;min-width:0">'}
+        ${row}
+      ${href ? '</a>' : '</span>'}
+    </li>`;
+    })
     .join('\n');
 
   return `<section class="ranking">
@@ -282,12 +314,18 @@ ${items}
 /**
  * ライブ更新。DOMへの反映は textContent と setAttribute のみで行い、
  * APIレスポンス由来の文字列をHTMLとして解釈させない。
+ *
+ * 取得の方針は public/embed.js・public/demo.js と揃えている（#121）:
+ * 非表示のタブでは取得しない・表示に戻ったらすぐ取り直す・1回の取得は
+ * LIVE_REQUEST_TIMEOUT_MS で打ち切る・続けて失敗したら間隔を倍々に伸ばす（上限 LIVE_MAX_DELAY_MS）。
  */
+export const LIVE_REQUEST_TIMEOUT_MS = 10_000;
+export const LIVE_MAX_DELAY_MS = 15 * 60 * 1000;
+
 function renderLiveScript(
   endpoint: string,
   refreshSeconds: number,
-  hasTrack: boolean,
-  hasMood: boolean,
+  shape: { hasTrack: boolean; hasMood: boolean; hasArt: boolean },
   nonce?: string
 ): string {
   const interval = Math.max(refreshSeconds, 10) * 1000;
@@ -297,12 +335,15 @@ function renderLiveScript(
 (function () {
   var endpoint = ${JSON.stringify(endpoint)};
   var interval = ${interval};
+  var TIMEOUT_MS = ${LIVE_REQUEST_TIMEOUT_MS};
+  var MAX_DELAY_MS = Math.max(interval, ${LIVE_MAX_DELAY_MS});
 
-  // カードの骨組み（<a>＋<img> か、曲なしの <div>）と、ムード文の段落の有無は
+  // カードの骨組み（<a>＋<img> か、曲なしの <div>）と、ムード文の段落・ジャケ写の <img> の有無は
   // サーバー側で決まる。これらが入れ替わったときはDOMを組み直せないので読み込み直す
-  // （ムード文が消えたのに前の曲のムード文が残る、後から出たムード文が表示されない、を防ぐ）。
-  var hadTrack = ${hasTrack ? 'true' : 'false'};
-  var hadMood = ${hasMood ? 'true' : 'false'};
+  // （ムード文が消えたのに前の曲のムード文が残る、ジャケ写の無い曲に前の曲のジャケ写が残る、を防ぐ）。
+  var hadTrack = ${shape.hasTrack ? 'true' : 'false'};
+  var hadMood = ${shape.hasMood ? 'true' : 'false'};
+  var hadArt = ${shape.hasArt ? 'true' : 'false'};
 
   // ジャケ写URLのプレフィックスは画像サイズを表す。112pxで描くので
   // 300px版に寄せる。640px版のままだと表示が目に見えて遅れる。
@@ -331,7 +372,8 @@ function renderLiveScript(
 
     var track = data && data.track;
     var moodText = data && data.mood && data.mood.text ? data.mood.text : '';
-    if (!!track !== hadTrack || !!moodText !== hadMood) {
+    var hasArt = !!track && isHttps(track.album_art_url);
+    if (!!track !== hadTrack || !!moodText !== hadMood || (track && hasArt !== hadArt)) {
       location.reload();
       return;
     }
@@ -366,27 +408,56 @@ function renderLiveScript(
     if (moodText) setText('mood', moodText);
 
     var art = document.getElementById('art');
-    if (art && art.tagName === 'IMG' && isHttps(track.album_art_url)) {
+    if (art && art.tagName === 'IMG' && hasArt) {
       art.setAttribute('src', artAt300(track.album_art_url));
     }
     if (card.tagName === 'A' && isHttps(track.spotify_url)) card.setAttribute('href', track.spotify_url);
   }
 
-  function tick() {
-    fetch(endpoint, { headers: { Accept: 'application/json' } })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (data) { if (data) update(data); })
-      .catch(function () { /* 一時的な失敗は次回に任せる */ });
+  var failures = 0;
+  var timer = null;
+  var loading = false;
+
+  function schedule() {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(tick, Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS));
   }
 
-  // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
-  // 表示に戻ったら下の visibilitychange ですぐ取り直す。
-  setInterval(function () {
-    if (!document.hidden) tick();
-  }, interval);
+  function load() {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var abort = setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
+    return fetch(endpoint, { headers: { Accept: 'application/json' }, signal: controller ? controller.signal : undefined })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) { update(data); })
+      .then(
+        function () { clearTimeout(abort); },
+        function (err) { clearTimeout(abort); throw err; }
+      );
+  }
+
+  function tick() {
+    timer = null;
+    // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
+    // 表示に戻ったら下の visibilitychange ですぐ取り直す。
+    if (document.hidden || loading) return;
+    loading = true;
+    load().then(
+      function () { failures = 0; },
+      // 一時的な失敗は次回に任せる。続くときは間隔を伸ばす
+      function () { failures = Math.min(failures + 1, 10); }
+    ).then(function () {
+      loading = false;
+      schedule();
+    });
+  }
+
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) tick();
   });
+  schedule();
 })();
 </script>`;
 }

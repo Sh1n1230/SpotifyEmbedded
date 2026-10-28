@@ -1,6 +1,16 @@
 # Cloudflare Workers の Static Assets 用。Worker を通らない静的ファイルにも
-# src/app.ts と同じセキュリティヘッダーを付ける。
+# src/app.ts と同じセキュリティヘッダーを付ける（値は src/http/securityHeaders.ts と同じ。
+# 一致は spec で確かめている）。Workers は https で配るので HSTS は常に付ける。
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000
+
+# デモ画面。スクリプトは同一オリジンの demo.js だけ
+/
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/index.html
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'

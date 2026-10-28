@@ -82,6 +82,13 @@ npm run setup
 
 すでに設定が存在する状態で再実行した場合は、LLM設定の更新確認が表示されます。APIキーの有効期限切れやプロバイダの変更時は、セットアップコマンドを再実行することで、ローカルの設定ファイルとGitHub Secretsの双方を同時に更新できます。
 
+> **refresh_token は承認から6か月で失効します**
+> Spotify の refresh_token は、使い続けていても承認から6か月で使えなくなります（[Refreshing tokens](https://developer.spotify.com/documentation/web-api/tutorials/refreshing-tokens)）。`npm run setup` の完了時に取り直しの目安の日付を表示するので、その日までに `npm run setup` を再実行してください（GitHub Secrets も同時に更新されます。Workers を使っている場合は `wrangler secret` も更新します）。
+
+#### トラブルシューティング: `invalid_grant`
+
+`Update Spotify snapshot` が毎回失敗する、またはライブAPIが 502（`/badge.svg` と `/embed` は「取得できませんでした」）を返し、ログに `invalid_grant` と出る場合は、refresh_token が失効または取り消されています（6か月の期限切れ、Spotify のアプリ連携の解除、Client Secret の再発行など）。`npm run setup` で取り直して登録し直してください。静的モードのカードは、その間も最後に成功した時点の内容のまま残ります。
+
 ### 3. 有効化
 
 フォークしたリポジトリでは、GitHub Actions がはじめは無効になっています。次の順で有効化してください。
@@ -190,7 +197,10 @@ npm run setup      # 初期設定が未完了の場合
 npm run dev        # http://localhost:3000
 ```
 
-レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外）。超えると 429 を返します。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません。
+レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外。IPv6 は /64 単位で数えます）。超えると `/api/now-playing` は 429 と `Retry-After` を返し、`/badge.svg` と `/embed` は「取得できませんでした」のカードを返します（理由は `X-Spotify-Embedded-Error: rate_limited` ヘッダー）。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません。
+
+> **公開範囲とコストについて**
+> `CORS_ORIGIN` が未設定（`*`）のままだと、どのサイトからでもこの API を呼べます。他人のサイトに埋め込まれると、自分の Spotify の利用枠と、ムード文を生成する LLM の利用料を使われます。本番では埋め込み先のオリジンに限ってください（カンマ区切りで複数書けます）。本番相当（`NODE_ENV=production`・Workers）で `*` のまま起動すると警告を出します。
 
 ### 埋め込み方
 
@@ -221,8 +231,13 @@ npm run dev        # http://localhost:3000
 
 **SVG画像**（GitHub README等への埋め込み用）
 
-```markdown
-![Now Playing](https://your-api.example.com/badge.svg)
+背景は透過で、既定はダークテーマの文字色です。GitHub のライトテーマでも読めるよう、静的モードと同じく `<picture>` で切り替えます。
+
+```html
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://your-api.example.com/badge.svg">
+  <img src="https://your-api.example.com/badge.svg?theme=light" alt="Now Playing">
+</picture>
 ```
 
 **JSONデータ取得**（クライアント側での加工用）
@@ -267,7 +282,7 @@ if (data.is_playing) {
 }
 ```
 
-再生していない場合は `is_playing: false`、`track: null`、`mood: null` を返します。
+再生していない場合は `is_playing: false`、`track: null`、`mood: null` を返します。時刻（`fetched_at`・`mood.generated_at`）はすべて UTC の ISO 8601（`Z` 付き）です。
 
 > **`popularity` / `preview_url` / `genres` について**
 > Spotify側の仕様変更により、2024年11月以降に作成された開発者アプリケーションではこれらの項目がAPIから返却されません（アーティスト情報のバッチ取得 `/artists?ids=` は 403 Forbidden となります）。スキーマの後方互換性を保つためレスポンス内のキーは維持されますが、`popularity` と `preview_url` は常に `null`、`genres` は空配列となります。詳細な背景は[設計メモ](#audio-features-を使わない理由)を参照してください。
@@ -283,7 +298,7 @@ if (data.is_playing) {
 | パス | 内容 | クエリパラメータ |
 |---|---|---|
 | `GET /embed` | iframe用HTML | `theme` `transparent` `refresh`（秒、10〜3600、既定30） |
-| `GET /badge.svg` | now-playingカード画像 | `theme` |
+| `GET /badge.svg` | now-playingカード画像（背景は透過。ライトの背景に貼るときは `theme=light`） | `theme` |
 | `GET /embed.js` | JavaScript埋め込みスクリプト | — |
 
 ---
@@ -321,11 +336,10 @@ npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_M
 
 ```bash
 docker build -t spotify-embedded .
-docker run -p 3000:3000 \
-  -e SPOTIFY_CLIENT_ID=... -e SPOTIFY_CLIENT_SECRET=... \
-  -e SPOTIFY_REFRESH_TOKEN=... -e LLM_API_KEY=... \
-  spotify-embedded
+docker run -p 3000:3000 --env-file .env spotify-embedded
 ```
+
+`.env` は `npm run setup` が作ります（`.dockerignore` で除外しているので、イメージには入りません）。秘密情報を `-e KEY=値` でコマンドラインに書くと、シェルの履歴や `ps` に残るので避けてください。本番のプラットフォームでは、それぞれのシークレット機能（`fly secrets set` など）を使います。
 
 永続ボリュームを `/app/data` にマウントすることで、環境変数の代わりに `data/auth.json` による設定管理も可能です。
 
@@ -339,11 +353,11 @@ docker run -p 3000:3000 \
 | `SPOTIFY_CLIENT_SECRET` | ✓ | — | Spotifyアプリの Client Secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得したリフレッシュトークン |
 | `LLM_API_KEY` | | — | 未設定時はムード文なしで動作 |
-| `LLM_BASE_URL` | | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI互換のエンドポイント |
+| `LLM_BASE_URL` | | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI互換のエンドポイント。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く） |
 | `LLM_MODEL` | | `gemini-3.1-flash-lite` | 使用モデル |
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
 | `PORT` | | `3000` | サーバーの待受ポート |
-| `CORS_ORIGIN` | | `*` | 許可するオリジン（本番では埋め込み先サイトに限定を推奨） |
+| `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。本番では埋め込み先サイトに限定を推奨 |
 | `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
 | `ENABLE_AUTH_ROUTES` | | `false` | `true` で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
@@ -395,4 +409,5 @@ MIT
 
 開発手順と脆弱性の報告方法は [`CONTRIBUTING.md`](CONTRIBUTING.md) と
 [`SECURITY.md`](SECURITY.md) を参照してください。リリースは
-`vX.Y.Z` 形式のタグを起点にGitHub Actionsが自動作成します。
+`vX.Y.Z` 形式のタグを起点にGitHub Actionsが自動作成します。版ごとの変更点と、
+アップグレード時に必要な対応は [`CHANGELOG.md`](CHANGELOG.md) にあります。

@@ -12,9 +12,10 @@ on:
       - '.github/workflows/deploy-workers.yml'
   workflow_dispatch:
 
+# GITHUB_TOKEN は checkout にだけ使う。wrangler-action は gitHubToken を渡したときだけ
+# GitHub の Deployment を作るが、ここでは渡していない（environment の記録は Actions が付ける）
 permissions:
   contents: read
-  deployments: write
 
 concurrency:
   group: cloudflare-deploy
@@ -23,6 +24,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: cloudflare
       url: ${{ steps.deploy.outputs.deployment-url }}
