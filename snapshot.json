@@ -1,0 +1,39 @@
+{
+  "state": "recent",
+  "source": "history",
+  "track": {
+    "id": "0BiXEKLDn6bG3OgZcwNYuM",
+    "name": "Marvellous",
+    "artist": "Dave",
+    "album": "The Boy Who Played the Harp",
+    "album_art_url": "https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83",
+    "duration_ms": 181050,
+    "popularity": null,
+    "spotify_url": "https://open.spotify.com/track/0BiXEKLDn6bG3OgZcwNYuM",
+    "preview_url": null
+  },
+  "mood": {
+    "text": "今どこか不思議でポップな気分になっています",
+    "generated_at": "2026-10-31T11:07:16.497Z"
+  },
+  "observed_at": "2026-10-31T09:25:40.923Z",
+  "ranking_mood": {
+    "range": "short_term",
+    "track_ids": [
+      "2k6OpEcFV2VvXdVmPRNCiw",
+      "76gcXhY3Zv6wW0BTe9nHJo",
+      "72v5hEFw5nJshkGSzijzg5",
+      "2xA8AFeN5Q2vO4RKTvW4Ig",
+      "7vG8zjbeQmwCe4azzU77oU",
+      "1Vn4C8zBO7b2pZPQ8L0oZO",
+      "40T5GIqQ1CegGm2PTEl8Bu",
+      "0PRduxqXvtIlqGoFuQrJzQ",
+      "2QqJTIlGKRLJC3onkavYEz",
+      "6HexNTb392JS071DoTGo0y"
+    ],
+    "mood": {
+      "text": "最近はリリックに耳を澄ませるemoな気分に浸っているようです",
+      "generated_at": "2026-10-30T20:02:15.621Z"
+    }
+  }
+}

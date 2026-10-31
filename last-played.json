@@ -1,0 +1,18 @@
+{
+  "track": {
+    "id": "0BiXEKLDn6bG3OgZcwNYuM",
+    "name": "Marvellous",
+    "artist": "Dave",
+    "album": "The Boy Who Played the Harp",
+    "album_art_url": "https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83",
+    "duration_ms": 181050,
+    "popularity": null,
+    "spotify_url": "https://open.spotify.com/track/0BiXEKLDn6bG3OgZcwNYuM",
+    "preview_url": null
+  },
+  "mood": {
+    "text": "今どこか不思議でポップな気分になっています",
+    "generated_at": "2026-10-31T11:07:16.497Z"
+  },
+  "played_at": "2026-10-31T09:25:40.923Z"
+}
