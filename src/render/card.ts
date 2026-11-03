@@ -89,7 +89,7 @@ export function playbackLabel(state: PlaybackState, since: string | undefined): 
 
 function renderArt(dataUri: string | null, placeholder: string, muted: string): string {
   if (dataUri) {
-    // clipPath ではなく rect を重ねず、image に直接角丸を効かせるため clip-path を使う
+    // 角丸の rect を重ねるのではなく、clip-path で image 自体を角丸に切り抜く
     return `<defs><clipPath id="art-clip"><rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8"/></clipPath></defs>
   <image x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" href="${dataUri}" clip-path="url(#art-clip)" preserveAspectRatio="xMidYMid slice"/>`;
   }
