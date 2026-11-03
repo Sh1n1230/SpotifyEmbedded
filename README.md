@@ -246,11 +246,13 @@ npm run dev        # http://localhost:3000
 const res = await fetch('https://your-api.example.com/api/now-playing');
 const data = await res.json();
 if (data.is_playing) {
-  console.log(data.mood.text);           // "ダークな気分に浸っているようです"
+  console.log(data.mood?.text ?? '(ムード文なし)'); // "ダークな気分に浸っているようです"
   console.log(data.track.name);          // "Armed And Dangerous"
   console.log(data.track.album_art_url); // アルバムアートのURL
 }
 ```
+
+LLM が未設定の場合やムード文の生成に失敗した場合は、再生中でも `mood` が `null` になります。曲情報はそのまま利用できます。
 
 ---
 
