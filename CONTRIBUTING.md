@@ -57,11 +57,11 @@ Dependabot（`.github/dependabot.yml`）は npm の minor / patch を1つの PR 
 
 脆弱性はメジャーかどうかに関係なく、Dependabot alerts（有効）で通知されます。
 
-## リポジトリの設定（2026-10-28 時点）
+## リポジトリの設定（2026-11-04 時点）
 
 | 項目 | 状態 |
 |---|---|
-| main のブランチ保護 | なし。ルールセット「protect main」はあるが無効（`enforcement: disabled`） |
+| main のブランチ保護 | ルールセット「protect main」で、削除と force push を禁止し、`security`・`validate (22/24)`・`workers-bundle`・`docker`・`package (22/24)` の通過を必須にする。例外なし。CI の Node のバージョンやジョブ名を変えるときは、ルールセットの必須チェックも更新する |
 | Environment `cloudflare`（Workers へのデプロイ） | 承認の必須・ブランチの制限なし |
 | Environment `github-pages` | デプロイできるブランチを限定 |
 | Dependabot alerts | 有効（security updates の自動 PR は無効） |
