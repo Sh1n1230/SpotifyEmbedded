@@ -4,19 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build commands
 
-```bash
-npm run dev        # development server with auto-restart (tsx watch)
-npm run dev:worker # run as a Cloudflare Worker locally (secrets from .dev.vars)
-npm run deploy     # deploy to Cloudflare Workers
-npm run build      # compile TypeScript → dist/
-npm start          # run compiled output
-npm run setup      # interactive OAuth setup (writes .env + data/auth.json, optionally gh secrets)
-npm run generate   # generate static artifacts into ./out
-npm run auth       # legacy: start server with OAuth routes enabled
-npm run typecheck  # TypeScript type check without emitting
-npm run lint       # ESLint (typescript-eslint, type-aware; public/embed.js as ES5)
-npm test           # run the spec suite (vitest)
-```
+`dev:worker` reads secrets from `.dev.vars`; `setup` is interactive OAuth (writes `.env` +
+`data/auth.json`, optionally gh secrets); `auth` is legacy.
 
 ## Two delivery modes
 
@@ -39,8 +28,6 @@ The same core powers both. This split is the product's core idea — don't colla
 
 ## Architecture
 
-- `src/types/index.ts` — canonical TypeScript interfaces; all modules import from here
-- `src/authStore.ts` — credential resolution (env → `data/auth.json`) and persistence (0600)
 - `src/config.ts` — **lazy getters**. Secrets must not be evaluated at import time, or `setup`
   breaks before it can write anything
 - `src/core/collect.ts` — the only data-collection path; used by both routes and CLI
@@ -51,41 +38,17 @@ The same core powers both. This split is the product's core idea — don't colla
 - `src/llm/` — OpenAI-compatible chat client (`client.ts`), provider presets (`providers.ts`),
   and the Japanese mood prompt (`moodGenerator.ts`). Any OpenAI-format endpoint works;
   the presets are input helpers, not an integration list. No provider SDK.
-  - **Reasoning must be disabled.** A thinking model spends the small `max_tokens` budget on
-    reasoning and returns empty content with `finish_reason: length`. The parameter differs per
-    vendor, and sending the wrong one is a 400, so `noReasoningParams()` in `client.ts`
-    dispatches on the endpoint host: `reasoning: {effort}` for OpenRouter,
-    `reasoning_effort` for Gemini. Add a branch rather than sending it to everyone.
-  - Gemini's OpenAI-compatible base URL is `https://generativelanguage.googleapis.com/v1beta/openai`
-    — not `/v1beta`, not `/v1beta/interactions`.
-  - `client.ts` retries once on 5xx or timeout, because Gemini returns 503 under load. Gemini's
-    `-lite` models hit this far less, which is why `DEFAULT_MODEL` in `providers.ts` is a `-lite` one.
 - `src/core/rankingMood.ts` — ranking-wide mood. **Invalidated by content, not time**: the
   record stores the top-10 track IDs it was generated from, and is regenerated only when ≥3 of
   the current top 10 are absent from that basis (order ignored). Don't replace this with a TTL.
   Only static mode uses it: `generate` carries the record in `snapshot.json` as `ranking_mood`.
   On LLM failure the previous record is kept, basis unchanged.
-- `src/render/` — pure data→string renderers (`card`, `ranking`, `page`, `text`, `theme`, `image`)
-- `src/cli/` — `spotify-embedded setup | generate`
 - `src/cache/index.ts` — in-memory `TtlCache` instances for the live API: nowPlaying (30s), mood
   (24h, 200 keys), art (24h, 100 keys). Not node-cache: it starts a timer at construction, which
   Workers forbids in global scope. Also an optional `DurableStore` (Workers KV binding `MOODS`)
   that `collect.ts` reads/writes through for per-track moods, because Workers isolates drop
   memory often (KV free tier: 1,000 writes/day).
-- `src/http/respond.ts` — JSON/YAML content negotiation (`sendFormatted(c, data)`) and the error
-  handler
-- `src/routes/` — `/api/now-playing`, `/auth/*`, `/embed`, `/badge.svg`
 - `public/embed.js` — one-tag embed; renders into a Shadow DOM so host CSS can't leak in
-- `src/spec/*.test.ts` — the executable spec, one file per area: `describe` headings read
-  as requirements. Shared fetch mock, fixtures and the common `beforeEach` live in `src/spec/support.ts`
-  (importing it registers the hooks). Mock at the
-  `fetch` layer, never by replacing modules — which URL, query and headers we hit is part of
-  what's being verified. Fixtures default to a post-Nov-2024 app (restricted fields absent).
-  - The Spotify access token, the in-flight refresh and the `/artists` 403 latch are module-level
-    state; `beforeEach` resets them (`resetAccessToken`, `resetArtistGenreAvailability`), so every
-    test starts without a token.
-  - CLI specs spawn `src/cli/index.ts` through `node_modules/tsx/dist/loader.mjs` in an empty temp
-    dir with only `PATH`, so a developer's local config never leaks in.
 
 ## Key constraints
 
