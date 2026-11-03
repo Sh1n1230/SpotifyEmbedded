@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-04
+
 ### アップグレード時に確かめること
 
 - LLM のエンドポイント（`LLM_BASE_URL`）が `http://` のリモートだと、API キーを送らずムード文なしで動きます。`https://` にしてください（`localhost`・`127.0.0.1`・`[::1]` の http はそのまま使えます）
@@ -120,7 +122,8 @@
 
 - ムード文の取りこぼし: タイムアウト時に再試行し、失敗した null を使い回さない（#22）
 
-[Unreleased]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.4.2...v1.5.0
