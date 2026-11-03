@@ -114,6 +114,41 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(prompt).not.toContain('不明');
   });
 
+  it('曲名が上限の位置でサロゲートペアを割らない', async () => {
+    // length と slice() は UTF-16 のコード単位。99 文字の ASCII の後に絵文字が
+    // 続く曲名を 100 単位で切りると、上位サロゲートだけがプロンプトに残る。
+    const longName = 'a'.repeat(99) + '🎵';
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack({ name: longName }));
+
+    await collectNowPlaying();
+
+    const body = bodyOf(callsTo('/chat/completions')[0]!);
+    const prompt = (body['messages'] as { content: string }[])[1]!.content;
+    expect(prompt).toContain('曲名: ' + longName);
+    // プロンプトに孤立したサロゲート（不正な Unicode）が残っていないこと。
+    // Array.from はペアを 1 要素にまとめるので、単体で D800〜DFFF なら孤立。
+    const lone = Array.from(prompt).some((ch) => {
+      const c = ch.codePointAt(0)!;
+      return c >= 0xd800 && c <= 0xdfff;
+    });
+    expect(lone).toBe(false);
+  });
+
+  it('上限以内の曲名は切らずにそのまま載せる', async () => {
+    const name = 'b'.repeat(100);
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack({ name }));
+
+    await collectNowPlaying();
+
+    const body = bodyOf(callsTo('/chat/completions')[0]!);
+    const prompt = (body['messages'] as { content: string }[])[1]!.content;
+    expect(prompt).toContain('曲名: ' + name);
+  });
+
   describe('LLM が失敗しても曲情報は返る（デグレード動作）', () => {
     it('応答が空（推論モデルが出力上限を使い切った）でも完走する', async () => {
       givenLlmConfigured();
