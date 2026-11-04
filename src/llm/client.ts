@@ -85,9 +85,12 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   // 5xx とタイムアウトは相手側の一時的な混雑であることが多い（Gemini の
   // 503 "high demand" や、混雑時に応答が返ってこないケース）。
   // 一度だけ間を置いて引き直す。それでも駄目ならムード文を諦める。
+  // 待ちを固定すると同時に失敗した isolate が同じ瞬間に引き直して混雑を強めるため、
+  // 600〜1200ms の間でばらつかせる。
   if (res === 'timeout' || res.status >= 500) {
     if (res !== 'timeout') await discardBody(res);
-    await new Promise((done) => setTimeout(done, 900));
+    const delayMs = 600 + Math.floor(Math.random() * 601);
+    await new Promise((done) => setTimeout(done, delayMs));
     res = await send();
   }
   if (res === 'timeout') throw new Error(`LLMへのリクエストがタイムアウトしました (${url})`);
