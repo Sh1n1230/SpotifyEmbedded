@@ -21,6 +21,7 @@ Spotifyで再生中の楽曲をもとに、LLMが推論したムード文（今�
 [![CI](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/Sh1n1230/SpotifyEmbedded)](LICENSE)
 [![Security Check](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml)
+[![Update Spotify snapshot](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/update-spotify.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/update-spotify.yml)
 
 本ツールには「静的モード」と「ライブAPIモード」の2つの動作方式があり、サーバーを常時稼働させない構成でも運用できます。
 
@@ -39,12 +40,12 @@ GitHub Actions が定期的にSpotify Web APIからデータを取得し、SVG�
 
 ### 1. 準備
 
-本リポジトリをフォークし、ローカル環境へクローンします。
+Node.js 22 以上（`package.json` の `engines`。`.nvmrc` の版を推奨）が必要です。本リポジトリをフォークし、ローカル環境へクローンします。
 
 ```bash
 git clone https://github.com/<username>/SpotifyEmbedded.git
 cd SpotifyEmbedded
-npm install
+npm ci --ignore-scripts
 ```
 
 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) でアプリケーションを作成し、**Settings → Redirect URIs** に次のURIを登録します。
@@ -371,6 +372,7 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。スキームとホスト（とポート）だけを書く（末尾の `/` は取り除く。パス付きなどオリジンとして読めない値は使わずに警告する）。`*` はほかのオリジンと一緒には使えない（混ぜると `*` を無視する）。本番では埋め込み先サイトに限定を推奨 |
 | `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`・`x-forwarded-for`・`forwarded`。`forwarded`（RFC 7239）は最後の要素の `for=` を読む。値のポートは外す）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
+| `NODE_ENV` | | — | `production` で本番相当として扱う（今は、`CORS_ORIGIN` が `*` のままなら起動時に警告することにだけ使う。Docker の既定は `production`） |
 | `ENABLE_AUTH_ROUTES` | | `false` | `true` で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
 
 設定値は **環境変数 → `data/auth.json`** の優先順位で解決されます。環境変数が優先されるため、`.env` ファイルのみで設定を行っている既存の構成にもそのまま適用されます。
