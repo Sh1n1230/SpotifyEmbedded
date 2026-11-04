@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
 import { loadStoredAuth, saveStoredAuth } from '../authStore.js';
 import { collectNowPlaying } from '../core/collect.js';
@@ -215,6 +217,30 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
       let envPath: string;
       beforeEach(() => {
         envPath = join(mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-envfile-')), 'env');
+      });
+
+      it('export KEY= や KEY = value の行も、更新では置き換え、削除では消す', () => {
+        writeFileSync(envPath, 'export LLM_API_KEY=old\nLLM_MODEL = m\nOTHER=x\n');
+
+        upsertEnvFile(envPath, { llmApiKey: 'new' });
+        const removed = upsertEnvFile(envPath, { llmModel: '' });
+
+        expect(readFileSync(envPath, 'utf8')).toBe('LLM_API_KEY=new\nOTHER=x\n');
+        expect(removed).toContain('LLM_MODEL');
+      });
+
+      it.each(['abc#def', ' leading', 'quo"te', 'back\\slash'])('%j のような値も、dotenv がそのまま読めるように書く', (value) => {
+        upsertEnvFile(envPath, { llmApiKey: value });
+
+        expect(dotenv.parse(readFileSync(envPath, 'utf8'))['LLM_API_KEY']).toBe(value);
+      });
+
+      it('.env.example をそのまま .env にしても、仮の値が「設定済み」として使われない', () => {
+        const example = dotenv.parse(readFileSync(fileURLToPath(new URL('../../.env.example', import.meta.url)), 'utf8'));
+
+        for (const name of ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN', 'LLM_API_KEY']) {
+          expect(example[name] ?? '').toBe('');
+        }
       });
 
       it('LLM を外すと、別名で書かれたキーの行も消す（残すと別名から読まれて有効なままになる）', () => {
