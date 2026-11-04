@@ -10,7 +10,7 @@
  * refresh_token には含まれないため、失敗しても例外にせず null を返し、
  * 呼び出し側は従来どおり前回のスナップショットを引き継ぐ。
  */
-import { spotifyFetch } from './client.js';
+import { readSpotifyJson, spotifyFetch } from './client.js';
 import { isCatalogTrack, toTrackSummary } from './track.js';
 import type { SpotifyTrack, TrackSummary } from '../types/index.js';
 
@@ -31,13 +31,14 @@ export interface RecentlyPlayedData {
 }
 
 export async function fetchRecentlyPlayed(): Promise<RecentlyPlayedData | null> {
-  const res = await spotifyFetch(`/me/player/recently-played?limit=${HISTORY_LIMIT}`);
+  const path = `/me/player/recently-played?limit=${HISTORY_LIMIT}`;
+  const res = await spotifyFetch(path);
   if (!res) return null;
 
-  const data = (await res.json()) as RecentlyPlayedResponse;
+  const data = await readSpotifyJson<RecentlyPlayedResponse>(res, path);
   // ローカルファイルやエピソードは id が無いことがある（now-playing と同じ判定）。
   // 新しい順に並んでいるので、最初のカタログの曲が「最後に聴いた曲」になる。
-  for (const item of data.items ?? []) {
+  for (const item of data?.items ?? []) {
     if (item?.track && isCatalogTrack(item.track)) {
       return { track: toTrackSummary(item.track), playedAt: item.played_at };
     }

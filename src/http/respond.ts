@@ -4,6 +4,7 @@ import yaml from 'js-yaml';
 import {
   SpotifyApiError,
   SpotifyAuthError,
+  SpotifyNetworkError,
   SpotifyRateLimitError,
   SpotifyTimeoutError,
 } from '../spotify/client.js';
@@ -52,6 +53,12 @@ export function handleError(err: unknown, c: Context): Response {
   if (err instanceof SpotifyTimeoutError) {
     console.error('[spotify]', err.message);
     return c.json({ error: 'Spotify API timed out' }, 504);
+  }
+
+  // Spotify に届かなかった（DNS・接続拒否・TLS など）。上流の問題なので 502。原因はログにだけ出す
+  if (err instanceof SpotifyNetworkError) {
+    console.error('[spotify]', err.message);
+    return c.json({ error: 'Could not reach Spotify' }, 502);
   }
 
   // Spotify 由来の失敗は、こちらのバグではなく相手側の応答なので 502 で返し、

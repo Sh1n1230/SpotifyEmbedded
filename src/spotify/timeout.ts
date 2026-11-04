@@ -24,7 +24,53 @@ export class SpotifyTimeoutError extends Error {
   }
 }
 
-/** `fetch` にタイムアウトを付ける。時間切れは SpotifyTimeoutError にする。 */
+/**
+ * Spotify に接続できなかった（DNS・接続拒否・TLS など）。相手側に届かなかったので、こちらのバグ（500）ではなく 502。
+ * 応答本文の読み取りの途中で接続が切れた場合も含む。
+ */
+export class SpotifyNetworkError extends Error {
+  target: string;
+  constructor(target: string, cause: unknown) {
+    const shown = target.length > 80 ? `${target.slice(0, 80)}…` : target;
+    const code = causeCode(cause);
+    super(`Spotify に接続できませんでした: ${shown}${code ? ` (${code})` : ''}`, { cause });
+    this.name = 'SpotifyNetworkError';
+    this.target = target;
+  }
+}
+
+/** undici の `TypeError: fetch failed` は、原因（ENOTFOUND など）を cause に持つ。 */
+function causeCode(cause: unknown): string {
+  const inner = cause instanceof Error && cause.cause instanceof Error ? cause.cause : cause;
+  if (inner && typeof inner === 'object' && 'code' in inner && typeof inner.code === 'string') {
+    return inner.code;
+  }
+  return inner instanceof Error ? inner.message : '';
+}
+
+/** 時間切れ（TimeoutError）を SpotifyTimeoutError に、それ以外の通信の失敗を SpotifyNetworkError にする。 */
+function toSpotifyError(err: unknown, target: string, timeoutMs: number): unknown {
+  if (err instanceof Error && err.name === 'TimeoutError') return new SpotifyTimeoutError(target, timeoutMs);
+  // 呼び出し側の中断（AbortError）など、通信の失敗ではないものはそのまま
+  if (err instanceof TypeError || (err instanceof Error && 'code' in err)) {
+    return new SpotifyNetworkError(target, err);
+  }
+  return err;
+}
+
+/**
+ * 応答の本文を文字列として読む。`fetch` のタイムアウトは本文の読み取りにも効くため、
+ * 読み取りの途中の時間切れも SpotifyTimeoutError にする（そのままだと 500 になる）。
+ */
+export async function readBodyText(res: Response, target: string, timeoutMs: number): Promise<string> {
+  try {
+    return await res.text();
+  } catch (err) {
+    throw toSpotifyError(err, target, timeoutMs);
+  }
+}
+
+/** `fetch` にタイムアウトを付ける。時間切れは SpotifyTimeoutError、接続の失敗は SpotifyNetworkError にする。 */
 export async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -34,9 +80,6 @@ export async function fetchWithTimeout(
   try {
     return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
-    if (err instanceof Error && err.name === 'TimeoutError') {
-      throw new SpotifyTimeoutError(target, timeoutMs);
-    }
-    throw err;
+    throw toSpotifyError(err, target, timeoutMs);
   }
 }
