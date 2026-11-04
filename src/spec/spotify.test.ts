@@ -252,6 +252,23 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
     expect(result.track?.artist).toBe('Alpha, Beta');
   });
 
+  it('アーティストの ID が空の曲があっても、/artists のクエリに空の要素を入れない', async () => {
+    givenTopTracks([
+      aSpotifyTrack({
+        artists: [
+          { id: '', name: 'Ghost', external_urls: { spotify: '' } },
+          { id: 'artist-1', name: 'Neon District', external_urls: { spotify: '' } },
+        ],
+      }),
+    ]);
+    givenArtistGenres({ 'artist-1': ['city pop'] });
+
+    const result = await collectTopTracks();
+
+    expect(callsTo('/artists?ids=')[0]!.url).toMatch(/ids=artist-1$/);
+    expect(result.tracks[0]!.genres).toEqual(['city pop']);
+  });
+
   it('ジャケ写は300px以上の最大サイズを選ぶ', async () => {
     givenNowPlaying(aSpotifyTrack());
 
