@@ -53,6 +53,32 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(result.mood?.generated_at).toBe(NOW_ISO);
   });
 
+  it('content parts の配列からムード文を取り出す', async () => {
+    givenLlmConfigured();
+    respondWith((url) =>
+      url.includes('/chat/completions')
+        ? jsonOk({
+            choices: [
+              {
+                message: {
+                  content: [
+                    { type: 'text', text: '今チルな' },
+                    { type: 'image_url', image_url: { url: 'https://example.com/image.png' } },
+                    { type: 'text', text: '気分になっています' },
+                  ],
+                },
+              },
+            ],
+          })
+        : null
+    );
+    givenNowPlaying(aSpotifyTrack());
+
+    const result = await collectNowPlaying();
+
+    expect(result.mood?.text).toBe('今チルな気分になっています');
+  });
+
   it('モデルがクォートで囲んできたら外す', async () => {
     givenLlmConfigured();
     givenLlmReplies('「今ノリノリなようです」');
@@ -323,6 +349,26 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       givenLlmReplies('   ');
 
       await expect(callLlm()).rejects.toThrow(/推論/);
+    });
+
+    it('message.content が未対応の形なら理由を示す', async () => {
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? jsonOk({ choices: [{ message: { content: { text: '応答' } } }] })
+          : null
+      );
+
+      await expect(callLlm()).rejects.toThrow(/message\.content.*text 型/);
+    });
+
+    it('text part に文字列以外が入っていれば理由を示す', async () => {
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? jsonOk({ choices: [{ message: { content: [{ type: 'text', text: 42 }] } }] })
+          : null
+      );
+
+      await expect(callLlm()).rejects.toThrow(/message\.content.*text 型/);
     });
 
     it('5xx は一度だけ間を置いて引き直す', async () => {
