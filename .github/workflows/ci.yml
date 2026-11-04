@@ -2,11 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
+
+# PR に続けて push したら、古い実行を取り消す（main への push は、必須のチェックの結果を残すため取り消さない）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -14,9 +19,11 @@ jobs:
     # 止まったまま後続を待たせない（通常は1分前後）
     timeout-minutes: 15
     strategy:
+      # 片方の版の失敗で、もう片方の結果まで取り消さない（どの版で壊れたかが分かるように）
+      fail-fast: false
       matrix:
-        # package.json の engines（>=22）の範囲にある各メジャーで確かめる
-        node-version: ['22', '24']
+        # package.json の engines（>=22）の範囲にある各メジャーで確かめる（26 は 2026-10-28 から Active LTS）
+        node-version: ['22', '24', '26']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,7 +85,7 @@ jobs:
           docker run -d --name app -p 3000:3000 \
             -e SPOTIFY_CLIENT_ID=dummy -e SPOTIFY_CLIENT_SECRET=dummy -e SPOTIFY_REFRESH_TOKEN=dummy \
             spotify-embedded:ci
-          for i in $(seq 1 20); do
+          for _ in $(seq 1 20); do
             if curl -fsS http://localhost:3000/health; then exit 0; fi
             sleep 1
           done
@@ -91,8 +98,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ['22', '24']
+        node-version: ['22', '24', '26']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -127,7 +135,7 @@ jobs:
         run: |
           node app/node_modules/spotify-embedded/dist/index.js &
           server=$!
-          for attempt in $(seq 1 20); do
+          for _ in $(seq 1 20); do
             curl -fsS -o /dev/null "http://127.0.0.1:$PORT/health" && break
             sleep 0.5
           done
@@ -135,3 +143,27 @@ jobs:
           kill "$server"
           echo "GET /embed.js: $status"
           test "$status" = 200
+
+  # ワークフローの定義の検査。shellcheck（ランナーに入っている）があれば run: の中も検査する。
+  # actionlint はリリースのバイナリを版と sha256 で固定して取得する（Dependabot の対象外なので、更新するときは
+  # 版と、リリースの actionlint_<版>_checksums.txt にある linux_amd64.tar.gz の sha256 を書き換える）
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: actionlint の導入
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+
+      - name: ワークフローの検査
+        run: '"$RUNNER_TEMP/actionlint"'

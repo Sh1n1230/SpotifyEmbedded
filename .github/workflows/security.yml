@@ -4,8 +4,11 @@ name: Security Check
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
+  # 変更の無い期間に公開された依存の脆弱性も見つけるため、週に1回も実行する（毎時0分は混むので避ける）
+  schedule:
+    - cron: '23 4 * * 1'
 
 permissions:
   contents: read
