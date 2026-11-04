@@ -373,7 +373,7 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`・`x-forwarded-for`・`forwarded`。`forwarded`（RFC 7239）は最後の要素の `for=` を読む。値のポートは外す）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
 | `NODE_ENV` | | — | `production` で本番相当として扱う（今は、`CORS_ORIGIN` が `*` のままなら起動時に警告することにだけ使う。Docker の既定は `production`） |
-| `ENABLE_AUTH_ROUTES` | | `false` | `true` で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
+| `ENABLE_AUTH_ROUTES` | | `false` | `true`（または `1`・`yes`・`on`）で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
 
 設定値は **環境変数 → `data/auth.json`** の優先順位で解決されます。環境変数が優先されるため、`.env` ファイルのみで設定を行っている既存の構成にもそのまま適用されます。
 

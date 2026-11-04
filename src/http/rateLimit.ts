@@ -40,7 +40,11 @@ export const UNKNOWN_CLIENT = 'unknown';
 export function rateLimitKey(address: string | null | undefined): string {
   const raw = address?.trim().replace(/^\[|\]$/g, '').replace(/%.*$/, '') ?? '';
   if (raw === '') return UNKNOWN_CLIENT;
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(raw)) return raw;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(raw)) {
+    // 各オクテットを数にして 0〜255 を確かめ、01 と 1 のような書き方の違いを同じキーにする
+    const octets = raw.split('.').map(Number);
+    return octets.every((octet) => octet <= 255) ? octets.join('.') : UNKNOWN_CLIENT;
+  }
 
   const groups = expandIpv6(raw);
   if (!groups) return UNKNOWN_CLIENT;

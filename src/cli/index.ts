@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { setup } from './setup.js';
 import { generate } from './generate.js';
 import { isTopTracksRange, isTopTracksLimit } from '../core/topTracksParams.js';
@@ -16,6 +17,7 @@ const USAGE = `SpotifyEmbedded
 使い方:
   npm run setup       Spotify と連携し、設定を保存する
   npm run generate    静的ファイル（SVG / JSON / HTML）を生成する
+  --version           版を表示する
 
 generate のオプション（npm 経由では -- を挟みます）:
   --out <dir>     出力先ディレクトリ（既定: ./out）
@@ -33,10 +35,21 @@ generate のオプション（npm 経由では -- を挟みます）:
 ビルド済みなら node dist/cli/index.js <command> でも実行できます。
 `;
 
+/** package.json の version。src/cli と dist/cli のどちらからも ../../package.json にある（npm パッケージの files にも含まれる） */
+function packageVersion(): string {
+  const path = new URL('../../package.json', import.meta.url);
+  return (JSON.parse(readFileSync(path, 'utf8')) as { version: string }).version;
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
 
   switch (command) {
+    case '--version':
+    case '-v':
+    case 'version':
+      console.log(packageVersion());
+      return;
     case 'setup':
       await setup();
       return;

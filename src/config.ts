@@ -1,8 +1,23 @@
 import { requireAuthValue } from './authStore.js';
 import { parseCorsOrigins } from './http/cors.js';
 
-function optional_env(name: string, fallback: string): string {
-  return process.env[name] ?? fallback;
+
+const TRUE_VALUES = new Set(['true', '1', 'yes', 'on']);
+const FALSE_VALUES = new Set(['false', '0', 'no', 'off', '']);
+const warnedBooleans = new Set<string>();
+
+/**
+ * 真偽値の環境変数。前後の空白を除いて小文字にし、true・1・yes・on を真、false・0・no・off・未設定を偽とする。
+ * それ以外は偽として扱い、一度だけ警告する（TRUE や 1 を黙って無効にしない）。
+ */
+export function parseBooleanEnv(name: string): boolean {
+  const value = (process.env[name] ?? '').trim().toLowerCase();
+  if (TRUE_VALUES.has(value)) return true;
+  if (!FALSE_VALUES.has(value) && !warnedBooleans.has(name)) {
+    warnedBooleans.add(name);
+    console.warn(`${name} の値 ${process.env[name]} を真偽値として読めません。true か false を指定してください。`);
+  }
+  return false;
 }
 
 /** ポートの既定値 */
@@ -77,7 +92,7 @@ export const config = {
       return process.env['TRUSTED_PROXY_HEADER']?.trim().toLowerCase() || null;
     },
     get enableAuthRoutes(): boolean {
-      return optional_env('ENABLE_AUTH_ROUTES', 'false') === 'true';
+      return parseBooleanEnv('ENABLE_AUTH_ROUTES');
     },
   },
 };

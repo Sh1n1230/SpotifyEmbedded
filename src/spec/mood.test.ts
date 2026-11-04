@@ -348,7 +348,7 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       expect(callsTo('/chat/completions')).toHaveLength(0);
     });
 
-    it.each(['http://localhost:11434/v1', 'http://127.0.0.1:1234/v1'])(
+    it.each(['http://localhost:11434/v1', 'http://127.0.0.1:1234/v1', 'http://127.0.0.2:8080/v1', 'http://ollama.localhost:11434/v1'])(
       'ローカルの %s は http のまま使える',
       async (baseUrl) => {
         givenLlmReplies('今チルな気分になっています');

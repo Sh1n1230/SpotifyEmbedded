@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import { accepts } from 'hono/accepts';
+import { HTTPException } from 'hono/http-exception';
 import yaml from 'js-yaml';
 import {
   SpotifyApiError,
@@ -33,6 +34,11 @@ export function sendFormatted(c: Context, data: unknown): Response {
 }
 
 export function handleError(err: unknown, c: Context): Response {
+  // ルートが意図して返した HTTP のエラー（400 など）は、そのステータスと理由で返す（こちらのバグではないのでログに出さない）
+  if (err instanceof HTTPException) {
+    return c.json({ error: err.message || 'Request failed' }, err.status);
+  }
+
   if (err instanceof SpotifyAuthError) {
     // refresh_token の失効か Client ID / Secret の誤りかはログで見分ける
     console.error('[spotify]', err.message);

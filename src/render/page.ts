@@ -91,7 +91,6 @@ export function renderEmbedPage(input: PageInput): string {
 
   :root {
     --bg: ${input.transparent ? 'transparent' : theme.bg};
-    --surface: ${theme.surface};
     --fg: ${theme.fg};
     --sub: ${theme.sub};
     --muted: ${theme.muted};

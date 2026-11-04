@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { get } from 'node:http';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +73,14 @@ describe('CLI（spotify-embedded）', () => {
   function runCli(args: string[], options: RunOptions = {}): RunResult {
     return runEntry('../cli/index.ts', args, options, cwds);
   }
+
+  it.each(['--version', '-v', 'version'])('%s で package.json の版を表示する', (flag) => {
+    const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+    const run = runCli([flag]);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout.trim()).toBe(version);
+  }, 30_000);
 
   it('設定が何も無くても、読み込みだけでは落ちない（npm run setup が動くために必要）', () => {
     const run = runCli(['help']);

@@ -507,6 +507,36 @@ describe('ライブAPIの境界: ランキングは出さない（静的モー�
   });
 });
 
+describe('未定義のパスやリクエストの誤りも JSON で返す', () => {
+  it('未定義のパスは 404 の JSON', async () => {
+    const res = await createApp().request('/no-such-path');
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  it('/api/top-tracks の 404 は、ランキングが静的モードにあることを案内する', async () => {
+    const body = (await (await createApp().request('/api/top-tracks')).json()) as { hint: string };
+
+    expect(body.hint).toContain('静的モード');
+  });
+
+  it('ルートが投げた HTTPException は、500 ではなくそのステータスで返す', async () => {
+    const { HTTPException } = await import('hono/http-exception');
+    const { handleError } = await import('../http/respond.js');
+    const app = new Hono();
+    app.onError(handleError);
+    app.get('/bad', () => {
+      throw new HTTPException(400, { message: 'Malformed JSON' });
+    });
+
+    const res = await app.request('/bad');
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Malformed JSON' });
+  });
+});
+
 describe('ライブAPIの境界: レート制限を超えたリクエストは、Spotify を叩かずに断る', () => {
   const denied = () => Promise.resolve({ allowed: false, retryAfterSeconds: 42 });
   const allowed = () => Promise.resolve({ allowed: true, retryAfterSeconds: 60 });
@@ -609,6 +639,11 @@ describe('ライブAPIの境界: レート制限を超えたリクエストは�
 });
 
 describe('ライブAPIのレート制限の数え方（Node 版のメモリ実装）', () => {
+  it('IPv4 の書き方の違い（先頭の 0）は同じクライアントとして数え、範囲外は不明として扱う', () => {
+    expect(rateLimitKey('010.000.000.001')).toBe(rateLimitKey('10.0.0.1'));
+    expect(rateLimitKey('999.1.1.1')).toBe(rateLimitKey(null));
+  });
+
   function request(headers: Record<string, string> = {}): Context {
     const app = new Hono();
     let captured: Context | undefined;

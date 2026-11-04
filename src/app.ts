@@ -76,6 +76,15 @@ export function createApp(options: AppOptions = {}): Hono {
   if (config.server.enableAuthRoutes) app.route('/auth', authRouter);
 
   app.onError(handleError);
+  // 未定義のパスも、ほかのエラーと同じく JSON で返す。ランキングはライブAPIでは出さない（静的モード専用）
+  app.notFound((c) =>
+    c.json(
+      c.req.path.startsWith('/api/top-tracks')
+        ? { error: 'Not found', hint: 'ランキングは静的モード（top-tracks.json）でだけ提供しています' }
+        : { error: 'Not found' },
+      404
+    )
+  );
 
   return app;
 }

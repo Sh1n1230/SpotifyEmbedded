@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
+import { parseBooleanEnv } from '../config.js';
 import { loadStoredAuth, requireAuthValue, saveStoredAuth } from '../authStore.js';
 import { collectNowPlaying } from '../core/collect.js';
 import { resolveLlm } from '../llm/settings.js';
@@ -309,5 +310,30 @@ describe('秘密情報を書いたファイルは、git にも Docker イメー�
     const ignore = patterns('.dockerignore');
 
     expect(ignore).toEqual(expect.arrayContaining(['.env', '.env.*', '!.env.example', '.dev.vars*', 'data']));
+  });
+});
+
+describe('真偽値の環境変数（ENABLE_AUTH_ROUTES など）', () => {
+  afterEach(() => {
+    delete process.env.SPEC_BOOLEAN;
+  });
+
+  it.each(['true', 'TRUE', ' True ', '1', 'yes', 'on'])('%s は真', (value) => {
+    process.env.SPEC_BOOLEAN = value;
+    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(true);
+  });
+
+  it.each(['false', '0', 'no', 'off', ''])('%s は偽', (value) => {
+    process.env.SPEC_BOOLEAN = value;
+    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
+  });
+
+  it('読めない値は偽とし、警告を出す', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    process.env.SPEC_BOOLEAN = 'enabled';
+
+    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('SPEC_BOOLEAN'));
+    warn.mockRestore();
   });
 });
