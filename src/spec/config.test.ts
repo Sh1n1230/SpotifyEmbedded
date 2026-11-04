@@ -89,6 +89,14 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
     expect(refreshTokenSent()).toBe('spec-refresh-token');
   });
 
+  it('起動の後に data/auth.json が書かれても、必要になったときに読み直して使う（再起動は要らない）', () => {
+    givenAuthFile({});
+    // spec の共通の準備は SPOTIFY_* を環境変数に置くので、環境変数に無い項目で確かめる
+    writeFileSync(storePath, JSON.stringify({ llmBaseUrl: 'https://written-later.example/v1' }));
+
+    expect(requireAuthValue('llmBaseUrl')).toBe('https://written-later.example/v1');
+  });
+
   describe('LLM の APIキー', () => {
     beforeEach(() => {
       vi.stubEnv('LLM_BASE_URL', 'https://api.groq.com/openai/v1');
@@ -179,14 +187,6 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
 
         expect(resolveLlm()).toEqual({ kind: 'unconfigured' });
       });
-    });
-
-    it('起動の後に data/auth.json が書かれても、必要になったときに読み直して使う（再起動は要らない）', () => {
-      givenAuthFile({});
-      // spec の共通の準備は SPOTIFY_* を環境変数に置くので、環境変数に無い項目で確かめる
-      writeFileSync(storePath, JSON.stringify({ llmBaseUrl: 'https://written-later.example/v1' }));
-
-      expect(requireAuthValue('llmBaseUrl')).toBe('https://written-later.example/v1');
     });
 
     it('旧バージョンの data/auth.json（groqApiKey）もそのまま読める', async () => {
