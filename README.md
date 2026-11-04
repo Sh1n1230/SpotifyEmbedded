@@ -119,7 +119,7 @@ npm run setup
         title="Spotify で最後に聴いた曲"
         width="500" height="180" style="border: 0" loading="lazy"></iframe>
 
-<!-- 明るい背景のサイトにはライトテーマ版 -->
+<!-- 明るい背景のサイトにはライトテーマ版（--theme both の既定のとき。--theme light では index.html） -->
 <iframe src="https://<username>.github.io/SpotifyEmbedded/index-light.html"
         title="Spotify で最後に聴いた曲"
         width="500" height="180" style="border: 0" loading="lazy"></iframe>
@@ -173,6 +173,14 @@ npm run generate -- --no-mood         # LLM設定なしで実行
 | `--count <n>` | `5` | ランキングの表示件数（1〜50） |
 | `--theme <name>` | `both` | テーマ指定（`dark` / `light` / `both`） |
 | `--no-mood` | — | AIムード文の生成をスキップ |
+
+`--theme` によって、書き出すファイルの名前が次のように変わります（ライトだけのときは、iframe 用のページを `index.html` に書きます）。
+
+| `--theme` | カード画像 | iframe 用のページ |
+|---|---|---|
+| `both`（既定） | `now-playing.svg`・`now-playing-light.svg`（`ranking` も同じ） | `index.html`（ダーク）・`index-light.html`（ライト） |
+| `dark` | `now-playing.svg`・`ranking.svg` | `index.html` |
+| `light` | `now-playing-light.svg`・`ranking-light.svg` | `index.html`（ライト） |
 
 出力ファイル名は集計期間によらず共通（`ranking.svg` / `top-tracks.json`）です。指定した集計期間は JSON/YAML の `range` フィールドに記録されます。GitHub Actions では手動実行（Run workflow）時に期間と件数を指定できます。
 

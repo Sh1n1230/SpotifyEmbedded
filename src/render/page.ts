@@ -77,12 +77,14 @@ export function renderEmbedPage(input: PageInput): string {
     ? renderRanking(topTracks, input.rankingCount)
     : '';
 
+  // 透過のときは color-scheme を light dark にする。テーマ名だと埋め込み先と配色が違う場合に、iframe の中の
+  // キャンバスが不透明になって背景が透けない（文字と枠の色は CSS 変数で明示しているので見た目は変わらない）
   return `<!DOCTYPE html>
 <html lang="ja" data-state="${escapeXml(state)}">
 <head>
 <meta charset="utf-8">${input.liveEndpoint ? '' : `\n<meta http-equiv="Content-Security-Policy" content="${STATIC_PAGE_CSP}">`}
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="${themeName}">
+<meta name="color-scheme" content="${input.transparent ? 'light dark' : themeName}">
 <title>${escapeXml(unavailable ? idleText : buildTitle(state, track?.name, track?.artist))}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

@@ -8,7 +8,7 @@ import yaml from 'js-yaml';
 
 import { moodCache } from '../cache/index.js';
 import { collectNowPlaying, collectTopTracks } from '../core/collect.js';
-import { generate } from '../cli/generate.js';
+import { generate, forLog } from '../cli/generate.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
 import type { TopTrackEntry } from '../types/index.js';
@@ -433,6 +433,35 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       const snapshot = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
       expect(Number.isNaN(Date.parse(snapshot['observed_at'] as string))).toBe(false);
       expect(read('index.html')).toContain('<!DOCTYPE html>');
+    });
+
+    it.each([
+      ['track が空のオブジェクト', { track: {} }],
+      ['track が文字列', { track: 'x' }],
+      ['state が不正', { state: 'paused' }],
+      ['mood が不正', { mood: { text: 1 } }],
+    ])('%s の snapshot.json は捨て、停止中でも落ちずに作り直す', async (_name, override) => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+      const broken = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+      writeFileSync(join(outDir, 'snapshot.json'), JSON.stringify({ ...broken, ...override }));
+
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+
+      const snapshot = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+      expect(['playing', 'recent', 'idle']).toContain(snapshot['state']);
+      expect(read('index.html')).toContain('<!DOCTYPE html>');
+    });
+
+    it('ログに出す曲名から改行と制御文字を取り除き、行頭に :: のワークフローコマンドを作らせない', () => {
+      expect(forLog('Song\n::error::injected\r\u0007')).toBe('Song ::error::injected ');
+      expect(forLog('普通の曲名')).toBe('普通の曲名');
     });
 
     it('埋め込みページは、日時として読めない since でも時刻を省いて描ける', () => {

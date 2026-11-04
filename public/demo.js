@@ -49,12 +49,17 @@
         function (err) {
           clearTimeout(abort);
           $('status-msg').textContent = '再生中の曲を取得できませんでした';
+          // まだ一度も描いていなければ、枠の「読み込み中...」を残さない（描いた曲があればそのまま残す）
+          if (!rendered) $('album-art-placeholder').textContent = '取得できませんでした';
           throw err;
         }
       );
   }
 
+  var rendered = false;
+
   function renderNowPlaying(data) {
+    rendered = true;
     var placeholder = $('album-art-placeholder');
     var img = $('album-art');
 

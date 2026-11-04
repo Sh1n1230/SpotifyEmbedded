@@ -49,6 +49,27 @@ describe('カードの文字色は、どちらのテーマでも背景に対し�
     }
   });
 
+  it('デモ画面（public/index.html）も theme.ts と同じフォント指定を使う', () => {
+    const html = readFileSync(new URL('../../public/index.html', import.meta.url), 'utf8');
+
+    expect(/body \{[^}]*font-family: ([^;]+);/.exec(html)?.[1]).toBe(FONT_STACK);
+  });
+
+  it('デモ画面（public/index.html）の文字色は、どれも背景に対して 4.5:1 以上', () => {
+    const html = readFileSync(new URL('../../public/index.html', import.meta.url), 'utf8');
+    const rules = Array.from(html.matchAll(/([#\w-]+)\s*\{([^}]*)\}/g), ([, selector, body]) => ({ selector, body: body ?? '' }));
+    const pageBackground = /background: (#[0-9a-f]{3,6})/.exec(rules.find((rule) => rule.selector === 'body')!.body)![1]!;
+    const expand = (hex: string) => (hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex);
+
+    const checked = rules.filter((rule) => /(^|[^-])color: #/.test(rule.body));
+    expect(checked.length).toBeGreaterThan(3);
+    for (const rule of checked) {
+      const color = /(?:^|[^-])color: (#[0-9a-f]{3,6})/.exec(rule.body)![1]!;
+      const background = /background: (#[0-9a-f]{3,6})/.exec(rule.body)?.[1] ?? pageBackground;
+      expect(contrast(expand(color), expand(background)), rule.selector).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('embed.js は theme.ts と同じフォント指定を使う（フォントも二重に持っているので、変え忘れを防ぐ）', () => {
     const source = readFileSync(new URL('../../public/embed.js', import.meta.url), 'utf8');
     const embedFont = /var FONT_STACK = "([^"]+)";/.exec(source)?.[1];
@@ -489,5 +510,19 @@ describe('折り返しの細部', () => {
   it('大文字の多い英語の曲名は、小文字より幅を大きく見積もる（カードの右端からはみ出さない）', () => {
     expect(visualWidth('WWWWWWWWWW')).toBeGreaterThan(visualWidth('wwwwwwwwww'));
     expect(visualWidth('MIDNIGHT DRIVE')).toBeGreaterThan(visualWidth('midnight drive'));
+  });
+});
+
+describe('透過の /embed の配色', () => {
+  const nowPlaying = { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO };
+
+  it('transparent なら color-scheme を light dark にし、埋め込み先と配色が違っても背景が透けるようにする', () => {
+    const html = renderEmbedPage({ nowPlaying, state: 'idle', theme: 'dark', transparent: true });
+
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+  });
+
+  it('transparent でなければ、今までどおりテーマ名', () => {
+    expect(renderEmbedPage({ nowPlaying, state: 'idle', theme: 'light' })).toContain('<meta name="color-scheme" content="light">');
   });
 });

@@ -7,6 +7,8 @@
  *
  * data/auth.json は `npm run setup` が書き込む。CLI をローカルで回す場合や、
  * 書き込み可能なディスクを持つ環境で再起動なしに設定を完了させたい場合に使う。
+ * 読むのは最初の1回と、必須の値が見つからなかったとき（requireAuthValue）だけ。動いているサーバーの横で
+ * `npm run setup` を実行すると、次に値が要ったときに読み直して反映される（成功している間はファイルを読まない）。
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -151,7 +153,12 @@ export function authValueSource(field: AuthField): 'env' | 'file' | null {
 
 /** 解決できなければ、次に何をすべきかを示して throw する。 */
 export function requireAuthValue(field: AuthField): string {
-  const value = resolveAuthValue(field);
+  // 見つからなければ data/auth.json を読み直す（起動の後に npm run setup で書かれた場合に、再起動なしで反映する）
+  let value = resolveAuthValue(field);
+  if (!value) {
+    loadStoredAuth(true);
+    value = resolveAuthValue(field);
+  }
   if (!value) {
     throw new Error(
       `${AUTH_ENV[field]} が設定されていません。環境変数に設定するか、\`npm run setup\` を実行してください。`

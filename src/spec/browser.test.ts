@@ -413,6 +413,25 @@ describe('デモ画面（public/demo.js）', () => {
     runScript(source);
   }
 
+  it('最初の取得が失敗したら、枠に「読み込み中...」を残さない', async () => {
+    givenLiveResponses(500);
+
+    openDemo();
+    await settle();
+
+    expect(document.getElementById('album-art-placeholder')?.textContent).toBe('取得できませんでした');
+  });
+
+  it('曲を表示した後の失敗では、表示中の曲をそのまま残す', async () => {
+    givenLiveResponses(aNowPlaying('A', 'ムード'), 500);
+
+    openDemo();
+    await settle();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(document.getElementById('track-name')?.textContent).toBe('A');
+  });
+
   it('曲を表示し、https でないジャケ写の URL は使わない', async () => {
     givenLiveResponses(aNowPlaying('A', 'ムード', { album_art_url: 'javascript:alert(1)' }));
 
