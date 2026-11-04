@@ -294,7 +294,6 @@ beforeEach(() => {
   installDefaultHandlers();
 
   // fetch の代わりなので Promise を返す（ハンドラは同期のものもある）
-  // eslint-disable-next-line @typescript-eslint/require-await -- fetch と同じ型にするため
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

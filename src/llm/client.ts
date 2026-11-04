@@ -34,6 +34,9 @@ function extractContentText(content: unknown): string {
     );
 
   if (typeof content === 'string') return content;
+  // 推論モデルが出力上限を推論で使い切ると content は null か欠けて返る。
+  // 形式の誤りではなく「空の応答」として呼び出し側の案内に回す。
+  if (content === null || content === undefined) return '';
   if (!Array.isArray(content)) throw unsupportedContent();
 
   const textParts: string[] = [];

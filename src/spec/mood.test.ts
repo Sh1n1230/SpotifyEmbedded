@@ -351,6 +351,14 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       await expect(callLlm()).rejects.toThrow(/推論/);
     });
 
+    it.each([null, undefined])('message.content が %s でも、推論で使い切った可能性を示す', async (content) => {
+      respondWith((url) =>
+        url.includes('/chat/completions') ? jsonOk({ choices: [{ message: { content } }] }) : null
+      );
+
+      await expect(callLlm()).rejects.toThrow(/推論/);
+    });
+
     it('message.content が未対応の形なら理由を示す', async () => {
       respondWith((url) =>
         url.includes('/chat/completions')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { calls, headerOf } from './support.js';
+import { headerOf } from './support.js';
 
 describe('fetch support records headers from supported request forms', () => {
   it('reads Headers and Request headers without case sensitivity', () => {
