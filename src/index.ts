@@ -3,6 +3,7 @@
  * Cloudflare Workers のエントリは src/worker.ts。
  */
 import 'dotenv/config';
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { getConnInfo } from '@hono/node-server/conninfo';
@@ -44,7 +45,8 @@ const app = createApp({
   // デモフロントエンド + ワンタグ埋め込み用の embed.js。
   // デモ画面の CSP は Workers の public/_headers と同じ値（src/http/securityHeaders.ts）
   staticFiles: serveStatic({
-    root: './public',
+    // 作業ディレクトリではなく、このファイルからの相対で決める（dist/ と src/ のどちらから起動しても同じ public/）
+    root: fileURLToPath(new URL('../public', import.meta.url)),
     onFound: (path, c) => {
       if (path.endsWith('.html')) c.header('Content-Security-Policy', DEMO_PAGE_CSP);
     },
