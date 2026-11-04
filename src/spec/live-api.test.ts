@@ -152,7 +152,30 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
   });
 
   describe('/auth（ENABLE_AUTH_ROUTES=true のときだけ）', () => {
-    beforeEach(() => vi.stubEnv('ENABLE_AUTH_ROUTES', 'true'));
+    beforeEach(() => {
+      vi.stubEnv('ENABLE_AUTH_ROUTES', 'true');
+      // app.request() のホスト（localhost）と同じにする。違うと /auth/login はそちらへ移る（下のテスト）
+      vi.stubEnv('SPOTIFY_REDIRECT_URI', 'http://localhost/auth/callback');
+    });
+
+    it('Redirect URI と違うホストで開いたら、Redirect URI のホストの /auth/login へ移ってから state を置く', async () => {
+      vi.stubEnv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:3000/auth/callback');
+
+      const res = await createApp().request('http://localhost:3000/auth/login');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('http://127.0.0.1:3000/auth/login');
+      expect(res.headers.get('set-cookie')).toBeNull();
+    });
+
+    it('Client ID が無ければ、設定の案内を返す', async () => {
+      vi.stubEnv('SPOTIFY_CLIENT_ID', '');
+
+      const res = await createApp().request('/auth/login');
+
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('SPOTIFY_CLIENT_ID が設定されていません');
+    });
 
     it('state はブラウザごとの Cookie に持ち、応答はキャッシュさせない', async () => {
       const res = await createApp().request('/auth/login');
@@ -214,7 +237,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
         expect(Object.fromEntries(body)).toEqual({
           grant_type: 'authorization_code',
           code: 'the-code',
-          redirect_uri: 'http://127.0.0.1:3000/auth/callback',
+          redirect_uri: 'http://localhost/auth/callback',
         });
         // 応答しない相手を待ち続けない（Spotify API・トークン更新と同じ）
         expect(call.init?.signal).toBeInstanceOf(AbortSignal);

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config.js';
+import { resolveAuthValue } from '../authStore.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
 import { escapeXml } from '../render/text.js';
 
@@ -25,6 +26,10 @@ function oauthApp(): OAuthApp {
   };
 }
 
+function missingClientMessage(name: string): string {
+  return `${name} が設定されていません。.env に書くか \`npm run setup\` を実行してから、npm run auth を起動し直してください。`;
+}
+
 function sameState(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
@@ -32,6 +37,22 @@ function sameState(a: string, b: string): boolean {
 }
 
 router.get('/login', (c) => {
+  // Client ID / Secret が無いと Spotify の認可の URL を作れない。原因の分からない 500 ではなく直し方を返す
+  if (!process.env['SPOTIFY_CLIENT_ID'] && !resolveAuthValue('spotifyClientId')) {
+    return c.text(missingClientMessage('SPOTIFY_CLIENT_ID'), 400);
+  }
+  if (!process.env['SPOTIFY_CLIENT_SECRET'] && !resolveAuthValue('spotifyClientSecret')) {
+    return c.text(missingClientMessage('SPOTIFY_CLIENT_SECRET'), 400);
+  }
+
+  // state の Cookie はホストごとに持たれる。localhost で開いて 127.0.0.1（Redirect URI）に戻ると
+  // Cookie が送られず「Invalid state」になるので、先に Redirect URI と同じホストへ移ってから置く
+  const redirectUri = new URL(config.spotify.redirectUri);
+  const requested = new URL(c.req.url);
+  if (requested.host !== redirectUri.host) {
+    return c.redirect(new URL('/auth/login', redirectUri.origin).href);
+  }
+
   const state = randomBytes(16).toString('hex');
   setCookie(c, STATE_COOKIE, state, {
     path: '/auth',

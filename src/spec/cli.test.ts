@@ -120,11 +120,16 @@ describe('npm run auth（/auth/* を有効にした Node のサーバー）', ()
   });
 
   it('シェルの構文に頼らず有効にし、設定ファイルの ENABLE_AUTH_ROUTES=false より優先する', () => {
-    // サーバーは止まらないので、時間切れで止める。設定が無くても /auth を使うために起動は続く
+    // サーバーは止まらないので、時間切れで止める。refresh_token が無くても /auth を使うために起動は続く
+    // （PORT=0 は受け付けないので、ほかと重ならない番号を使う）
     const run = runEntry(
       '../authServer.ts',
       [],
-      { env: { PORT: '0' }, files: { '.env': 'ENABLE_AUTH_ROUTES=false\n' }, timeout: 8_000 },
+      {
+        env: { PORT: String(40_000 + (process.pid % 20_000)), SPOTIFY_CLIENT_ID: 'id', SPOTIFY_CLIENT_SECRET: 'secret' },
+        files: { '.env': 'ENABLE_AUTH_ROUTES=false\n' },
+        timeout: 8_000,
+      },
       cwds
     );
 
@@ -132,10 +137,25 @@ describe('npm run auth（/auth/* を有効にした Node のサーバー）', ()
   }, 30_000);
 
   it('npm run dev（src/index.ts）では /auth/* は無効のまま（設定が無ければ起動しない）', () => {
-    const run = runEntry('../index.ts', [], { env: { PORT: '0' }, timeout: 8_000 }, cwds);
+    const run = runEntry('../index.ts', [], { env: { PORT: String(40_001 + (process.pid % 20_000)) }, timeout: 8_000 }, cwds);
 
     expect(run.status).toBe(1);
     expect(run.stdout).not.toContain('Auth routes enabled');
+  }, 30_000);
+
+  it('npm run auth でも Client ID / Secret が無ければ、/auth/login が動かないので起動しない', () => {
+    const run = runEntry('../authServer.ts', [], { env: { PORT: String(40_002 + (process.pid % 20_000)) }, timeout: 8_000 }, cwds);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('SPOTIFY_CLIENT_ID');
+  }, 30_000);
+
+  it.each(['abc', '3000abc', '0', '70000'])('PORT=%s ならスタックトレースではなく直し方を出して終わる', (port) => {
+    const run = runEntry('../index.ts', [], { env: { PORT: port }, timeout: 8_000 }, cwds);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`PORT は 1〜65535 の整数で指定してください（今の値: ${port}）`);
+    expect(run.stderr).not.toMatch(/\n\s+at /);
   }, 30_000);
 });
 

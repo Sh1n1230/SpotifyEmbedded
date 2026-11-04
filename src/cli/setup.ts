@@ -23,6 +23,7 @@ import {
   type StoredAuth,
 } from '../authStore.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
+import { config } from '../config.js';
 import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
 import { chatCompletion } from '../llm/client.js';
 import { isLocalLlmEndpoint, llmBaseUrlProblem } from '../llm/endpoint.js';
@@ -56,8 +57,7 @@ export async function setup(): Promise<void> {
   try {
     console.log('\n🎵 SpotifyEmbedded セットアップ\n');
 
-    const redirectUri =
-      process.env['SPOTIFY_REDIRECT_URI'] ?? 'http://127.0.0.1:3000/auth/callback';
+    const redirectUri = config.spotify.redirectUri;
 
     const clientId = await ensureValue(rl, 'spotifyClientId', {
       label: 'Spotify Client ID',

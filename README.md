@@ -194,7 +194,7 @@ Spotify Web API の仕様により、指定可能な集計期間は以下の3つ
 
 ```bash
 npm run setup      # 初期設定が未完了の場合
-npm run dev        # http://localhost:3000
+npm run dev        # http://127.0.0.1:3000
 ```
 
 レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外。IPv6 は /64 単位で数えます）。超えると `/api/now-playing` は 429 と `Retry-After` を返し、`/badge.svg` と `/embed` は「取得できませんでした」のカードを返します（理由は `X-Spotify-Embedded-Error: rate_limited` ヘッダー）。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません。
@@ -357,8 +357,9 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `LLM_API_KEY` | | — | 未設定時はムード文なしで動作。`LLM_BASE_URL` がローカル（`localhost`・`127.0.0.1`・`[::1]`）のサーバーなら無くてもよい |
 | `LLM_BASE_URL` | | API キーの名前で決まる（下記） | OpenAI互換のエンドポイント（末尾の `/chat/completions` は付けない。クエリは保つ）。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く）。URL に `user:pass@` を含めない |
 | `LLM_MODEL` | | 送り先のプリセットの既定（Gemini は `gemini-3.1-flash-lite`、OpenAI は `gpt-4o-mini`） | 使用モデル。プリセットに無い送り先（Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
-| `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
-| `PORT` | | `3000` | サーバーの待受ポート |
+| `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:<PORT>/auth/callback` | Dashboard の登録値と一致させる（`PORT` を変えると既定値も変わる。`npm run auth` が起動時に表示する） |
+| `PORT` | | `3000` | サーバーの待受ポート（1〜65535 の整数。それ以外は起動時に案内して終了する） |
+| `HOST` | | すべてのインターフェース（`npm run auth` では `127.0.0.1`） | Node版の待ち受けるホスト（例: `127.0.0.1` でループバックだけ）。Docker では未設定のままにする |
 | `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。本番では埋め込み先サイトに限定を推奨 |
 | `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |

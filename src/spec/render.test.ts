@@ -137,11 +137,22 @@ describe('npm run dev のポート衝突の案内は、そのプラットフォ�
   it('Windows では cmd と PowerShell の書き方、netstat を出す（PORT=… や lsof は出さない）', () => {
     const text = portInUseHelp(3000, 'win32').join('\n');
 
-    expect(text).toContain('set PORT=3001 && npm run dev');
+    expect(text).toContain('set "PORT=3001" && npm run dev');
     expect(text).toContain('$env:PORT=3001; npm run dev');
     expect(text).toContain('netstat -ano | findstr :3000');
     expect(text).not.toContain('lsof');
     expect(text).not.toMatch(/(^|\s)PORT=3001 npm run dev/);
+  });
+
+  it('使用中のポートが 3001 なら、別のポート（3002）を例に出す', () => {
+    expect(portInUseHelp(3001, 'linux').join('\n')).toContain('PORT=3002 npm run dev');
+  });
+
+  it('npm run auth で起動したときは npm run auth を例に出し、Redirect URI も変えるよう案内する', () => {
+    const text = portInUseHelp(3000, 'linux', 'auth').join('\n');
+
+    expect(text).toContain('PORT=3001 npm run auth');
+    expect(text).toContain('SPOTIFY_REDIRECT_URI');
   });
 
   it.each(['darwin', 'linux'] as const)('%s では従来どおり PORT=… と lsof を出す', (platform) => {

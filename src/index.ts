@@ -5,6 +5,7 @@
 import 'dotenv/config';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { fileURLToPath } from 'node:url';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { createApp } from './app.js';
 import { config } from './config.js';
@@ -15,13 +16,24 @@ import { openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
 import { DEMO_PAGE_CSP } from './http/securityHeaders.js';
 
+// PORT の誤り（abc・3000abc・0 など）は、スタックトレースではなく直し方を出して終える
+let port: number;
+try {
+  port = config.server.port;
+} catch (err) {
+  console.error(`\n✗ ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+}
+
 // 設定漏れは起動時に気づけるようにする（値の解決自体は遅延評価）
 const missing = missingAuthValues();
 if (missing.length > 0) {
   console.error(`\n⚠️  Spotifyの設定が見つかりません: ${missing.join(', ')}`);
   console.error('   `npm run setup` で対話的に設定できます。\n');
-  // 認証ルート有効時は refresh_token を取りに来ている途中なので起動を続ける
-  if (!config.server.enableAuthRoutes) process.exit(1);
+  // 認証ルート有効時は refresh_token を取りに来ている途中なので起動を続ける。
+  // ただし Client ID / Secret が無ければ /auth/login も動かないので、続ける意味が無い
+  const onlyRefreshTokenMissing = missing.every((name) => name === 'SPOTIFY_REFRESH_TOKEN');
+  if (!config.server.enableAuthRoutes || !onlyRefreshTokenMissing) process.exit(1);
 }
 
 // LLMは任意。未設定でも曲情報は返せるので、案内だけして起動する。
@@ -48,8 +60,10 @@ const app = createApp({
   }),
   // デモフロントエンド + ワンタグ埋め込み用の embed.js。
   // デモ画面の CSP は Workers の public/_headers と同じ値（src/http/securityHeaders.ts）
+  // 作業ディレクトリではなく、このファイルの位置から public/ を決める（src/index.ts と dist/index.js の
+  // どちらから、どこで起動しても同じ場所を指す）
   staticFiles: serveStatic({
-    root: './public',
+    root: fileURLToPath(new URL('../public', import.meta.url)),
     onFound: (path, c) => {
       if (path.endsWith('.html')) c.header('Content-Security-Policy', DEMO_PAGE_CSP);
     },
@@ -57,17 +71,20 @@ const app = createApp({
 });
 
 if (config.server.enableAuthRoutes) {
-  console.log('⚠️  Auth routes enabled. Visit http://127.0.0.1:' + config.server.port + '/auth/login');
+  console.log(`⚠️  Auth routes enabled. Visit ${new URL('/auth/login', config.spotify.redirectUri).href}`);
+  console.log(`   Redirect URI: ${config.spotify.redirectUri}（Spotify の Dashboard の登録値と一致させてください）`);
 }
 
-const server = serve({ fetch: app.fetch, port: config.server.port }, () => {
-  console.log(`🎵 SpotifyEmbedded running on http://localhost:${config.server.port}`);
+const hostname = config.server.host;
+const server = serve({ fetch: app.fetch, port, ...(hostname ? { hostname } : {}) }, () => {
+  console.log(`🎵 SpotifyEmbedded running on http://127.0.0.1:${port}`);
 });
 
 // ポート衝突は開発中によく起きる。スタックトレースではなく対処法を出す。
 server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`\n${portInUseHelp(config.server.port, process.platform).join('\n')}\n`);
+    const script = process.env['npm_lifecycle_event'] ?? 'dev';
+    console.error(`\n${portInUseHelp(port, process.platform, script).join('\n')}\n`);
     process.exit(1);
   }
   throw err;

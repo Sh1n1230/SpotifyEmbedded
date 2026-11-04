@@ -115,3 +115,23 @@ jobs:
           npm install --ignore-scripts "$RUNNER_TEMP"/pkg/*.tgz
           npx --no-install spotify-embedded help | tee help.txt
           grep -q 'npm run setup' help.txt
+
+      # 静的ファイルの場所は作業ディレクトリではなく dist/index.js の位置から決まる（別の場所から起動しても 404 にならない）
+      - name: 別の作業ディレクトリから起動しても /embed.js を返す
+        working-directory: ${{ runner.temp }}
+        env:
+          SPOTIFY_CLIENT_ID: ci
+          SPOTIFY_CLIENT_SECRET: ci
+          SPOTIFY_REFRESH_TOKEN: ci
+          PORT: '3123'
+        run: |
+          node app/node_modules/spotify-embedded/dist/index.js &
+          server=$!
+          for attempt in $(seq 1 20); do
+            curl -fsS -o /dev/null "http://127.0.0.1:$PORT/health" && break
+            sleep 0.5
+          done
+          status=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/embed.js")
+          kill "$server"
+          echo "GET /embed.js: $status"
+          test "$status" = 200
