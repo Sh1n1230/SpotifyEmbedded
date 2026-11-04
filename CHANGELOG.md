@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep `spotify_url` as an empty string when a catalog track has no Spotify link, so the field remains in live and static JSON output.
+
 ## [1.7.0] - 2026-11-04
 
 ### アップグレード時に確かめること
