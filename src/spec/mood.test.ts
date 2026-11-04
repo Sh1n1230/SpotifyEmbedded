@@ -89,6 +89,43 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(result.mood?.text).toBe('今ノリノリなようです');
   });
 
+  it.each(['『今チルな気分になっています』', '“今チルな気分になっています”', '‘今チルな気分になっています’', '＂今チルな気分になっています＂'])(
+    '%s のような、ほかの対になったクォートも外す',
+    async (reply) => {
+      givenLlmConfigured();
+      givenLlmReplies(reply);
+      givenNowPlaying(aSpotifyTrack());
+
+      const result = await collectNowPlaying();
+
+      expect(result.mood?.text).toBe('今チルな気分になっています');
+    }
+  );
+
+  it('skipMood の結果は共有のキャッシュに入れず、続く既定の呼び出しはムード文つきになる', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack());
+
+    const skipped = await collectNowPlaying({ skipMood: true });
+    const result = await collectNowPlaying();
+
+    expect(skipped.mood).toBeNull();
+    expect(result.mood?.text).toBe('今チルな気分になっています');
+  });
+
+  it('ムード文のキャッシュが満杯でも新しい曲のものが入り、同じ曲では LLM を呼び直さない', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    for (let index = 0; index < 200; index += 1) moodCache.set(`old-${index}`, { text: 'x', generated_at: NOW_ISO });
+    givenNowPlaying(aSpotifyTrack());
+
+    await collectNowPlaying({ bypassCache: true });
+    await collectNowPlaying({ bypassCache: true });
+
+    expect(callsTo('/chat/completions')).toHaveLength(1);
+  });
+
   it('モデルが句点を付けてきたら落とす', async () => {
     // プロンプトの文例には句点を付けていないが、Gemini などは付けてくる。
     givenLlmConfigured();

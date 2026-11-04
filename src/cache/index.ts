@@ -10,7 +10,8 @@ export class TtlCache {
 
   /**
    * @param ttlSeconds 0 なら期限なし
-   * @param maxKeys 満杯のときの set は throw する（node-cache と同じ挙動）
+   * @param maxKeys 満杯のときの set は、期限切れを掃除しても空かなければ、最も長く読まれていないものを捨てて入れる（LRU）。
+   *   新しい値を捨てて古い値を残すと、満杯の後に聴き始めた曲のムード文が保存されず、毎回 LLM で作り直すことになるため
    */
   constructor(
     private readonly ttlSeconds: number,
@@ -24,15 +25,23 @@ export class TtlCache {
       this.entries.delete(key);
       return undefined;
     }
+    // Map は挿入順を保つので、読むたびに入れ直すと、先頭が最も長く読まれていないものになる
+    this.entries.delete(key);
+    this.entries.set(key, entry);
     return entry.value as T;
   }
 
   set(key: string, value: unknown): void {
     if (!this.entries.has(key) && this.entries.size >= this.maxKeys) {
       this.evictExpired();
-      if (this.entries.size >= this.maxKeys) throw new Error('Cache max keys amount exceeded');
+      if (this.entries.size >= this.maxKeys) {
+        const leastRecentlyUsed = this.entries.keys().next().value;
+        if (leastRecentlyUsed !== undefined) this.entries.delete(leastRecentlyUsed);
+      }
     }
     const expiresAt = this.ttlSeconds > 0 ? Date.now() + this.ttlSeconds * 1000 : Infinity;
+    // 上書きのときも最後に回す（最も新しく使ったものにする）
+    this.entries.delete(key);
     this.entries.set(key, { value, expiresAt });
   }
 
@@ -49,8 +58,7 @@ export class TtlCache {
 }
 
 export const nowPlayingCache = new TtlCache(30);
-// Keyed by trackId. 満杯なら set が throw するので、呼び出し側は失敗を
-// キャッシュミスとして扱う。
+// Keyed by trackId. 満杯なら最も長く読まれていない曲のものを捨てて入れる。
 export const moodCache = new TtlCache(86400, 200);
 // Keyed by image URL. ライブSVGはリクエストのたびにジャケ写を data URI 化
 // するため、画像バイト列を使い回す。

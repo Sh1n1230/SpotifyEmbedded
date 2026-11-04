@@ -645,13 +645,18 @@ describe('ライブAPIのメモリキャッシュ（TtlCache）は、期限と�
     expect(cache.get('k')).toBe('v');
   });
 
-  it('満杯で新しいキーを set すると throw する（呼び出し側はキャッシュミスとして扱う）', () => {
+  it('満杯で新しいキーを set すると、最も長く読まれていないものを捨てて入れる', () => {
     const cache = new TtlCache(60, 2);
     cache.set('a', 1);
     cache.set('b', 2);
+    // a を読むと、最も長く読まれていないのは b になる
+    expect(cache.get('a')).toBe(1);
 
-    expect(() => cache.set('c', 3)).toThrow();
-    expect(cache.get('c')).toBeUndefined();
+    cache.set('c', 3);
+
+    expect(cache.get('b')).toBeUndefined();
+    expect(cache.get('a')).toBe(1);
+    expect(cache.get('c')).toBe(3);
   });
 
   it('満杯でも、既存のキーの上書きは通る', () => {
