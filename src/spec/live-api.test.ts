@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono';
 import { createApp } from '../app.js';
 import { clientKey, memoryRateLimiter, rateLimitKey, RATE_LIMIT } from '../http/rateLimit.js';
 import { DEMO_PAGE_CSP, HSTS, PERMISSIONS_POLICY } from '../http/securityHeaders.js';
-import { openCorsWarning, parseCorsOrigins } from '../http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning, parseCorsOrigins } from '../http/cors.js';
 import { escapeXml } from '../render/text.js';
 import {
   NOW,
@@ -152,7 +152,30 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
   });
 
   describe('/auth（ENABLE_AUTH_ROUTES=true のときだけ）', () => {
-    beforeEach(() => vi.stubEnv('ENABLE_AUTH_ROUTES', 'true'));
+    beforeEach(() => {
+      vi.stubEnv('ENABLE_AUTH_ROUTES', 'true');
+      // app.request() のホスト（localhost）と同じにする。違うと /auth/login はそちらへ移る（下のテスト）
+      vi.stubEnv('SPOTIFY_REDIRECT_URI', 'http://localhost/auth/callback');
+    });
+
+    it('Redirect URI と違うホストで開いたら、Redirect URI のホストの /auth/login へ移ってから state を置く', async () => {
+      vi.stubEnv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:3000/auth/callback');
+
+      const res = await createApp().request('http://localhost:3000/auth/login');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('http://127.0.0.1:3000/auth/login');
+      expect(res.headers.get('set-cookie')).toBeNull();
+    });
+
+    it('Client ID が無ければ、設定の案内を返す', async () => {
+      vi.stubEnv('SPOTIFY_CLIENT_ID', '');
+
+      const res = await createApp().request('/auth/login');
+
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('SPOTIFY_CLIENT_ID が設定されていません');
+    });
 
     it('state はブラウザごとの Cookie に持ち、応答はキャッシュさせない', async () => {
       const res = await createApp().request('/auth/login');
@@ -214,7 +237,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
         expect(Object.fromEntries(body)).toEqual({
           grant_type: 'authorization_code',
           code: 'the-code',
-          redirect_uri: 'http://127.0.0.1:3000/auth/callback',
+          redirect_uri: 'http://localhost/auth/callback',
         });
         // 応答しない相手を待ち続けない（Spotify API・トークン更新と同じ）
         expect(call.init?.signal).toBeInstanceOf(AbortSignal);
@@ -311,6 +334,21 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(escapeXml('x\uD800y\uDC00z')).toBe('xyz');
     // 対になったサロゲート（絵文字）は残す
     expect(escapeXml('🎧')).toBe('🎧');
+  });
+});
+
+describe('/embed の ?refresh= は数字だけを受け付ける', () => {
+  it.each([
+    ['10abc', 30_000],
+    ['1e3', 30_000],
+    ['5', 10_000],
+    ['120', 120_000],
+  ])('refresh=%s → %d ミリ秒ごとに取得する', async (refresh, interval) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const html = await (await createApp().request(`/embed?refresh=${refresh}`)).text();
+
+    expect(html).toContain(`var interval = ${interval};`);
   });
 });
 
@@ -425,6 +463,41 @@ describe('ライブAPIの境界: CORS は CORS_ORIGIN に書いたオリジン�
   });
 });
 
+describe('CORS_ORIGIN の書き方の正規化と誤りの検出', () => {
+  it.each([
+    ['https://a.example/', ['https://a.example']],
+    ['https://a.example, https://b.example:8443', ['https://a.example', 'https://b.example:8443']],
+    ['', ['*']],
+    ['*', ['*']],
+  ])('%j → %j', (raw, expected) => {
+    expect(analyzeCorsOrigins(raw)).toEqual({ origins: expected, problems: [] });
+  });
+
+  it.each(['a.example', 'https://a.example/path', 'ftp://a.example'])('%s はオリジンとして読めないので使わず、警告する', (raw) => {
+    const result = analyzeCorsOrigins(`${raw},https://b.example`);
+
+    expect(result.origins).toEqual(['https://b.example']);
+    expect(result.problems.join('')).toContain(raw);
+  });
+
+  it('* と個別のオリジンが混ざっていたら、* を使わずに個別のオリジンだけにして、その旨を警告する', () => {
+    const result = analyzeCorsOrigins('*,https://a.example');
+
+    expect(result.origins).toEqual(['https://a.example']);
+    expect(result.problems.join('')).toMatch(/\* は、ほかのオリジンと一緒には使えない/);
+    expect(openCorsWarning(result.origins)).toBeNull();
+  });
+
+  it('末尾にスラッシュを付けて書いても、そのオリジンからの CORS が効く', async () => {
+    vi.stubEnv('CORS_ORIGIN', 'https://a.example/');
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing', { headers: { Origin: 'https://a.example' } });
+
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://a.example');
+  });
+});
+
 describe('ライブAPIの境界: ランキングは出さない（静的モード専用）', () => {
   it.each(['/api/top-tracks', '/ranking.svg', '/api/recently-played'])('%s は存在せず、Spotify も叩かない', async (path) => {
     const res = await createApp().request(path);
@@ -434,9 +507,55 @@ describe('ライブAPIの境界: ランキングは出さない（静的モー�
   });
 });
 
+describe('未定義のパスやリクエストの誤りも JSON で返す', () => {
+  it('未定義のパスは 404 の JSON', async () => {
+    const res = await createApp().request('/no-such-path');
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  it('/api/top-tracks の 404 は、ランキングが静的モードにあることを案内する', async () => {
+    const body = (await (await createApp().request('/api/top-tracks')).json()) as { hint: string };
+
+    expect(body.hint).toContain('静的モード');
+  });
+
+  it('ルートが投げた HTTPException は、500 ではなくそのステータスで返す', async () => {
+    const { HTTPException } = await import('hono/http-exception');
+    const { handleError } = await import('../http/respond.js');
+    const app = new Hono();
+    app.onError(handleError);
+    app.get('/bad', () => {
+      throw new HTTPException(400, { message: 'Malformed JSON' });
+    });
+
+    const res = await app.request('/bad');
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Malformed JSON' });
+  });
+});
+
 describe('ライブAPIの境界: レート制限を超えたリクエストは、Spotify を叩かずに断る', () => {
   const denied = () => Promise.resolve({ allowed: false, retryAfterSeconds: 42 });
   const allowed = () => Promise.resolve({ allowed: true, retryAfterSeconds: 60 });
+
+  it('静的ファイル（embed.js など）は数えず、上限を超えて取得しても 429 にならない', async () => {
+    let counted = 0;
+    const app = createApp({
+      rateLimiter: () => {
+        counted += 1;
+        return Promise.resolve({ allowed: false, retryAfterSeconds: 42 });
+      },
+      staticFiles: async (c, next) => (c.req.path === '/embed.js' ? c.text('/* embed */') : next()),
+    });
+
+    const res = await app.request('/embed.js');
+
+    expect(res.status).toBe(200);
+    expect(counted).toBe(0);
+  });
 
   it('/api/now-playing は JSON の 429 と Retry-After を返す', async () => {
     givenNowPlaying(aSpotifyTrack());
@@ -520,6 +639,11 @@ describe('ライブAPIの境界: レート制限を超えたリクエストは�
 });
 
 describe('ライブAPIのレート制限の数え方（Node 版のメモリ実装）', () => {
+  it('IPv4 の書き方の違い（先頭の 0）は同じクライアントとして数え、範囲外は不明として扱う', () => {
+    expect(rateLimitKey('010.000.000.001')).toBe(rateLimitKey('10.0.0.1'));
+    expect(rateLimitKey('999.1.1.1')).toBe(rateLimitKey(null));
+  });
+
   function request(headers: Record<string, string> = {}): Context {
     const app = new Hono();
     let captured: Context | undefined;
@@ -593,6 +717,17 @@ describe('ライブAPIのレート制限の数え方（Node 版のメモリ実�
       expect(clientKey(c, 'x-forwarded-for', remote)).toBe('2.2.2.2');
     });
 
+    it.each([
+      ['forwarded', 'for=198.51.100.1, for=192.0.2.1', '192.0.2.1'],
+      ['forwarded', 'for="[2001:db8:1:2::1]:443";proto=https', '2001:db8:1:2::/64'],
+      ['x-forwarded-for', '192.0.2.1:5678', '192.0.2.1'],
+      ['x-forwarded-for', '[2001:db8:1:2::1]:443', '2001:db8:1:2::/64'],
+    ])('%s: %s のキーは %s（Forwarded の for= を読み、ポートを外す）', (header, value, expected) => {
+      const c = request({ [header]: value });
+
+      expect(clientKey(c, header, remote)).toBe(expected);
+    });
+
     it('TRUSTED_PROXY_HEADER が未設定なら、x-forwarded-for は無視して接続元を使う', () => {
       const c = request({ 'x-forwarded-for': '1.1.1.1' });
 
@@ -645,13 +780,18 @@ describe('ライブAPIのメモリキャッシュ（TtlCache）は、期限と�
     expect(cache.get('k')).toBe('v');
   });
 
-  it('満杯で新しいキーを set すると throw する（呼び出し側はキャッシュミスとして扱う）', () => {
+  it('満杯で新しいキーを set すると、最も長く読まれていないものを捨てて入れる', () => {
     const cache = new TtlCache(60, 2);
     cache.set('a', 1);
     cache.set('b', 2);
+    // a を読むと、最も長く読まれていないのは b になる
+    expect(cache.get('a')).toBe(1);
 
-    expect(() => cache.set('c', 3)).toThrow();
-    expect(cache.get('c')).toBeUndefined();
+    cache.set('c', 3);
+
+    expect(cache.get('b')).toBeUndefined();
+    expect(cache.get('a')).toBe(1);
+    expect(cache.get('c')).toBe(3);
   });
 
   it('満杯でも、既存のキーの上書きは通る', () => {

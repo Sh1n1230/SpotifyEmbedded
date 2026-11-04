@@ -10,7 +10,7 @@
 import type { ExecutionContext, KVNamespace, RateLimit } from '@cloudflare/workers-types';
 import { createApp } from './app.js';
 import { bindingRateLimiter } from './http/rateLimit.js';
-import { openCorsWarning } from './http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { config } from './config.js';
 import { setDurableStore, type DurableStore } from './cache/index.js';
 
@@ -38,6 +38,7 @@ export default {
       // Workers は本番として扱う。isolate ごとに一度だけ出る
       const corsWarning = openCorsWarning(config.server.corsOrigins);
       if (corsWarning) console.warn(corsWarning);
+      for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) console.warn(problem);
       app = createApp(env.RATE_LIMITER ? { rateLimiter: bindingRateLimiter(env.RATE_LIMITER) } : {});
     }
     return app.fetch(request, env, ctx);

@@ -8,6 +8,8 @@ on:
       - 'public/**'
       - 'wrangler.jsonc'
       - 'package.json'
+      # ロックファイルだけの依存の更新（Dependabot など）も Workers に反映する
+      - 'package-lock.json'
       - 'tsconfig*.json'
       - '.github/workflows/deploy-workers.yml'
   workflow_dispatch:

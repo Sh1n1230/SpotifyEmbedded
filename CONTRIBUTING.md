@@ -41,9 +41,21 @@ CI はこのほかに、Workers 向けのバンドル（`npx wrangler deploy --d
 
 利用者から見て変わることは、`CHANGELOG.md` の `[Unreleased]` に書いてください。アップグレード時に対応が要るもの（再認証・設定の変更など）は「アップグレード時に確かめること」に書きます。
 
+PR のタイトルは [Conventional Commits](https://www.conventionalcommits.org/ja/v1.0.0/) の形（`<型>: <日本語の説明>`）にします。型は `feat`（機能の追加）・`fix`（不具合の修正）・`docs`（文書）・`test`（テスト）・`refactor`（動作を変えない整理）・`perf`（性能）・`ci`（CI）・`chore`（依存・そのほか）です（例: `fix: Spotify の 429 で Retry-After を返す`）。マージは squash で行い、PR のタイトルがそのまま main のコミットメッセージになります。
+
 ワークフロー・`wrangler.jsonc`・`package.json` などの所有者は `.github/CODEOWNERS` にあります。
 
 脆弱性は公開の Issue や PR に書かず、[Security Advisories](https://github.com/Sh1n1230/SpotifyEmbedded/security/advisories/new) から非公開で報告してください（詳しくは `SECURITY.md`）。
+
+## Issue の書き方
+
+Issue は日本語で、テンプレート（バグ報告・機能要望・ドキュメントの誤り）に沿って書いてください。テンプレートに当てはまらない質問などは、空の Issue で構いません。自分で起票するときは、次の見出しにそろえると読みやすくなります。
+
+- 「何が起きるか」または「解決したい課題」: 今の動作と、該当するファイル・行
+- 「提案」: どう直すか（複数の案があれば並べる）
+- 「受け入れ条件」: 直ったと判断できる条件をチェックボックスで
+
+脆弱性（秘密情報の漏れ、認証の迂回、他人のデータへのアクセスなど、悪用できるもの）は公開の Issue に書かず、[Security Advisories](https://github.com/Sh1n1230/SpotifyEmbedded/security/advisories/new) から非公開で報告してください。悪用の手段にならない低い深刻度の改善（ヘッダーの追加など）は、タイトルに `[Security/Low]` を付けて Issue にして構いません。
 
 ## 依存の更新
 
@@ -61,7 +73,7 @@ Dependabot（`.github/dependabot.yml`）は npm の minor / patch を1つの PR 
 
 | 項目 | 状態 |
 |---|---|
-| main のブランチ保護 | ルールセット「protect main」で、削除と force push を禁止し、`security`・`validate (22/24)`・`workers-bundle`・`docker`・`package (22/24)` の通過を必須にする。例外なし。CI の Node のバージョンやジョブ名を変えるときは、ルールセットの必須チェックも更新する |
+| main のブランチ保護 | ルールセット「protect main」で、削除と force push を禁止し、`security`・`validate (22/24/26)`・`workers-bundle`・`docker`・`package (22/24/26)`・`actionlint` の通過を必須にする（`validate (26)`・`package (26)`・`actionlint` はこの変更で足したジョブなので、ルールセットにも加える）。例外なし。CI の Node のバージョンやジョブ名を変えるときは、ルールセットの必須チェックも更新する |
 | Environment `cloudflare`（Workers へのデプロイ） | 承認の必須・ブランチの制限なし |
 | Environment `github-pages` | デプロイできるブランチを限定 |
 | Dependabot alerts | 有効（security updates の自動 PR は無効） |

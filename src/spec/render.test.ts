@@ -7,6 +7,7 @@ import { XMLValidator } from 'fast-xml-parser';
 import { THEMES, FONT_STACK } from '../render/theme.js';
 import { renderNowPlayingCard } from '../render/card.js';
 import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
+import { renderRankingCard } from '../render/ranking.js';
 import { portInUseHelp } from '../http/portInUse.js';
 import { truncateToWidth, visualWidth, wrapToWidth } from '../render/text.js';
 import { fetchImageDataUri } from '../render/image.js';
@@ -45,6 +46,27 @@ describe('カードの文字色は、どちらのテーマでも背景に対し�
       for (const [key, value] of Object.entries(embedThemes[name]!)) {
         expect(value, `${name}.${key}`).toBe(THEMES[name][key as keyof (typeof THEMES)[typeof name]]);
       }
+    }
+  });
+
+  it('デモ画面（public/index.html）も theme.ts と同じフォント指定を使う', () => {
+    const html = readFileSync(new URL('../../public/index.html', import.meta.url), 'utf8');
+
+    expect(/body \{[^}]*font-family: ([^;]+);/.exec(html)?.[1]).toBe(FONT_STACK);
+  });
+
+  it('デモ画面（public/index.html）の文字色は、どれも背景に対して 4.5:1 以上', () => {
+    const html = readFileSync(new URL('../../public/index.html', import.meta.url), 'utf8');
+    const rules = Array.from(html.matchAll(/([#\w-]+)\s*\{([^}]*)\}/g), ([, selector, body]) => ({ selector, body: body ?? '' }));
+    const pageBackground = /background: (#[0-9a-f]{3,6})/.exec(rules.find((rule) => rule.selector === 'body')!.body)![1]!;
+    const expand = (hex: string) => (hex.length === 4 ? `#${[...hex.slice(1)].map((c) => c + c).join('')}` : hex);
+
+    const checked = rules.filter((rule) => /(^|[^-])color: #/.test(rule.body));
+    expect(checked.length).toBeGreaterThan(3);
+    for (const rule of checked) {
+      const color = /(?:^|[^-])color: (#[0-9a-f]{3,6})/.exec(rule.body)![1]!;
+      const background = /background: (#[0-9a-f]{3,6})/.exec(rule.body)?.[1] ?? pageBackground;
+      expect(contrast(expand(color), expand(background)), rule.selector).toBeGreaterThanOrEqual(4.5);
     }
   });
 
@@ -137,11 +159,22 @@ describe('npm run dev のポート衝突の案内は、そのプラットフォ�
   it('Windows では cmd と PowerShell の書き方、netstat を出す（PORT=… や lsof は出さない）', () => {
     const text = portInUseHelp(3000, 'win32').join('\n');
 
-    expect(text).toContain('set PORT=3001 && npm run dev');
+    expect(text).toContain('set "PORT=3001" && npm run dev');
     expect(text).toContain('$env:PORT=3001; npm run dev');
     expect(text).toContain('netstat -ano | findstr :3000');
     expect(text).not.toContain('lsof');
     expect(text).not.toMatch(/(^|\s)PORT=3001 npm run dev/);
+  });
+
+  it('使用中のポートが 3001 なら、別のポート（3002）を例に出す', () => {
+    expect(portInUseHelp(3001, 'linux').join('\n')).toContain('PORT=3002 npm run dev');
+  });
+
+  it('npm run auth で起動したときは npm run auth を例に出し、Redirect URI も変えるよう案内する', () => {
+    const text = portInUseHelp(3000, 'linux', 'auth').join('\n');
+
+    expect(text).toContain('PORT=3001 npm run auth');
+    expect(text).toContain('SPOTIFY_REDIRECT_URI');
   });
 
   it.each(['darwin', 'linux'] as const)('%s では従来どおり PORT=… と lsof を出す', (platform) => {
@@ -171,9 +204,13 @@ describe('SVG の文字幅の見積もりと折り返し（<text> は自動で�
     ['Symbols and Pictographs Extended-A の 🫠', '\u{1FAE0}', 1],
     ['既定で絵文字表示の ⚡', '⚡', 1],
     ['キーキャップの 1️⃣', '1️⃣', 1],
-    ['結合文字つきの é', E_ACUTE, 0.5],
-    ['ASCII の #', '#', 0.5],
-    ['ASCII の数字', '7', 0.5],
+    // 半角は字の形でおおまかに分ける（Helvetica・Arial の字送りを大きめに丸めた値）
+    ['結合文字つきの é', E_ACUTE, 0.55],
+    ['ASCII の #', '#', 0.55],
+    ['ASCII の数字', '7', 0.55],
+    ['細い i', 'i', 0.3],
+    ['大文字の A', 'A', 0.7],
+    ['大文字の W', 'W', 0.85],
     ['かな', 'あ', 1],
     ['全角英数', 'Ａ', 1],
   ])('%s の幅は %s em', (_, text, width) => {
@@ -366,5 +403,126 @@ describe('SVG に焼き込む画像は Spotify の CDN の画像だけ（README 
 
     await expect(fetchImageDataUri(ART_640)).resolves.toBeNull();
     expect(callsTo('.scdn.co')).toHaveLength(4);
+  });
+});
+
+describe('SVG の描画の細部', () => {
+  const track = {
+    id: 'track-1',
+    name: 'Midnight Drive',
+    artist: 'Neon District',
+    album: 'After Hours',
+    album_art_url: ART_640,
+    duration_ms: 213_000,
+    popularity: null,
+    spotify_url: 'https://open.spotify.com/track/track-1',
+    preview_url: null,
+  };
+  const idsOf = (svg: string) => new Set(Array.from(svg.matchAll(/ id="([^"]+)"/g), (match) => match[1]));
+
+  it('ダークとライトの now-playing・ランキングを1つのページに並べても、id が重ならない', () => {
+    const svgs = [
+      renderNowPlayingCard({ state: 'playing', track, mood: null, artDataUri: 'data:image/jpeg;base64,AA==', theme: 'dark' }),
+      renderNowPlayingCard({ state: 'playing', track, mood: null, artDataUri: 'data:image/jpeg;base64,AA==', theme: 'light' }),
+      renderRankingCard({ tracks: [aTopTrackEntry()], fetchedAt: NOW_ISO, theme: 'dark', artDataUris: ['data:image/jpeg;base64,AA=='] }),
+      renderRankingCard({ tracks: [aTopTrackEntry()], fetchedAt: NOW_ISO, theme: 'light', artDataUris: ['data:image/jpeg;base64,AA=='] }),
+    ];
+    const all = svgs.flatMap((svg) => [...idsOf(svg)]);
+
+    expect(all.length).toBeGreaterThan(0);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('同じ内容なら同じ id になる（静的モードの出力が実行のたびに変わらない）', () => {
+    const render = () => renderNowPlayingCard({ state: 'playing', track, mood: null, artDataUri: 'data:image/jpeg;base64,AA==' });
+
+    expect(render()).toBe(render());
+  });
+
+  it.each(['playing', 'recent'] as const)('state: %s で track が null なら、ジャケ写の枠を描かずに曲なしのカードにする', (state) => {
+    const svg = renderNowPlayingCard({ state, track: null, mood: null });
+
+    expect(svg).not.toContain('no art');
+    expect(svg).toContain('再生していません');
+    expect(svg).toContain('NOTHING PLAYING');
+  });
+
+  it('ランキングの順位は、配列の位置ではなく track.rank を描く', () => {
+    const svg = renderRankingCard({ tracks: [aTopTrackEntry({ rank: 7 })], fetchedAt: NOW_ISO });
+
+    expect(svg).toMatch(/text-anchor="end">7<\/text>/);
+    expect(svg).toContain('7位');
+  });
+
+  it('「no art」の文字色は、両テーマで枠の色に対して 4.5:1 以上', () => {
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((index) => {
+        const value = Number.parseInt(hex.slice(index, index + 2), 16) / 255;
+        return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      }) as [number, number, number];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    for (const name of ['dark', 'light'] as const) {
+      const svg = renderNowPlayingCard({ state: 'playing', track, mood: null, theme: name });
+      const color = /fill="(#[0-9a-f]{6})"[^>]*aria-hidden="true">no art/.exec(svg)?.[1] ?? '';
+      const [hi, lo] = [luminance(color), luminance(THEMES[name].placeholder)].sort((x, y) => y - x) as [number, number];
+      expect((hi + 0.05) / (lo + 0.05), name).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('ムード文の無いカードの曲名は、空白の無い長い名前でも枠の中で折り返す（/embed と embed.js）', () => {
+    const embedJs = readFileSync(new URL('../../public/embed.js', import.meta.url), 'utf8');
+    const html = renderEmbedPage({ nowPlaying: { is_playing: true, track, mood: null, fetched_at: NOW_ISO }, state: 'playing' });
+
+    expect(html).toMatch(/\.card\[data-no-mood\] \.track \{[^}]*overflow-wrap: anywhere/);
+    expect(embedJs).toMatch(/\.card\.no-mood \.track \{[^}]*overflow-wrap: anywhere/);
+  });
+});
+
+describe('折り返しの細部', () => {
+  it('最終行に詰めるとき、折った位置の空白を保つ（単語どうしをつなげない）', () => {
+    const lines = wrapToWidth('aaaa bbbb cc dd', 4, 2);
+
+    expect(lines[1]).toMatch(/^bbbb c/);
+    for (const line of lines) expect(visualWidth(line)).toBeLessThanOrEqual(4);
+  });
+
+  it('日本語の文を折り返して省略しても、余計な空白が入らない', () => {
+    const lines = wrapToWidth('夜に似合う曲ばかり聴いているようです', 6, 2);
+
+    expect(lines.join('')).not.toContain(' ');
+    expect(lines[1]?.endsWith('…')).toBe(true);
+  });
+
+  it.each([
+    ['ギリシャ文字', 'Καλημέρα κόσμε'],
+    ['キリル文字', 'Привет мир'],
+    ['ベトナム語', 'Xin chào thế giới'],
+  ])('%s の単語は、収まる幅なら単語の途中で折らない', (_name, text) => {
+    const words = text.split(' ');
+    const lines = wrapToWidth(text, 7, 5);
+
+    for (const line of lines) {
+      for (const piece of line.split(' ')) expect(words).toContain(piece);
+    }
+  });
+
+  it('大文字の多い英語の曲名は、小文字より幅を大きく見積もる（カードの右端からはみ出さない）', () => {
+    expect(visualWidth('WWWWWWWWWW')).toBeGreaterThan(visualWidth('wwwwwwwwww'));
+    expect(visualWidth('MIDNIGHT DRIVE')).toBeGreaterThan(visualWidth('midnight drive'));
+  });
+});
+
+describe('透過の /embed の配色', () => {
+  const nowPlaying = { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO };
+
+  it('transparent なら color-scheme を light dark にし、埋め込み先と配色が違っても背景が透けるようにする', () => {
+    const html = renderEmbedPage({ nowPlaying, state: 'idle', theme: 'dark', transparent: true });
+
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+  });
+
+  it('transparent でなければ、今までどおりテーマ名', () => {
+    expect(renderEmbedPage({ nowPlaying, state: 'idle', theme: 'light' })).toContain('<meta name="color-scheme" content="light">');
   });
 });

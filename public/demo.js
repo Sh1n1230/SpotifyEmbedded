@@ -22,12 +22,23 @@
     return typeof url === 'string' && /^https:\/\//i.test(url);
   }
 
+  // 429・503 の Retry-After（秒）。次の取得を少なくともその時間は待つ（倍々の間隔より長ければこちらを使う）
+  function retryAfterMs(res) {
+    var value = res.headers.get('Retry-After');
+    return value && /^\d+$/.test(value) ? Number(value) * 1000 : 0;
+  }
+
+  var waitAtLeastMs = 0;
+
   function fetchNowPlaying() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var abort = setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
     return fetch('/api/now-playing', { signal: controller ? controller.signal : undefined })
       .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+          if (res.status === 429 || res.status === 503) waitAtLeastMs = retryAfterMs(res);
+          throw new Error('HTTP ' + res.status);
+        }
         return res.json();
       })
       .then(
@@ -38,12 +49,17 @@
         function (err) {
           clearTimeout(abort);
           $('status-msg').textContent = '再生中の曲を取得できませんでした';
+          // まだ一度も描いていなければ、枠の「読み込み中...」を残さない（描いた曲があればそのまま残す）
+          if (!rendered) $('album-art-placeholder').textContent = '取得できませんでした';
           throw err;
         }
       );
   }
 
+  var rendered = false;
+
   function renderNowPlaying(data) {
+    rendered = true;
     var placeholder = $('album-art-placeholder');
     var img = $('album-art');
 
@@ -83,10 +99,14 @@
 
   function schedule() {
     if (timer !== null) clearTimeout(timer);
-    timer = setTimeout(tick, Math.min(INTERVAL_MS * Math.pow(2, failures), MAX_DELAY_MS));
+    var delay = Math.max(Math.min(INTERVAL_MS * Math.pow(2, failures), MAX_DELAY_MS), waitAtLeastMs);
+    waitAtLeastMs = 0;
+    timer = setTimeout(tick, delay);
   }
 
   function tick() {
+    // 待機中の取得があれば取り消す（表示に戻ったときに呼ばれても、周期を1本に保つ）
+    if (timer !== null) clearTimeout(timer);
     timer = null;
     if (document.hidden || loading) return;
     loading = true;

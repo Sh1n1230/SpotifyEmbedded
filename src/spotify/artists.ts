@@ -10,7 +10,7 @@
  * では二度と呼ばない」ようにしている。毎リクエストごとに失敗する呼び出しを
  * 投げ続けると、ムード文にも使えないまま往復が増えるだけになる。
  */
-import { spotifyFetch, SpotifyApiError } from './client.js';
+import { readSpotifyJson, spotifyFetch, SpotifyApiError } from './client.js';
 import type { SpotifyArtist } from '../types/index.js';
 
 /** 403 を一度見たら以降スキップする。プロセス単位で持てば十分。 */
@@ -41,9 +41,13 @@ export async function fetchArtistGenres(artistIds: string[]): Promise<Map<string
   for (let i = 0; i < validIds.length; i += 50) {
     const ids = validIds.slice(i, i + 50).join(',');
 
-    let res: Response | null;
+    const path = `/artists?ids=${ids}`;
+    let data: { artists?: (SpotifyArtist | null)[] } | null;
     try {
-      res = await spotifyFetch(`/artists?ids=${ids}`);
+      const res = await spotifyFetch(path);
+      if (!res) continue;
+      // 本文の読み取りの失敗（JSON でない・途中の時間切れ）も、ほかの一時的な失敗と同じく扱う
+      data = await readSpotifyJson<{ artists?: (SpotifyArtist | null)[] }>(res, path);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       // 「この環境では取れない」と言えるのは 403 だけ。タイムアウト・429・5xx は一時的な
@@ -52,10 +56,7 @@ export async function fetchArtistGenres(artistIds: string[]): Promise<Map<string
       else console.warn(`[spotify] ジャンルタグを取得できませんでした（次回また試します）: ${reason}`);
       return genreMap;
     }
-    if (!res) continue;
-
-    const data = (await res.json()) as { artists?: (SpotifyArtist | null)[] };
-    if (!Array.isArray(data.artists)) {
+    if (!Array.isArray(data?.artists)) {
       markUnavailable('応答に artists 配列が含まれていません');
       return genreMap;
     }

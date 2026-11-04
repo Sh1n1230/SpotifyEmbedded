@@ -21,6 +21,7 @@ Spotifyで再生中の楽曲をもとに、LLMが推論したムード文（今�
 [![CI](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/Sh1n1230/SpotifyEmbedded)](LICENSE)
 [![Security Check](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/security.yml)
+[![Update Spotify snapshot](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/update-spotify.yml/badge.svg)](https://github.com/Sh1n1230/SpotifyEmbedded/actions/workflows/update-spotify.yml)
 
 本ツールには「静的モード」と「ライブAPIモード」の2つの動作方式があり、サーバーを常時稼働させない構成でも運用できます。
 
@@ -39,12 +40,12 @@ GitHub Actions が定期的にSpotify Web APIからデータを取得し、SVG�
 
 ### 1. 準備
 
-本リポジトリをフォークし、ローカル環境へクローンします。
+Node.js 22 以上（`package.json` の `engines`。`.nvmrc` の版を推奨）が必要です。本リポジトリをフォークし、ローカル環境へクローンします。
 
 ```bash
 git clone https://github.com/<username>/SpotifyEmbedded.git
 cd SpotifyEmbedded
-npm install
+npm ci --ignore-scripts
 ```
 
 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) でアプリケーションを作成し、**Settings → Redirect URIs** に次のURIを登録します。
@@ -119,7 +120,7 @@ npm run setup
         title="Spotify で最後に聴いた曲"
         width="500" height="180" style="border: 0" loading="lazy"></iframe>
 
-<!-- 明るい背景のサイトにはライトテーマ版 -->
+<!-- 明るい背景のサイトにはライトテーマ版（--theme both の既定のとき。--theme light では index.html） -->
 <iframe src="https://<username>.github.io/SpotifyEmbedded/index-light.html"
         title="Spotify で最後に聴いた曲"
         width="500" height="180" style="border: 0" loading="lazy"></iframe>
@@ -174,6 +175,14 @@ npm run generate -- --no-mood         # LLM設定なしで実行
 | `--theme <name>` | `both` | テーマ指定（`dark` / `light` / `both`） |
 | `--no-mood` | — | AIムード文の生成をスキップ |
 
+`--theme` によって、書き出すファイルの名前が次のように変わります（ライトだけのときは、iframe 用のページを `index.html` に書きます）。
+
+| `--theme` | カード画像 | iframe 用のページ |
+|---|---|---|
+| `both`（既定） | `now-playing.svg`・`now-playing-light.svg`（`ranking` も同じ） | `index.html`（ダーク）・`index-light.html`（ライト） |
+| `dark` | `now-playing.svg`・`ranking.svg` | `index.html` |
+| `light` | `now-playing-light.svg`・`ranking-light.svg` | `index.html`（ライト） |
+
 出力ファイル名は集計期間によらず共通（`ranking.svg` / `top-tracks.json`）です。指定した集計期間は JSON/YAML の `range` フィールドに記録されます。GitHub Actions では手動実行（Run workflow）時に期間と件数を指定できます。
 
 ### ランキングの集計期間
@@ -194,7 +203,7 @@ Spotify Web API の仕様により、指定可能な集計期間は以下の3つ
 
 ```bash
 npm run setup      # 初期設定が未完了の場合
-npm run dev        # http://localhost:3000
+npm run dev        # http://127.0.0.1:3000
 ```
 
 レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外。IPv6 は /64 単位で数えます）。超えると `/api/now-playing` は 429 と `Retry-After` を返し、`/badge.svg` と `/embed` は「取得できませんでした」のカードを返します（理由は `X-Spotify-Embedded-Error: rate_limited` ヘッダー）。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません。
@@ -354,19 +363,32 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `SPOTIFY_CLIENT_ID` | ✓ | — | Spotifyアプリの Client ID |
 | `SPOTIFY_CLIENT_SECRET` | ✓ | — | Spotifyアプリの Client Secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得したリフレッシュトークン |
-| `LLM_API_KEY` | | — | 未設定時はムード文なしで動作 |
-| `LLM_BASE_URL` | | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI互換のエンドポイント。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く） |
-| `LLM_MODEL` | | `gemini-3.1-flash-lite` | 使用モデル |
-| `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
-| `PORT` | | `3000` | サーバーの待受ポート |
-| `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。本番では埋め込み先サイトに限定を推奨 |
-| `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
+| `LLM_API_KEY` | | — | 未設定時はムード文なしで動作。`LLM_BASE_URL` がローカル（`localhost`・`127.0.0.1`・`[::1]`）のサーバーなら無くてもよい |
+| `LLM_BASE_URL` | | API キーの名前で決まる（下記） | OpenAI互換のエンドポイント（末尾の `/chat/completions` は付けない。クエリは保つ）。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く）。URL に `user:pass@` を含めない |
+| `LLM_MODEL` | | 送り先のプリセットの既定（Gemini は `gemini-3.1-flash-lite`、OpenAI は `gpt-4o-mini`） | 使用モデル。プリセットに無い送り先（Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
+| `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:<PORT>/auth/callback` | Dashboard の登録値と一致させる（`PORT` を変えると既定値も変わる。`npm run auth` が起動時に表示する） |
+| `PORT` | | `3000` | サーバーの待受ポート（1〜65535 の整数。それ以外は起動時に案内して終了する） |
+| `HOST` | | すべてのインターフェース（`npm run auth` では `127.0.0.1`） | Node版の待ち受けるホスト（例: `127.0.0.1` でループバックだけ）。Docker では未設定のままにする |
+| `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。スキームとホスト（とポート）だけを書く（末尾の `/` は取り除く。パス付きなどオリジンとして読めない値は使わずに警告する）。`*` はほかのオリジンと一緒には使えない（混ぜると `*` を無視する）。本番では埋め込み先サイトに限定を推奨 |
+| `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`・`x-forwarded-for`・`forwarded`。`forwarded`（RFC 7239）は最後の要素の `for=` を読む。値のポートは外す）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
-| `ENABLE_AUTH_ROUTES` | | `false` | `true` で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
+| `NODE_ENV` | | — | `production` で本番相当として扱う（今は、`CORS_ORIGIN` が `*` のままなら起動時に警告することにだけ使う。Docker の既定は `production`） |
+| `ENABLE_AUTH_ROUTES` | | `false` | `true`（または `1`・`yes`・`on`）で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
 
 設定値は **環境変数 → `data/auth.json`** の優先順位で解決されます。環境変数が優先されるため、`.env` ファイルのみで設定を行っている既存の構成にもそのまま適用されます。
 
-`LLM_API_KEY` は `OPENAI_API_KEY`、`OPENROUTER_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY`、`GOOGLE_API_KEY` の各環境変数名にも対応しています。これらのいずれかが定義されている場合は、追加の設定なしで自動的に読み込まれます（`LLM_API_KEY` があればそれが優先）。同様に `LLM_BASE_URL` は `OPENAI_BASE_URL`、`LLM_MODEL` は `GROQ_MODEL` でも指定できます。
+`LLM_API_KEY` は `OPENAI_API_KEY`、`OPENROUTER_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY`、`GOOGLE_API_KEY` の各環境変数名にも対応しています（`LLM_API_KEY` があればそれが優先）。`LLM_BASE_URL` を設定しないときは、キーを読んだ名前で送り先を決めます。別のサービスのキーを既定の Gemini に送らないためです。
+
+| キーの名前 | `LLM_BASE_URL` が無いときの送り先 |
+|---|---|
+| `LLM_API_KEY`・`GEMINI_API_KEY`・`GOOGLE_API_KEY`・`data/auth.json` | `https://generativelanguage.googleapis.com/v1beta/openai`（Gemini） |
+| `OPENAI_API_KEY` | `https://api.openai.com/v1` |
+| `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
+| `GROQ_API_KEY` | `https://api.groq.com/openai/v1` |
+
+同様に `LLM_BASE_URL` は `OPENAI_BASE_URL`、`LLM_MODEL` は `GROQ_MODEL` でも指定できます。OpenAI には、推論モデル（o 系・gpt-5 系）でも動くよう `max_tokens` ではなく `max_completion_tokens` を送り、`temperature` を受け付けないモデルでは外して送り直します。
+
+Ollama などローカルの LLM を使う場合は、`LLM_BASE_URL=http://localhost:11434/v1` と `LLM_MODEL`（例: `llama3.2`）を設定します。API キーは要りません。
 
 ---
 

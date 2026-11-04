@@ -3,9 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
-import { loadStoredAuth, saveStoredAuth } from '../authStore.js';
+import { parseBooleanEnv } from '../config.js';
+import { loadStoredAuth, requireAuthValue, saveStoredAuth } from '../authStore.js';
 import { collectNowPlaying } from '../core/collect.js';
+import { resolveLlm } from '../llm/settings.js';
 import { upsertEnvFile } from '../cli/setup.js';
 import type { SpotifyTrack } from '../types/index.js';
 import {
@@ -14,6 +18,7 @@ import {
   jsonOk,
   callsTo,
   headerOf,
+  bodyOf,
   aSpotifyTrack,
   givenNowPlaying,
   givenLlmReplies,
@@ -85,9 +90,18 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
     expect(refreshTokenSent()).toBe('spec-refresh-token');
   });
 
+  it('起動の後に data/auth.json が書かれても、必要になったときに読み直して使う（再起動は要らない）', () => {
+    givenAuthFile({});
+    // spec の共通の準備は SPOTIFY_* を環境変数に置くので、環境変数に無い項目で確かめる
+    writeFileSync(storePath, JSON.stringify({ llmBaseUrl: 'https://written-later.example/v1' }));
+
+    expect(requireAuthValue('llmBaseUrl')).toBe('https://written-later.example/v1');
+  });
+
   describe('LLM の APIキー', () => {
     beforeEach(() => {
       vi.stubEnv('LLM_BASE_URL', 'https://api.groq.com/openai/v1');
+      vi.stubEnv('LLM_MODEL', 'spec-model');
       givenLlmReplies('今チルな気分になっています');
       givenNowPlaying(aSpotifyTrack());
     });
@@ -115,6 +129,65 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
       await collectNowPlaying();
 
       expect(llmKeySent()).toBe('Bearer canonical-key');
+    });
+
+    describe('送り先とモデルの決め方', () => {
+      function llmUrlSent(): string | undefined {
+        return callsTo('/chat/completions')[0]?.url;
+      }
+
+      beforeEach(() => {
+        vi.stubEnv('LLM_BASE_URL', '');
+        vi.stubEnv('LLM_MODEL', '');
+      });
+
+      it.each([
+        ['OPENAI_API_KEY', 'https://api.openai.com/v1/chat/completions'],
+        ['OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1/chat/completions'],
+        ['GROQ_API_KEY', 'https://api.groq.com/openai/v1/chat/completions'],
+        ['GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'],
+      ])('LLM_BASE_URL が無いとき、%s のキーはそのサービスに送る（既定の Gemini に送らない）', async (name, url) => {
+        vi.stubEnv(name, 'alias-key');
+        vi.stubEnv('LLM_MODEL', 'spec-model');
+
+        await collectNowPlaying();
+
+        expect(llmUrlSent()).toBe(url);
+      });
+
+      it('LLM_MODEL が無ければ、送り先のプリセットの既定のモデルを使う', async () => {
+        vi.stubEnv('OPENAI_API_KEY', 'alias-key');
+
+        await collectNowPlaying();
+
+        expect(bodyOf(callsTo('/chat/completions')[0]!)['model']).toBe('gpt-4o-mini');
+      });
+
+      it('プリセットに無い送り先で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async () => {
+        vi.stubEnv('GROQ_API_KEY', 'alias-key');
+
+        await collectNowPlaying();
+
+        expect(callsTo('/chat/completions')).toHaveLength(0);
+        expect(resolveLlm()).toMatchObject({ kind: 'invalid', problem: expect.stringMatching(/LLM_MODEL/) as unknown });
+      });
+
+      it('ローカルのサーバーなら、API キーが無くてもムード文を作り、Authorization を付けない', async () => {
+        vi.stubEnv('LLM_BASE_URL', 'http://localhost:11434/v1');
+        vi.stubEnv('LLM_MODEL', 'llama3.2');
+
+        await collectNowPlaying();
+
+        expect(llmUrlSent()).toBe('http://localhost:11434/v1/chat/completions');
+        expect(llmKeySent()).toBeUndefined();
+      });
+
+      it('ローカル以外の送り先で API キーが無ければ、LLM は未設定のまま', () => {
+        vi.stubEnv('LLM_BASE_URL', 'https://api.example.com/v1');
+        vi.stubEnv('LLM_MODEL', 'x');
+
+        expect(resolveLlm()).toEqual({ kind: 'unconfigured' });
+      });
     });
 
     it('旧バージョンの data/auth.json（groqApiKey）もそのまま読める', async () => {
@@ -153,6 +226,30 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
       let envPath: string;
       beforeEach(() => {
         envPath = join(mkdtempSync(join(tmpdir(), 'spotify-embedded-spec-envfile-')), 'env');
+      });
+
+      it('export KEY= や KEY = value の行も、更新では置き換え、削除では消す', () => {
+        writeFileSync(envPath, 'export LLM_API_KEY=old\nLLM_MODEL = m\nOTHER=x\n');
+
+        upsertEnvFile(envPath, { llmApiKey: 'new' });
+        const removed = upsertEnvFile(envPath, { llmModel: '' });
+
+        expect(readFileSync(envPath, 'utf8')).toBe('LLM_API_KEY=new\nOTHER=x\n');
+        expect(removed).toContain('LLM_MODEL');
+      });
+
+      it.each(['abc#def', ' leading', 'quo"te', 'back\\slash'])('%j のような値も、dotenv がそのまま読めるように書く', (value) => {
+        upsertEnvFile(envPath, { llmApiKey: value });
+
+        expect(dotenv.parse(readFileSync(envPath, 'utf8'))['LLM_API_KEY']).toBe(value);
+      });
+
+      it('.env.example をそのまま .env にしても、仮の値が「設定済み」として使われない', () => {
+        const example = dotenv.parse(readFileSync(fileURLToPath(new URL('../../.env.example', import.meta.url)), 'utf8'));
+
+        for (const name of ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN', 'LLM_API_KEY']) {
+          expect(example[name] ?? '').toBe('');
+        }
       });
 
       it('LLM を外すと、別名で書かれたキーの行も消す（残すと別名から読まれて有効なままになる）', () => {
@@ -213,5 +310,30 @@ describe('秘密情報を書いたファイルは、git にも Docker イメー�
     const ignore = patterns('.dockerignore');
 
     expect(ignore).toEqual(expect.arrayContaining(['.env', '.env.*', '!.env.example', '.dev.vars*', 'data']));
+  });
+});
+
+describe('真偽値の環境変数（ENABLE_AUTH_ROUTES など）', () => {
+  afterEach(() => {
+    delete process.env.SPEC_BOOLEAN;
+  });
+
+  it.each(['true', 'TRUE', ' True ', '1', 'yes', 'on'])('%s は真', (value) => {
+    process.env.SPEC_BOOLEAN = value;
+    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(true);
+  });
+
+  it.each(['false', '0', 'no', 'off', ''])('%s は偽', (value) => {
+    process.env.SPEC_BOOLEAN = value;
+    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
+  });
+
+  it('読めない値は偽とし、警告を出す', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    process.env.SPEC_BOOLEAN = 'enabled';
+
+    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('SPEC_BOOLEAN'));
+    warn.mockRestore();
   });
 });

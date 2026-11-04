@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { resolveLlm } from './settings.js';
 import { chatCompletion } from './client.js';
 import type { TopTrackEntry } from '../types/index.js';
 
@@ -144,11 +144,35 @@ export async function generateRankingMood(params: {
   return requestMood(RANKING_SYSTEM_INSTRUCTION, prompt);
 }
 
+/**
+ * 出力の全体を囲む、対になったクォート。先頭と末尾が対になっているときだけ外す（文の途中の括弧は残す）。
+ * 外さないと、これらの文字はムード文に使える文字に含まれないため、文ごと捨てられる。
+ */
+const QUOTE_PAIRS: readonly (readonly [string, string])[] = [
+  ['"', '"'],
+  ['「', '」'],
+  ['『', '』'],
+  ['“', '”'],
+  ['‘', '’'],
+  ['＂', '＂'],
+];
+
+function stripOuterQuotes(text: string): string {
+  for (const [open, close] of QUOTE_PAIRS) {
+    if (text.length >= open.length + close.length && text.startsWith(open) && text.endsWith(close)) {
+      return text.slice(open.length, text.length - close.length);
+    }
+  }
+  return text;
+}
+
 async function requestMood(system: string, prompt: string): Promise<string> {
+  const llm = resolveLlm();
+  if (llm.kind !== 'ready') {
+    throw new Error(llm.kind === 'invalid' ? llm.problem : 'LLM が設定されていません');
+  }
   const text = await chatCompletion({
-    baseUrl: config.llm.baseUrl,
-    apiKey: config.llm.apiKey,
-    model: config.llm.model,
+    ...llm.settings,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: prompt },
@@ -157,12 +181,14 @@ async function requestMood(system: string, prompt: string): Promise<string> {
     temperature: 0.7,
   });
 
-  const mood = text
-    .trim()
-    // 1文しか出さないので句点は要らない。プロンプトの文例にも付けていないが、
-    // モデルによっては付けてくる（Gemini など）ので、ここで揃える。
-    .replace(/[。．]$/, '')
-    .replace(/^["「]|["」]$/g, '')
+  const unquoted = stripOuterQuotes(
+    text
+      .trim()
+      // 1文しか出さないので句点は要らない。プロンプトの文例にも付けていないが、
+      // モデルによっては付けてくる（Gemini など）ので、ここで揃える。
+      .replace(/[。．]$/, '')
+  );
+  const mood = unquoted
     .trim()
     // 「…です。」のように括弧の内側に句点があると、括弧を外した後に残るのでもう一度落とす
     .replace(/[。．]$/, '')

@@ -110,3 +110,34 @@ describe('リリースは CHANGELOG.md に版の見出しがあるときだけ�
     expect(changelog).toContain('## [Unreleased]');
   });
 });
+
+describe('ワークフローの細かな約束', () => {
+  const read = (name: string) => readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8');
+
+  it('deploy-workers.yml は、ロックファイルだけの依存の更新でもデプロイする', () => {
+    const workflow = yaml.load(read('deploy-workers.yml')) as { on: { push: { paths: string[] } } };
+
+    expect(workflow.on.push.paths).toContain('package-lock.json');
+  });
+
+  it('update-spotify.yml の定期実行は、混みやすい毎時0分・30分を避ける', () => {
+    const workflow = yaml.load(read('update-spotify.yml')) as { on: { schedule: { cron: string }[] } };
+
+    for (const { cron } of workflow.on.schedule) {
+      const minutes = cron.split(' ')[0]!.split(',');
+      expect(minutes).not.toContain('0');
+      expect(minutes).not.toContain('30');
+      expect(minutes.some((minute) => minute.startsWith('*'))).toBe(false);
+    }
+  });
+
+  it('security.yml は、変更の無い期間も定期的に実行する', () => {
+    const workflow = yaml.load(read('security.yml')) as { on: { schedule?: unknown[] } };
+
+    expect(workflow.on.schedule?.length).toBeGreaterThan(0);
+  });
+
+  it.each(WORKFLOWS)('%s は、存在しない master ブランチを対象にしない', (name) => {
+    expect(read(name)).not.toMatch(/branches: \[[^\]]*master/);
+  });
+});

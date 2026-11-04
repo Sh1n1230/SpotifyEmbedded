@@ -2,6 +2,18 @@ name: 機能要望
 description: 追加してほしい機能
 labels: [enhancement]
 body:
+  - type: dropdown
+    id: mode
+    attributes:
+      label: どのモードで使いたいか
+      multiple: true
+      options:
+        - 静的モード（GitHub Actions）
+        - ライブAPI（Cloudflare Workers）
+        - ライブAPI（Node / Docker）
+        - どれでも
+    validations:
+      required: true
   - type: textarea
     id: idea
     attributes:
@@ -9,3 +21,8 @@ body:
       description: 困っていること・実現したいことから書いてください。
     validations:
       required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 今の回避策・代わりの案（任意）
+      description: 今どうしているか、ほかに考えた方法があれば書いてください。

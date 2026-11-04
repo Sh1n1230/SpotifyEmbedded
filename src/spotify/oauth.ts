@@ -72,5 +72,17 @@ export async function exchangeCodeForTokens(
     throw new Error(`トークンの交換に失敗しました (${res.status})。${detail}`);
   }
 
-  return (await res.json()) as TokenResponse;
+  let data: Partial<TokenResponse>;
+  try {
+    data = (await res.json()) as Partial<TokenResponse>;
+  } catch {
+    throw new Error('トークンの交換の応答を読めませんでした（JSON ではない応答）。時間をおいてもう一度試してください。');
+  }
+  // refresh_token が無いと、保存しても以降のトークン更新ができない（静的モードもライブAPIも動かない）
+  if (typeof data.refresh_token !== 'string' || data.refresh_token === '') {
+    throw new Error(
+      'トークンの交換の応答に refresh_token がありませんでした。Spotify のアプリの設定（Redirect URI）を確かめて、もう一度試してください。'
+    );
+  }
+  return data as TokenResponse;
 }
