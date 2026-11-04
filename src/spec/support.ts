@@ -108,7 +108,7 @@ export function callsTo(fragment: string): RecordedCall[] {
 }
 
 export function headerOf(call: RecordedCall, name: string): string | undefined {
-  return (call.init?.headers as Record<string, string> | undefined)?.[name];
+  return new Headers(call.init?.headers).get(name) ?? undefined;
 }
 
 export function bodyOf(call: RecordedCall): Record<string, unknown> {
@@ -294,10 +294,17 @@ beforeEach(() => {
   installDefaultHandlers();
 
   // fetch の代わりなので Promise を返す（ハンドラは同期のものもある）
-  // eslint-disable-next-line @typescript-eslint/require-await -- fetch と同じ型にするため
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (input instanceof Request) {
+      const requestInit: RequestInit = {
+        method: input.method,
+        headers: input.headers,
+      };
+      if (input.method !== 'GET' && input.method !== 'HEAD') requestInit.body = await input.clone().text();
+      init = { ...requestInit, ...init };
+    }
     calls.push({ url, init });
     for (let i = handlers.length - 1; i >= 0; i -= 1) {
       const res = handlers[i]!(url, init);

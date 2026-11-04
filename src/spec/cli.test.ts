@@ -219,6 +219,18 @@ describe('setup の部品', () => {
   });
 
   it.each([
+    // setUTCMonth would overflow these into the following month; clamp to EOM.
+    ['2026-08-31T12:00:00Z', '2027-02-28'],
+    ['2026-03-31T12:00:00Z', '2026-09-30'],
+    ['2026-12-31T12:00:00Z', '2027-06-30'],
+  ] as const)(
+    '月末取得の目安は6か月後の月の末日以前になる (%s → %s)',
+    (issued, expected) => {
+      expect(refreshTokenRenewalDate(new Date(issued))).toBe(expected);
+    }
+  );
+
+  it.each([
     ['改行', 'abc\nLLM_BASE_URL=https://evil.example', 'text'],
     ['CR', 'abc\rdef', 'text'],
     ['制御文字', 'abc\u0007', 'text'],

@@ -42,7 +42,7 @@ export function toTrackSummary(item: CatalogTrack): TrackSummary {
     // popularity は 2024年11月以降のアプリでは返らない。欠けていても
     // キー自体はスキーマに残す（利用側の分岐を増やさないため）。
     popularity: item.popularity ?? null,
-    spotify_url: item.external_urls.spotify,
+    spotify_url: item.external_urls?.spotify ?? '',
     preview_url: item.preview_url ?? null,
   };
 }

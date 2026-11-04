@@ -53,6 +53,32 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(result.mood?.generated_at).toBe(NOW_ISO);
   });
 
+  it('content parts の配列からムード文を取り出す', async () => {
+    givenLlmConfigured();
+    respondWith((url) =>
+      url.includes('/chat/completions')
+        ? jsonOk({
+            choices: [
+              {
+                message: {
+                  content: [
+                    { type: 'text', text: '今チルな' },
+                    { type: 'image_url', image_url: { url: 'https://example.com/image.png' } },
+                    { type: 'text', text: '気分になっています' },
+                  ],
+                },
+              },
+            ],
+          })
+        : null
+    );
+    givenNowPlaying(aSpotifyTrack());
+
+    const result = await collectNowPlaying();
+
+    expect(result.mood?.text).toBe('今チルな気分になっています');
+  });
+
   it('モデルがクォートで囲んできたら外す', async () => {
     givenLlmConfigured();
     givenLlmReplies('「今ノリノリなようです」');
@@ -112,6 +138,41 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     expect(prompt).not.toContain('ジャンル');
     expect(prompt).not.toContain('人気度');
     expect(prompt).not.toContain('不明');
+  });
+
+  it('曲名が上限の位置でサロゲートペアを割らない', async () => {
+    // length と slice() は UTF-16 のコード単位。99 文字の ASCII の後に絵文字が
+    // 続く曲名を 100 単位で切りると、上位サロゲートだけがプロンプトに残る。
+    const longName = 'a'.repeat(99) + '🎵';
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack({ name: longName }));
+
+    await collectNowPlaying();
+
+    const body = bodyOf(callsTo('/chat/completions')[0]!);
+    const prompt = (body['messages'] as { content: string }[])[1]!.content;
+    expect(prompt).toContain('曲名: ' + longName);
+    // プロンプトに孤立したサロゲート（不正な Unicode）が残っていないこと。
+    // Array.from はペアを 1 要素にまとめるので、単体で D800〜DFFF なら孤立。
+    const lone = Array.from(prompt).some((ch) => {
+      const c = ch.codePointAt(0)!;
+      return c >= 0xd800 && c <= 0xdfff;
+    });
+    expect(lone).toBe(false);
+  });
+
+  it('上限以内の曲名は切らずにそのまま載せる', async () => {
+    const name = 'b'.repeat(100);
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack({ name }));
+
+    await collectNowPlaying();
+
+    const body = bodyOf(callsTo('/chat/completions')[0]!);
+    const prompt = (body['messages'] as { content: string }[])[1]!.content;
+    expect(prompt).toContain('曲名: ' + name);
   });
 
   describe('LLM が失敗しても曲情報は返る（デグレード動作）', () => {
@@ -290,6 +351,34 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       await expect(callLlm()).rejects.toThrow(/推論/);
     });
 
+    it.each([null, undefined])('message.content が %s でも、推論で使い切った可能性を示す', async (content) => {
+      respondWith((url) =>
+        url.includes('/chat/completions') ? jsonOk({ choices: [{ message: { content } }] }) : null
+      );
+
+      await expect(callLlm()).rejects.toThrow(/推論/);
+    });
+
+    it('message.content が未対応の形なら理由を示す', async () => {
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? jsonOk({ choices: [{ message: { content: { text: '応答' } } }] })
+          : null
+      );
+
+      await expect(callLlm()).rejects.toThrow(/message\.content.*text 型/);
+    });
+
+    it('text part に文字列以外が入っていれば理由を示す', async () => {
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? jsonOk({ choices: [{ message: { content: [{ type: 'text', text: 42 }] } }] })
+          : null
+      );
+
+      await expect(callLlm()).rejects.toThrow(/message\.content.*text 型/);
+    });
+
     it('5xx は一度だけ間を置いて引き直す', async () => {
       let attempt = 0;
       respondWith((url) => {
@@ -302,6 +391,26 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
 
       await expect(callLlm()).resolves.toBe('もう一度で通りました');
       expect(attempt).toBe(2);
+    });
+
+    it('引き直す前の待ちは固定でなく、600〜1200ms の間でばらつく', async () => {
+      let attempt = 0;
+      respondWith((url) => {
+        if (!url.includes('/chat/completions')) return null;
+        attempt += 1;
+        return attempt === 1
+          ? new Response('busy', { status: 503 })
+          : jsonOk({ choices: [{ message: { content: 'ok' } }] });
+      });
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+      try {
+        await expect(callLlm()).resolves.toBe('ok');
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 600);
+      } finally {
+        random.mockRestore();
+        setTimeoutSpy.mockRestore();
+      }
     });
 
     it('引き直しても 5xx なら諦める', async () => {

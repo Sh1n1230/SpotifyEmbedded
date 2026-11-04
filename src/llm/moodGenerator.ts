@@ -26,7 +26,12 @@ ${DATA_RULE}
 - エモーショナルな気分に浸っているようです`;
 
 function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) : s;
+  // length と slice() は UTF-16 のコード単位で数える。上限の位置が絵文字などの
+  // サロゲートペアの真ん中に当たると、上位サロゲートだけがプロンプトに残り、
+  // 受け取った側は不正な Unicode として扱う。プロンプトの長さの目安なので、
+  // コードポイント単位で数えて切る。
+  const chars = Array.from(s);
+  return chars.length > max ? chars.slice(0, max).join('') : s;
 }
 
 /**

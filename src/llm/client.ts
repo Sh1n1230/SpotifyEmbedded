@@ -23,8 +23,39 @@ export interface ChatCompletionParams {
 }
 
 interface ChatCompletionResponse {
-  choices?: { message?: { content?: string } }[];
+  choices?: { message?: { content?: unknown } }[];
   error?: { message?: string };
+}
+
+function extractContentText(content: unknown): string {
+  const unsupportedContent = () =>
+    new Error(
+      'LLMの応答形式に対応していません（message.content は文字列または text 型 content parts の配列である必要があります）。'
+    );
+
+  if (typeof content === 'string') return content;
+  // 推論モデルが出力上限を推論で使い切ると content は null か欠けて返る。
+  // 形式の誤りではなく「空の応答」として呼び出し側の案内に回す。
+  if (content === null || content === undefined) return '';
+  if (!Array.isArray(content)) throw unsupportedContent();
+
+  const textParts: string[] = [];
+  for (const part of content as unknown[]) {
+    if (
+      typeof part !== 'object' ||
+      part === null ||
+      !('type' in part) ||
+      typeof part.type !== 'string'
+    ) {
+      throw unsupportedContent();
+    }
+    if (part.type !== 'text') continue;
+    if (!('text' in part) || typeof part.text !== 'string') throw unsupportedContent();
+    textParts.push(part.text);
+  }
+
+  if (textParts.length === 0) throw unsupportedContent();
+  return textParts.join('');
 }
 
 /**
@@ -85,9 +116,12 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   // 5xx とタイムアウトは相手側の一時的な混雑であることが多い（Gemini の
   // 503 "high demand" や、混雑時に応答が返ってこないケース）。
   // 一度だけ間を置いて引き直す。それでも駄目ならムード文を諦める。
+  // 待ちを固定すると同時に失敗した isolate が同じ瞬間に引き直して混雑を強めるため、
+  // 600〜1200ms の間でばらつかせる。
   if (res === 'timeout' || res.status >= 500) {
     if (res !== 'timeout') await discardBody(res);
-    await new Promise((done) => setTimeout(done, 900));
+    const delayMs = 600 + Math.floor(Math.random() * 601);
+    await new Promise((done) => setTimeout(done, delayMs));
     res = await send();
   }
   if (res === 'timeout') throw new Error(`LLMへのリクエストがタイムアウトしました (${url})`);
@@ -97,8 +131,9 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   }
 
   const data = (await res.json()) as ChatCompletionResponse;
-  const text = data.choices?.[0]?.message?.content;
-  if (!text?.trim()) {
+  const content = data.choices?.[0]?.message?.content;
+  const text = extractContentText(content);
+  if (!text.trim()) {
     // 推論モデルが max_tokens を推論だけで使い切ると、ここに来る。
     throw new Error(
       `LLMの応答が空でした（モデル: ${params.model}）。` +

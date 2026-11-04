@@ -32,11 +32,14 @@ export function artistGenresAvailable(): boolean {
  */
 export async function fetchArtistGenres(artistIds: string[]): Promise<Map<string, string[]>> {
   const genreMap = new Map<string, string[]>();
-  if (unavailable || artistIds.length === 0) return genreMap;
+  // ローカルファイル由来のアーティストは id が空（null）で返る。空の要素を
+  // 入れると `ids=,abc` になって 400 になるので、送る前に外す。
+  const validIds = artistIds.filter((id) => typeof id === 'string' && id !== '');
+  if (unavailable || validIds.length === 0) return genreMap;
 
   // Spotify のバッチ上限は 50 件
-  for (let i = 0; i < artistIds.length; i += 50) {
-    const ids = artistIds.slice(i, i + 50).join(',');
+  for (let i = 0; i < validIds.length; i += 50) {
+    const ids = validIds.slice(i, i + 50).join(',');
 
     let res: Response | null;
     try {

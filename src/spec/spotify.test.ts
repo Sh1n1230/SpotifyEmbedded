@@ -252,6 +252,23 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
     expect(result.track?.artist).toBe('Alpha, Beta');
   });
 
+  it('アーティストの ID が空の曲があっても、/artists のクエリに空の要素を入れない', async () => {
+    givenTopTracks([
+      aSpotifyTrack({
+        artists: [
+          { id: '', name: 'Ghost', external_urls: { spotify: '' } },
+          { id: 'artist-1', name: 'Neon District', external_urls: { spotify: '' } },
+        ],
+      }),
+    ]);
+    givenArtistGenres({ 'artist-1': ['city pop'] });
+
+    const result = await collectTopTracks();
+
+    expect(callsTo('/artists?ids=')[0]!.url).toMatch(/ids=artist-1$/);
+    expect(result.tracks[0]!.genres).toEqual(['city pop']);
+  });
+
   it('ジャケ写は300px以上の最大サイズを選ぶ', async () => {
     givenNowPlaying(aSpotifyTrack());
 
@@ -353,6 +370,56 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
     expect(XMLValidator.validate(svg)).toBe(true);
   });
+});
+
+describe('Catalog tracks keep a string Spotify URL in public JSON', () => {
+  const sources = [
+    {
+      name: 'now-playing',
+      endpoint: '/me/player/currently-playing',
+      response: (track: unknown) => ({ is_playing: true, progress_ms: 0, item: track, timestamp: NOW.getTime() }),
+      collect: async () => (await collectNowPlaying()).track,
+      keys: TRACK_SUMMARY_KEYS,
+    },
+    {
+      name: 'recently-played',
+      endpoint: '/me/player/recently-played',
+      response: (track: unknown) => ({ items: [{ track, played_at: NOW_ISO }] }),
+      collect: async () => (await collectRecentlyPlayed({ previous: null }))?.track,
+      keys: TRACK_SUMMARY_KEYS,
+    },
+    {
+      name: 'top-tracks',
+      endpoint: '/me/top/tracks',
+      response: (track: unknown) => ({ items: [track] }),
+      collect: async () => (await collectTopTracks()).tracks[0],
+      keys: TOP_TRACK_ENTRY_KEYS,
+    },
+  ];
+
+  for (const source of sources) {
+    describe(source.name, () => {
+      it.each([
+        { name: 'empty external_urls', externalUrls: {}, expected: '' },
+        { name: 'missing external_urls', externalUrls: undefined, expected: '' },
+        {
+          name: 'an existing Spotify link',
+          externalUrls: { spotify: 'https://open.spotify.com/track/track-1' },
+          expected: 'https://open.spotify.com/track/track-1',
+        },
+      ])('preserves the track and serialized schema with $name', async ({ externalUrls, expected }) => {
+        const track = { ...aSpotifyTrack(), external_urls: externalUrls };
+        respondWith((url) => url.includes(source.endpoint) ? jsonOk(source.response(track)) : null);
+
+        const summary = await source.collect();
+
+        expect(summary).toMatchObject({ id: 'track-1', spotify_url: expected });
+        const serialized = JSON.parse(JSON.stringify(summary)) as Record<string, unknown>;
+        expect(serialized).toHaveProperty('spotify_url', expected);
+        expect(Object.keys(serialized).sort()).toEqual(source.keys);
+      });
+    });
+  }
 });
 
 describe('spotifyFetch の契約（要件1・2の土台）', () => {

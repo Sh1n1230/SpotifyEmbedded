@@ -39,7 +39,14 @@ const REFRESH_TOKEN_LIFETIME_MONTHS = 6;
 /** 取り直しの目安の日付（取得日から6か月後、日本時間の YYYY-MM-DD）。 */
 export function refreshTokenRenewalDate(issuedAt: Date): string {
   const renewal = new Date(issuedAt);
+  const day = renewal.getUTCDate();
   renewal.setUTCMonth(renewal.getUTCMonth() + REFRESH_TOKEN_LIFETIME_MONTHS);
+  // setUTCMonth overflows missing days (e.g. Aug 31 → "Feb 31" → Mar 3).
+  // Clamp to the last day of the target month so the hint is never later
+  // than the real 6-month anniversary.
+  if (renewal.getUTCDate() !== day) {
+    renewal.setUTCDate(0);
+  }
   return formatDateJa(renewal);
 }
 
