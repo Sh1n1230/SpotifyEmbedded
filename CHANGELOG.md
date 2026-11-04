@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### 修正
+
+- OpenAI 互換 API が `message.content` を text parts の配列で返す場合も、ムード文を取り出せる
+
 ## [1.7.0] - 2026-11-04
 
 ### アップグレード時に確かめること

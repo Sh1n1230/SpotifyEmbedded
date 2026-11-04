@@ -23,8 +23,36 @@ export interface ChatCompletionParams {
 }
 
 interface ChatCompletionResponse {
-  choices?: { message?: { content?: string } }[];
+  choices?: { message?: { content?: unknown } }[];
   error?: { message?: string };
+}
+
+function extractContentText(content: unknown): string {
+  const unsupportedContent = () =>
+    new Error(
+      'LLMの応答形式に対応していません（message.content は文字列または text 型 content parts の配列である必要があります）。'
+    );
+
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) throw unsupportedContent();
+
+  const textParts: string[] = [];
+  for (const part of content as unknown[]) {
+    if (
+      typeof part !== 'object' ||
+      part === null ||
+      !('type' in part) ||
+      typeof part.type !== 'string'
+    ) {
+      throw unsupportedContent();
+    }
+    if (part.type !== 'text') continue;
+    if (!('text' in part) || typeof part.text !== 'string') throw unsupportedContent();
+    textParts.push(part.text);
+  }
+
+  if (textParts.length === 0) throw unsupportedContent();
+  return textParts.join('');
 }
 
 /**
@@ -97,8 +125,9 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   }
 
   const data = (await res.json()) as ChatCompletionResponse;
-  const text = data.choices?.[0]?.message?.content;
-  if (!text?.trim()) {
+  const content = data.choices?.[0]?.message?.content;
+  const text = extractContentText(content);
+  if (!text.trim()) {
     // 推論モデルが max_tokens を推論だけで使い切ると、ここに来る。
     throw new Error(
       `LLMの応答が空でした（モデル: ${params.model}）。` +
