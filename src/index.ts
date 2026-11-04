@@ -12,7 +12,7 @@ import { config } from './config.js';
 import { missingAuthValues } from './authStore.js';
 import { resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
-import { openCorsWarning } from './http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
 import { DEMO_PAGE_CSP } from './http/securityHeaders.js';
 
@@ -49,6 +49,7 @@ if (llm.kind === 'unconfigured') {
 // ローカル開発では * のままでよいので、本番相当（NODE_ENV=production、Docker の既定）でだけ警告する
 const corsWarning = process.env['NODE_ENV'] === 'production' ? openCorsWarning(config.server.corsOrigins) : null;
 if (corsWarning) console.warn(`⚠️  ${corsWarning}\n`);
+for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) console.warn(`⚠️  ${problem}\n`);
 
 const app = createApp({
   rateLimiter: memoryRateLimiter({

@@ -49,6 +49,10 @@ export function createApp(options: AppOptions = {}): Hono {
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
 
+  // 静的ファイル（デモ画面・embed.js）はレート制限より前に配り、数えない。Spotify も LLM も呼ばないので守る対象ではなく、
+  // Workers の Static Assets（Worker より先に応答する）とも揃う
+  if (options.staticFiles) app.use(options.staticFiles);
+
   if (options.rateLimiter) {
     const limiter = options.rateLimiter;
     app.use(async (c, next) => {
@@ -63,8 +67,6 @@ export function createApp(options: AppOptions = {}): Hono {
       return next();
     });
   }
-
-  if (options.staticFiles) app.use(options.staticFiles);
 
   app.route('/api/now-playing', nowPlayingRouter);
 

@@ -360,8 +360,8 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:<PORT>/auth/callback` | Dashboard の登録値と一致させる（`PORT` を変えると既定値も変わる。`npm run auth` が起動時に表示する） |
 | `PORT` | | `3000` | サーバーの待受ポート（1〜65535 の整数。それ以外は起動時に案内して終了する） |
 | `HOST` | | すべてのインターフェース（`npm run auth` では `127.0.0.1`） | Node版の待ち受けるホスト（例: `127.0.0.1` でループバックだけ）。Docker では未設定のままにする |
-| `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。本番では埋め込み先サイトに限定を推奨 |
-| `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
+| `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。スキームとホスト（とポート）だけを書く（末尾の `/` は取り除く。パス付きなどオリジンとして読めない値は使わずに警告する）。`*` はほかのオリジンと一緒には使えない（混ぜると `*` を無視する）。本番では埋め込み先サイトに限定を推奨 |
+| `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`・`x-forwarded-for`・`forwarded`。`forwarded`（RFC 7239）は最後の要素の `for=` を読む。値のポートは外す）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
 | `ENABLE_AUTH_ROUTES` | | `false` | `true` で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
 

@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono';
 import { createApp } from '../app.js';
 import { clientKey, memoryRateLimiter, rateLimitKey, RATE_LIMIT } from '../http/rateLimit.js';
 import { DEMO_PAGE_CSP, HSTS, PERMISSIONS_POLICY } from '../http/securityHeaders.js';
-import { openCorsWarning, parseCorsOrigins } from '../http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning, parseCorsOrigins } from '../http/cors.js';
 import { escapeXml } from '../render/text.js';
 import {
   NOW,
@@ -448,6 +448,41 @@ describe('ライブAPIの境界: CORS は CORS_ORIGIN に書いたオリジン�
   });
 });
 
+describe('CORS_ORIGIN の書き方の正規化と誤りの検出', () => {
+  it.each([
+    ['https://a.example/', ['https://a.example']],
+    ['https://a.example, https://b.example:8443', ['https://a.example', 'https://b.example:8443']],
+    ['', ['*']],
+    ['*', ['*']],
+  ])('%j → %j', (raw, expected) => {
+    expect(analyzeCorsOrigins(raw)).toEqual({ origins: expected, problems: [] });
+  });
+
+  it.each(['a.example', 'https://a.example/path', 'ftp://a.example'])('%s はオリジンとして読めないので使わず、警告する', (raw) => {
+    const result = analyzeCorsOrigins(`${raw},https://b.example`);
+
+    expect(result.origins).toEqual(['https://b.example']);
+    expect(result.problems.join('')).toContain(raw);
+  });
+
+  it('* と個別のオリジンが混ざっていたら、* を使わずに個別のオリジンだけにして、その旨を警告する', () => {
+    const result = analyzeCorsOrigins('*,https://a.example');
+
+    expect(result.origins).toEqual(['https://a.example']);
+    expect(result.problems.join('')).toMatch(/\* は、ほかのオリジンと一緒には使えない/);
+    expect(openCorsWarning(result.origins)).toBeNull();
+  });
+
+  it('末尾にスラッシュを付けて書いても、そのオリジンからの CORS が効く', async () => {
+    vi.stubEnv('CORS_ORIGIN', 'https://a.example/');
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing', { headers: { Origin: 'https://a.example' } });
+
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://a.example');
+  });
+});
+
 describe('ライブAPIの境界: ランキングは出さない（静的モード専用）', () => {
   it.each(['/api/top-tracks', '/ranking.svg', '/api/recently-played'])('%s は存在せず、Spotify も叩かない', async (path) => {
     const res = await createApp().request(path);
@@ -460,6 +495,22 @@ describe('ライブAPIの境界: ランキングは出さない（静的モー�
 describe('ライブAPIの境界: レート制限を超えたリクエストは、Spotify を叩かずに断る', () => {
   const denied = () => Promise.resolve({ allowed: false, retryAfterSeconds: 42 });
   const allowed = () => Promise.resolve({ allowed: true, retryAfterSeconds: 60 });
+
+  it('静的ファイル（embed.js など）は数えず、上限を超えて取得しても 429 にならない', async () => {
+    let counted = 0;
+    const app = createApp({
+      rateLimiter: () => {
+        counted += 1;
+        return Promise.resolve({ allowed: false, retryAfterSeconds: 42 });
+      },
+      staticFiles: async (c, next) => (c.req.path === '/embed.js' ? c.text('/* embed */') : next()),
+    });
+
+    const res = await app.request('/embed.js');
+
+    expect(res.status).toBe(200);
+    expect(counted).toBe(0);
+  });
 
   it('/api/now-playing は JSON の 429 と Retry-After を返す', async () => {
     givenNowPlaying(aSpotifyTrack());
@@ -614,6 +665,17 @@ describe('ライブAPIのレート制限の数え方（Node 版のメモリ実�
       const c = request({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2' });
 
       expect(clientKey(c, 'x-forwarded-for', remote)).toBe('2.2.2.2');
+    });
+
+    it.each([
+      ['forwarded', 'for=198.51.100.1, for=192.0.2.1', '192.0.2.1'],
+      ['forwarded', 'for="[2001:db8:1:2::1]:443";proto=https', '2001:db8:1:2::/64'],
+      ['x-forwarded-for', '192.0.2.1:5678', '192.0.2.1'],
+      ['x-forwarded-for', '[2001:db8:1:2::1]:443', '2001:db8:1:2::/64'],
+    ])('%s: %s のキーは %s（Forwarded の for= を読み、ポートを外す）', (header, value, expected) => {
+      const c = request({ [header]: value });
+
+      expect(clientKey(c, header, remote)).toBe(expected);
     });
 
     it('TRUSTED_PROXY_HEADER が未設定なら、x-forwarded-for は無視して接続元を使う', () => {
