@@ -337,6 +337,21 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
   });
 });
 
+describe('/embed の ?refresh= は数字だけを受け付ける', () => {
+  it.each([
+    ['10abc', 30_000],
+    ['1e3', 30_000],
+    ['5', 10_000],
+    ['120', 120_000],
+  ])('refresh=%s → %d ミリ秒ごとに取得する', async (refresh, interval) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const html = await (await createApp().request(`/embed?refresh=${refresh}`)).text();
+
+    expect(html).toContain(`var interval = ${interval};`);
+  });
+});
+
 describe('ライブAPIの境界: 他サイトの iframe に入れてよいのは /embed だけ', () => {
   it.each(['/api/now-playing', '/badge.svg', '/health'])('%s は X-Frame-Options: DENY を返す', async (path) => {
     givenNowPlaying(aSpotifyTrack());

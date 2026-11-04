@@ -421,15 +421,28 @@ function renderLiveScript(
 
   function schedule() {
     if (timer !== null) clearTimeout(timer);
-    timer = setTimeout(tick, Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS));
+    var delay = Math.max(Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS), waitAtLeastMs);
+    waitAtLeastMs = 0;
+    timer = setTimeout(tick, delay);
   }
+
+  // 429・503 の Retry-After（秒）。次の取得を少なくともその時間は待つ（倍々の間隔より長ければこちらを使う）
+  function retryAfterMs(res) {
+    var value = res.headers.get('Retry-After');
+    return value && /^\\d+$/.test(value) ? Number(value) * 1000 : 0;
+  }
+
+  var waitAtLeastMs = 0;
 
   function load() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var abort = setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
     return fetch(endpoint, { headers: { Accept: 'application/json' }, signal: controller ? controller.signal : undefined })
       .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+          if (res.status === 429 || res.status === 503) waitAtLeastMs = retryAfterMs(res);
+          throw new Error('HTTP ' + res.status);
+        }
         return res.json();
       })
       .then(function (data) { update(data); })
@@ -440,6 +453,8 @@ function renderLiveScript(
   }
 
   function tick() {
+    // 待機中の取得があれば取り消す（表示に戻ったときに呼ばれても、周期を1本に保つ）
+    if (timer !== null) clearTimeout(timer);
     timer = null;
     // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
     // 表示に戻ったら下の visibilitychange ですぐ取り直す。

@@ -466,3 +466,137 @@ describe('ライブAPIの /embed が実際に配るスクリプトも同じ方�
     expect(html).toContain('AbortController');
   });
 });
+
+describe('ライブ更新の周期と再試行（3つのスクリプトで同じ）', () => {
+  const embedSource = readRepoFile('../../public/embed.js');
+  const demoSource = readRepoFile('../../public/demo.js');
+
+  function runEmbed(attributes: Record<string, string> = {}, src = 'https://api.example/embed.js') {
+    const script = document.createElement('script');
+    script.src = src;
+    for (const [name, value] of Object.entries(attributes)) script.setAttribute(name, value);
+    document.body.appendChild(script);
+    Object.defineProperty(document, 'currentScript', { configurable: true, get: () => script });
+    runScript(embedSource);
+    return script;
+  }
+
+  function runDemo(): void {
+    const html = readRepoFile('../../public/index.html');
+    document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
+    runScript(demoSource);
+  }
+
+  function runEmbedPage(): void {
+    const initial = aNowPlaying('A', 'ムード');
+    const html = renderEmbedPage({ nowPlaying: initial, state: 'playing', liveEndpoint: '/api/now-playing', refreshSeconds: 30 });
+    document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
+    runScript(/<script[^>]*>([\s\S]*?)<\/script>/.exec(html)![1]!, { location: { reload: vi.fn() } });
+  }
+
+  const runners = { 'embed.js': () => void runEmbed(), 'demo.js': runDemo, '/embed': runEmbedPage };
+
+  it.each(Object.entries(runners))('%s: 待機中にタブを隠して戻しても、周期は1本のまま', async (_name, run) => {
+    givenLiveResponses(aNowPlaying('A', 'ムード'));
+    run();
+    await settle();
+    for (let index = 0; index < 3; index += 1) {
+      setHidden(true);
+      setHidden(false);
+      await settle();
+    }
+    const before = nowPlayingCalls().length;
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(nowPlayingCalls().length - before).toBe(1);
+  });
+
+  it.each(Object.entries(runners))('%s: 429 の Retry-After: 60 を受けたら、60秒より前には取得しない', async (_name, run) => {
+    let attempt = 0;
+    respondWith((url) => {
+      if (!url.includes('/api/now-playing')) return null;
+      attempt += 1;
+      return attempt === 1 || attempt === 3
+        ? new Response('{}', { status: 429, headers: { 'Retry-After': '60' } })
+        : jsonOk(aNowPlaying('A', 'ムード'));
+    });
+    run();
+    await settle();
+    // /embed は初期表示を持つので、最初の取得は1周期後
+    if (nowPlayingCalls().length === 0) await vi.advanceTimersByTimeAsync(30_000);
+    const afterLimited = nowPlayingCalls().length;
+
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(nowPlayingCalls().length).toBe(afterLimited);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(nowPlayingCalls().length).toBe(afterLimited + 1);
+  });
+
+  describe('embed.js', () => {
+    it('<head> に置かれ、data-target の要素がまだ無くても、本文を読み終えてからその要素の中に描く', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      Object.defineProperty(document, 'readyState', { configurable: true, get: () => 'loading' });
+      const script = document.createElement('script');
+      script.src = 'https://api.example/embed.js';
+      script.setAttribute('data-target', '#spotify');
+      document.head.appendChild(script);
+      Object.defineProperty(document, 'currentScript', { configurable: true, get: () => script });
+      runScript(embedSource);
+
+      const mount = document.createElement('div');
+      mount.id = 'spotify';
+      document.body.appendChild(mount);
+      Object.defineProperty(document, 'readyState', { configurable: true, get: () => 'complete' });
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      await settle();
+
+      expect(document.querySelector('.spotify-embedded')?.parentElement).toBe(mount);
+      expect(document.head.querySelector('.spotify-embedded')).toBeNull();
+    });
+
+    it('data-target の要素が最後まで見つからなければ、理由を console.warn に出す', () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+
+      runEmbed({ 'data-target': '#missing' });
+
+      expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain('#missing');
+    });
+
+    it('src にクエリやフラグメントが付いていても、同じ場所の API を叩く', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+
+      runEmbed({}, 'https://api.example/sub/embed.js?v=2#card');
+      await settle();
+
+      expect(nowPlayingCalls()[0]?.url).toBe('https://api.example/sub/api/now-playing');
+    });
+
+    it('カードをページから取り除いたら、取得をやめる（表示に戻っても取得しない）', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed();
+      await settle();
+      const before = nowPlayingCalls().length;
+
+      document.querySelector('.spotify-embedded')!.remove();
+      await vi.advanceTimersByTimeAsync(60_000);
+      setHidden(true);
+      setHidden(false);
+      await settle();
+
+      expect(nowPlayingCalls().length).toBe(before);
+    });
+
+    it.each(['10abc', '1e3', '-5'])('data-refresh="%s" は既定の 30 秒にする', async (value) => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed({ 'data-refresh': value });
+      await settle();
+
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(nowPlayingCalls()).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(nowPlayingCalls()).toHaveLength(2);
+    });
+  });
+});
