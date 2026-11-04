@@ -138,6 +138,11 @@ export function resolveAuthValue(field: AuthField): string | undefined {
   return loadStoredAuth()[field];
 }
 
+/** 環境変数から読んでいるなら、その名前（別名を含む）。data/auth.json から・未設定なら null。 */
+export function authValueEnvName(field: AuthField): string | null {
+  return AUTH_ENV_NAMES[field].find((name) => process.env[name]) ?? null;
+}
+
 /** その値をどこから読んでいるか。書き換えてよい保存先かを判断するために使う。 */
 export function authValueSource(field: AuthField): 'env' | 'file' | null {
   if (AUTH_ENV_NAMES[field].some((name) => process.env[name])) return 'env';
@@ -162,7 +167,4 @@ export function missingAuthValues(): string[] {
   );
 }
 
-/** ムード文を生成できる状態か。 */
-export function hasLlmConfigured(): boolean {
-  return resolveAuthValue('llmApiKey') !== undefined;
-}
+// ムード文を生成できる状態か（hasLlmConfigured）は、送り先とモデルの決め方と一緒に src/llm/settings.ts にある

@@ -14,6 +14,17 @@ export function llmBaseUrlProblem(baseUrl: string): string | null {
   } catch {
     return `LLM のエンドポイントが URL として読めません: ${baseUrl}`;
   }
+  // fetch は認証情報を含む URL を受け付けず、原因の分かりにくい例外になる。キーは LLM_API_KEY で渡す
+  if (url.username || url.password) {
+    return 'LLM のエンドポイントの URL に認証情報（user:pass@）を含めないでください。API キーは LLM_API_KEY に設定します';
+  }
+  // /chat/completions はこちらで付けるので、含めると /chat/completions/chat/completions になって 404 になる
+  if (/\/chat\/completions\/*$/.test(url.pathname)) {
+    return (
+      'LLM のエンドポイントの末尾の /chat/completions は不要です' +
+      `（${url.origin}${url.pathname.replace(/\/chat\/completions\/*$/, '')} のように指定してください）`
+    );
+  }
   if (url.protocol === 'https:') return null;
   if (url.protocol === 'http:') {
     if (LOCAL_HOSTS.has(url.hostname)) return null;

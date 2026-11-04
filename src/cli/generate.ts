@@ -19,7 +19,7 @@ import {
   type RecentlyPlayed,
 } from '../core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
-import { hasLlmConfigured } from '../authStore.js';
+import { hasLlmConfigured } from '../llm/settings.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';

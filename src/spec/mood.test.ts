@@ -814,3 +814,85 @@ describe('ライブAPI（Workers）では曲ごとのムード文を KV に置�
     expect(callsTo('/chat/completions')).toHaveLength(1);
   });
 });
+
+describe('LLM へのリクエストの形（送り先ごとの違い）', () => {
+  function send(baseUrl: string): Promise<string> {
+    return chatCompletion({
+      baseUrl,
+      apiKey: 'spec-llm-key',
+      model: 'spec-model',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+  }
+
+  function sentBody(): Record<string, unknown> {
+    return bodyOf(callsTo('/chat/completions').at(-1)!);
+  }
+
+  it.each([
+    ['https://openrouter.ai/api/v1', { reasoning: { effort: 'none' } }],
+    ['https://generativelanguage.googleapis.com/v1beta/openai', { reasoning_effort: 'none' }],
+  ])('%s には推論を止める指定を付ける', async (baseUrl, expected) => {
+    givenLlmReplies('今チルな気分になっています');
+
+    await send(baseUrl);
+
+    expect(sentBody()).toMatchObject(expected);
+  });
+
+  it.each(['https://gateway.example/v1/openrouter.ai', 'https://my-openrouter.ai.example/v1'])(
+    'ホスト以外の位置に openrouter.ai を含むだけの %s には付けない',
+    async (baseUrl) => {
+      givenLlmReplies('今チルな気分になっています');
+
+      await send(baseUrl);
+
+      expect(sentBody()).not.toHaveProperty('reasoning');
+      expect(sentBody()).not.toHaveProperty('reasoning_effort');
+    }
+  );
+
+  it('OpenAI には max_tokens ではなく max_completion_tokens を送る（推論モデルが max_tokens を拒むため）', async () => {
+    givenLlmReplies('今チルな気分になっています');
+
+    await send('https://api.openai.com/v1');
+
+    expect(sentBody()).toHaveProperty('max_completion_tokens');
+    expect(sentBody()).not.toHaveProperty('max_tokens');
+  });
+
+  it('temperature を理由に 400 で拒まれたら、temperature を外して一度だけ送り直す', async () => {
+    let attempt = 0;
+    respondWith((url) => {
+      if (!url.includes('/chat/completions')) return null;
+      attempt += 1;
+      return attempt === 1
+        ? new Response(JSON.stringify({ error: { message: "Unsupported value: 'temperature' does not support 0.7" } }), {
+            status: 400,
+          })
+        : jsonOk({ choices: [{ message: { content: '今チルな気分になっています' } }] });
+    });
+
+    await expect(send('https://api.openai.com/v1')).resolves.toBe('今チルな気分になっています');
+    expect(callsTo('/chat/completions')).toHaveLength(2);
+    expect(sentBody()).not.toHaveProperty('temperature');
+  });
+
+  it('クエリ付きの LLM_BASE_URL でも、クエリを保ったまま /chat/completions を叩く', async () => {
+    givenLlmReplies('今チルな気分になっています');
+
+    await send('https://example.openai.azure.com/openai/deployments/x?api-version=2024-10-21');
+
+    expect(callsTo('/chat/completions').at(-1)?.url).toBe(
+      'https://example.openai.azure.com/openai/deployments/x/chat/completions?api-version=2024-10-21'
+    );
+  });
+
+  it.each([
+    ['https://api.example.com/v1/chat/completions', /末尾の \/chat\/completions は不要/],
+    ['https://user:pass@api.example.com/v1', /認証情報/],
+  ])('%s は送る前に、原因の分かる理由で拒む', async (baseUrl, reason) => {
+    await expect(send(baseUrl)).rejects.toThrow(reason);
+    expect(callsTo('/chat/completions')).toHaveLength(0);
+  });
+});

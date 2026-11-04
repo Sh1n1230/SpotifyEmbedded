@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 
 import { loadStoredAuth, saveStoredAuth } from '../authStore.js';
 import { collectNowPlaying } from '../core/collect.js';
+import { resolveLlm } from '../llm/settings.js';
 import { upsertEnvFile } from '../cli/setup.js';
 import type { SpotifyTrack } from '../types/index.js';
 import {
@@ -14,6 +15,7 @@ import {
   jsonOk,
   callsTo,
   headerOf,
+  bodyOf,
   aSpotifyTrack,
   givenNowPlaying,
   givenLlmReplies,
@@ -88,6 +90,7 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
   describe('LLM の APIキー', () => {
     beforeEach(() => {
       vi.stubEnv('LLM_BASE_URL', 'https://api.groq.com/openai/v1');
+      vi.stubEnv('LLM_MODEL', 'spec-model');
       givenLlmReplies('今チルな気分になっています');
       givenNowPlaying(aSpotifyTrack());
     });
@@ -115,6 +118,65 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
       await collectNowPlaying();
 
       expect(llmKeySent()).toBe('Bearer canonical-key');
+    });
+
+    describe('送り先とモデルの決め方', () => {
+      function llmUrlSent(): string | undefined {
+        return callsTo('/chat/completions')[0]?.url;
+      }
+
+      beforeEach(() => {
+        vi.stubEnv('LLM_BASE_URL', '');
+        vi.stubEnv('LLM_MODEL', '');
+      });
+
+      it.each([
+        ['OPENAI_API_KEY', 'https://api.openai.com/v1/chat/completions'],
+        ['OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1/chat/completions'],
+        ['GROQ_API_KEY', 'https://api.groq.com/openai/v1/chat/completions'],
+        ['GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'],
+      ])('LLM_BASE_URL が無いとき、%s のキーはそのサービスに送る（既定の Gemini に送らない）', async (name, url) => {
+        vi.stubEnv(name, 'alias-key');
+        vi.stubEnv('LLM_MODEL', 'spec-model');
+
+        await collectNowPlaying();
+
+        expect(llmUrlSent()).toBe(url);
+      });
+
+      it('LLM_MODEL が無ければ、送り先のプリセットの既定のモデルを使う', async () => {
+        vi.stubEnv('OPENAI_API_KEY', 'alias-key');
+
+        await collectNowPlaying();
+
+        expect(bodyOf(callsTo('/chat/completions')[0]!)['model']).toBe('gpt-4o-mini');
+      });
+
+      it('プリセットに無い送り先で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async () => {
+        vi.stubEnv('GROQ_API_KEY', 'alias-key');
+
+        await collectNowPlaying();
+
+        expect(callsTo('/chat/completions')).toHaveLength(0);
+        expect(resolveLlm()).toMatchObject({ kind: 'invalid', problem: expect.stringMatching(/LLM_MODEL/) as unknown });
+      });
+
+      it('ローカルのサーバーなら、API キーが無くてもムード文を作り、Authorization を付けない', async () => {
+        vi.stubEnv('LLM_BASE_URL', 'http://localhost:11434/v1');
+        vi.stubEnv('LLM_MODEL', 'llama3.2');
+
+        await collectNowPlaying();
+
+        expect(llmUrlSent()).toBe('http://localhost:11434/v1/chat/completions');
+        expect(llmKeySent()).toBeUndefined();
+      });
+
+      it('ローカル以外の送り先で API キーが無ければ、LLM は未設定のまま', () => {
+        vi.stubEnv('LLM_BASE_URL', 'https://api.example.com/v1');
+        vi.stubEnv('LLM_MODEL', 'x');
+
+        expect(resolveLlm()).toEqual({ kind: 'unconfigured' });
+      });
     });
 
     it('旧バージョンの data/auth.json（groqApiKey）もそのまま読める', async () => {

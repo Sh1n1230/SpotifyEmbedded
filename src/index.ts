@@ -8,7 +8,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { createApp } from './app.js';
 import { config } from './config.js';
-import { missingAuthValues, hasLlmConfigured } from './authStore.js';
+import { missingAuthValues } from './authStore.js';
+import { resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
 import { openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
@@ -24,9 +25,13 @@ if (missing.length > 0) {
 }
 
 // LLMは任意。未設定でも曲情報は返せるので、案内だけして起動する。
-if (!hasLlmConfigured()) {
+const llm = resolveLlm();
+if (llm.kind === 'unconfigured') {
   console.warn('ℹ️  LLMが未設定のため、AIのムード文なしで動作します。');
   console.warn('   有効にするには `npm run setup` を実行してください。\n');
+} else if (llm.kind === 'invalid') {
+  console.warn(`⚠️  ${llm.problem}`);
+  console.warn('   設定を直すまで、AIのムード文なしで動作します。\n');
 }
 
 // ローカル開発では * のままでよいので、本番相当（NODE_ENV=production、Docker の既定）でだけ警告する

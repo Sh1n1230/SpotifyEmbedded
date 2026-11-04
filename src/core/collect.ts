@@ -10,7 +10,7 @@ import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
 import { fetchRecentlyPlayed } from '../spotify/recentlyPlayed.js';
 import { generateMood } from '../llm/moodGenerator.js';
-import { hasLlmConfigured } from '../authStore.js';
+import { hasLlmConfigured } from '../llm/settings.js';
 import {
   nowPlayingCache,
   moodCache,

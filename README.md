@@ -354,9 +354,9 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `SPOTIFY_CLIENT_ID` | ✓ | — | Spotifyアプリの Client ID |
 | `SPOTIFY_CLIENT_SECRET` | ✓ | — | Spotifyアプリの Client Secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得したリフレッシュトークン |
-| `LLM_API_KEY` | | — | 未設定時はムード文なしで動作 |
-| `LLM_BASE_URL` | | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI互換のエンドポイント。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く） |
-| `LLM_MODEL` | | `gemini-3.1-flash-lite` | 使用モデル |
+| `LLM_API_KEY` | | — | 未設定時はムード文なしで動作。`LLM_BASE_URL` がローカル（`localhost`・`127.0.0.1`・`[::1]`）のサーバーなら無くてもよい |
+| `LLM_BASE_URL` | | API キーの名前で決まる（下記） | OpenAI互換のエンドポイント（末尾の `/chat/completions` は付けない。クエリは保つ）。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く）。URL に `user:pass@` を含めない |
+| `LLM_MODEL` | | 送り先のプリセットの既定（Gemini は `gemini-3.1-flash-lite`、OpenAI は `gpt-4o-mini`） | 使用モデル。プリセットに無い送り先（Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:3000/auth/callback` | Dashboard の登録値と一致させる |
 | `PORT` | | `3000` | サーバーの待受ポート |
 | `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。本番では埋め込み先サイトに限定を推奨 |
@@ -366,7 +366,18 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 
 設定値は **環境変数 → `data/auth.json`** の優先順位で解決されます。環境変数が優先されるため、`.env` ファイルのみで設定を行っている既存の構成にもそのまま適用されます。
 
-`LLM_API_KEY` は `OPENAI_API_KEY`、`OPENROUTER_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY`、`GOOGLE_API_KEY` の各環境変数名にも対応しています。これらのいずれかが定義されている場合は、追加の設定なしで自動的に読み込まれます（`LLM_API_KEY` があればそれが優先）。同様に `LLM_BASE_URL` は `OPENAI_BASE_URL`、`LLM_MODEL` は `GROQ_MODEL` でも指定できます。
+`LLM_API_KEY` は `OPENAI_API_KEY`、`OPENROUTER_API_KEY`、`GROQ_API_KEY`、`GEMINI_API_KEY`、`GOOGLE_API_KEY` の各環境変数名にも対応しています（`LLM_API_KEY` があればそれが優先）。`LLM_BASE_URL` を設定しないときは、キーを読んだ名前で送り先を決めます。別のサービスのキーを既定の Gemini に送らないためです。
+
+| キーの名前 | `LLM_BASE_URL` が無いときの送り先 |
+|---|---|
+| `LLM_API_KEY`・`GEMINI_API_KEY`・`GOOGLE_API_KEY`・`data/auth.json` | `https://generativelanguage.googleapis.com/v1beta/openai`（Gemini） |
+| `OPENAI_API_KEY` | `https://api.openai.com/v1` |
+| `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
+| `GROQ_API_KEY` | `https://api.groq.com/openai/v1` |
+
+同様に `LLM_BASE_URL` は `OPENAI_BASE_URL`、`LLM_MODEL` は `GROQ_MODEL` でも指定できます。OpenAI には、推論モデル（o 系・gpt-5 系）でも動くよう `max_tokens` ではなく `max_completion_tokens` を送り、`temperature` を受け付けないモデルでは外して送り直します。
+
+Ollama などローカルの LLM を使う場合は、`LLM_BASE_URL=http://localhost:11434/v1` と `LLM_MODEL`（例: `llama3.2`）を設定します。API キーは要りません。
 
 ---
 

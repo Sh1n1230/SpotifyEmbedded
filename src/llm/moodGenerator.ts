@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { resolveLlm } from './settings.js';
 import { chatCompletion } from './client.js';
 import type { TopTrackEntry } from '../types/index.js';
 
@@ -145,10 +145,12 @@ export async function generateRankingMood(params: {
 }
 
 async function requestMood(system: string, prompt: string): Promise<string> {
+  const llm = resolveLlm();
+  if (llm.kind !== 'ready') {
+    throw new Error(llm.kind === 'invalid' ? llm.problem : 'LLM が設定されていません');
+  }
   const text = await chatCompletion({
-    baseUrl: config.llm.baseUrl,
-    apiKey: config.llm.apiKey,
-    model: config.llm.model,
+    ...llm.settings,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: prompt },

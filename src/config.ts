@@ -1,5 +1,4 @@
-import { requireAuthValue, resolveAuthValue } from './authStore.js';
-import { DEFAULT_BASE_URL, DEFAULT_MODEL } from './llm/providers.js';
+import { requireAuthValue } from './authStore.js';
 import { parseCorsOrigins } from './http/cors.js';
 
 function optional_env(name: string, fallback: string): string {
@@ -31,22 +30,7 @@ export const config = {
       return optional_env('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:3000/auth/callback');
     },
   },
-  /**
-   * OpenAI互換であれば提供元は問わない（OpenAI / OpenRouter / Gemini /
-   * ローカルのサーバーなど）。未設定でもムード文を省いて動作するため、
-   * apiKey 以外は既定値を持たせている。
-   */
-  llm: {
-    get apiKey(): string {
-      return requireAuthValue('llmApiKey');
-    },
-    get baseUrl(): string {
-      return resolveAuthValue('llmBaseUrl') ?? DEFAULT_BASE_URL;
-    },
-    get model(): string {
-      return resolveAuthValue('llmModel') ?? DEFAULT_MODEL;
-    },
-  },
+  // LLM の設定（送り先・キー・モデル）は src/llm/settings.ts の resolveLlm() が決める
   server: {
     get port(): number {
       return parseInt(optional_env('PORT', '3000'), 10);
