@@ -15,7 +15,7 @@ import {
 } from '../types/index.js';
 import { rangeLabelEn, rangeLabelJa } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
-import { escapeXml, truncateToWidth, wrapToWidth } from './text.js';
+import { escapeXml, svgIdSuffix, truncateToWidth, wrapToWidth } from './text.js';
 
 export interface RankingInput {
   tracks: TopTrackEntry[];
@@ -69,10 +69,12 @@ export function renderRankingCard(input: RankingInput): string {
   const fetchedAt = new Date(input.fetchedAt);
   const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
 
+  // 同じページに複数のランキングをインラインで置いても id が衝突しないよう、内容から決まる接尾辞を付ける
+  const idSuffix = svgIdSuffix(input.theme ?? 'dark', range, ...tracks.map((track) => track.id));
   const rows = tracks.length
     ? tracks
         .map((track, i) =>
-          renderRow(track, i, headerHeight, input.artDataUris?.[i] ?? null, theme)
+          renderRow(track, i, headerHeight, input.artDataUris?.[i] ?? null, theme, idSuffix)
         )
         .join('\n    ')
     : `<text x="${PAD}" y="${headerHeight + 30}" font-size="13" fill="${theme.muted}">データがありません</text>`;
@@ -81,14 +83,14 @@ export function renderRankingCard(input: RankingInput): string {
   // role="img" の中の <text> は支援技術に公開されない（WAI-ARIA の img role は Children Presentational）。
   // 曲名とアーティストは <desc> に並べ、aria-describedby で結び付ける（SVG-AAM）。
   const description = tracks.length
-    ? tracks.map((track, i) => `${i + 1}位 ${track.name} / ${track.artist}`).join('。')
+    ? tracks.map((track) => `${track.rank}位 ${track.name} / ${track.artist}`).join('。')
     : 'データがありません';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="rank-title" aria-describedby="rank-desc">
-  <title id="rank-title">${escapeXml(title)}</title>
-  <desc id="rank-desc">${escapeXml(description)}</desc>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="rank-title-${idSuffix}" aria-describedby="rank-desc-${idSuffix}">
+  <title id="rank-title-${idSuffix}">${escapeXml(title)}</title>
+  <desc id="rank-desc-${idSuffix}">${escapeXml(description)}</desc>
   <defs>
-    <clipPath id="rank-art"><rect x="0" y="0" width="${ART_SIZE}" height="${ART_SIZE}" rx="5"/></clipPath>
+    <clipPath id="rank-art-${idSuffix}"><rect x="0" y="0" width="${ART_SIZE}" height="${ART_SIZE}" rx="5"/></clipPath>
   </defs>
   <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${height - 1}" rx="12" fill="${bgFill}" stroke="${theme.border}"/>
   <g font-family="${FONT_STACK}">
@@ -107,17 +109,18 @@ function renderRow(
   index: number,
   headerHeight: number,
   artDataUri: string | null,
-  theme: (typeof THEMES)[ThemeName]
+  theme: (typeof THEMES)[ThemeName],
+  idSuffix: string
 ): string {
   const top = headerHeight + index * ROW_HEIGHT;
   const artY = top + 6;
 
   const art = artDataUri
-    ? `<g transform="translate(${PAD + 26}, ${artY})"><image width="${ART_SIZE}" height="${ART_SIZE}" href="${artDataUri}" clip-path="url(#rank-art)" preserveAspectRatio="xMidYMid slice"/></g>`
+    ? `<g transform="translate(${PAD + 26}, ${artY})"><image width="${ART_SIZE}" height="${ART_SIZE}" href="${artDataUri}" clip-path="url(#rank-art-${idSuffix})" preserveAspectRatio="xMidYMid slice"/></g>`
     : `<rect x="${PAD + 26}" y="${artY}" width="${ART_SIZE}" height="${ART_SIZE}" rx="5" fill="${theme.placeholder}"/>`;
 
   return `${art}
-    <text x="${PAD + 18}" y="${artY + 28}" font-size="13" font-weight="700" fill="${theme.muted}" text-anchor="end">${index + 1}</text>
+    <text x="${PAD + 18}" y="${artY + 28}" font-size="13" font-weight="700" fill="${theme.muted}" text-anchor="end">${track.rank}</text>
     <text x="${TEXT_X}" y="${artY + 20}" font-size="13" font-weight="600" fill="${theme.fg}">${escapeXml(truncateToWidth(track.name, TEXT_WIDTH / 13))}</text>
     <text x="${TEXT_X}" y="${artY + 37}" font-size="11" fill="${theme.muted}">${escapeXml(truncateToWidth(track.artist, TEXT_WIDTH / 11))}</text>`;
 }

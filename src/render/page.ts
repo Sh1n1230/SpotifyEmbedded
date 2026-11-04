@@ -136,7 +136,8 @@ export function renderEmbedPage(input: PageInput): string {
     display: grid;
     place-items: center;
     font-size: 12px;
-    color: var(--muted);
+    /* 枠（placeholder）の上で 4.5:1 を満たす色（muted はライトテーマで 4.0:1 しかない） */
+    color: var(--sub);
   }
 
   .body { min-width: 0; padding-top: 2px; }
@@ -188,7 +189,7 @@ export function renderEmbedPage(input: PageInput): string {
   .track, .artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ムードが無い場合は曲名を主役サイズに昇格させる */
-  .card[data-no-mood] .track { font-size: 17px; font-weight: 700; color: var(--fg); margin-top: 0; white-space: normal; }
+  .card[data-no-mood] .track { font-size: 17px; font-weight: 700; color: var(--fg); margin-top: 0; white-space: normal; overflow-wrap: anywhere; }
 
   .idle { font-size: 17px; font-weight: 700; color: var(--muted); }
 

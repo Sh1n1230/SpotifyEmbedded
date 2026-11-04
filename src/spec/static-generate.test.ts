@@ -77,7 +77,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
 
     expect(XMLValidator.validate(svg)).toBe(true);
     expect(svg).toContain('データがありません');
-    expect(svg).toContain('<desc id="rank-desc">データがありません</desc>');
+    expect(svg).toMatch(/<desc id="rank-desc-[0-9a-z]+">データがありません<\/desc>/);
   });
 
   it('スクリーンリーダーにも、表示中の曲の順位・曲名・アーティストが <desc> で届く', () => {
@@ -89,10 +89,13 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
     const svg = render(tracks, 3);
 
     expect(XMLValidator.validate(svg)).toBe(true);
-    expect(svg).toMatch(/<svg [^>]*role="img"[^>]*aria-labelledby="rank-title"[^>]*aria-describedby="rank-desc"/);
-    expect(svg).toContain('<title id="rank-title">');
+    const suffix = /aria-labelledby="rank-title-([0-9a-z]+)"/.exec(svg)?.[1];
+    expect(svg).toMatch(
+      new RegExp(`<svg [^>]*role="img"[^>]*aria-labelledby="rank-title-${suffix}"[^>]*aria-describedby="rank-desc-${suffix}"`)
+    );
+    expect(svg).toContain(`<title id="rank-title-${suffix}">`);
     expect(svg).toContain(
-      '<desc id="rank-desc">1位 Song 0 &amp; &lt;b&gt; / Artist 0。2位 Song 1 &amp; &lt;b&gt; / Artist 1。3位 Song 2 &amp; &lt;b&gt; / Artist 2</desc>'
+      `<desc id="rank-desc-${suffix}">1位 Song 0 &amp; &lt;b&gt; / Artist 0。2位 Song 1 &amp; &lt;b&gt; / Artist 1。3位 Song 2 &amp; &lt;b&gt; / Artist 2</desc>`
     );
     expect(svg).not.toContain('Artist 3');
   });

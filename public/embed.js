@@ -72,7 +72,8 @@
     '}',
     'a.card:hover { border-color: ' + theme.accent + '; transform: translateY(-1px); }',
     '.art, .art-ph { width: 112px; height: 112px; flex: none; border-radius: 8px; object-fit: cover; background: ' + theme.placeholder + '; }',
-    '.art-ph { display: grid; place-items: center; font-size: 12px; color: ' + theme.muted + '; }',
+    // 枠の上で 4.5:1 を満たす色（muted はライトテーマで 4.0:1 しかない）
+    '.art-ph { display: grid; place-items: center; font-size: 12px; color: ' + theme.sub + '; }',
     '.body { min-width: 0; padding-top: 2px; }',
     '.label { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 600; letter-spacing: .14em; color: ' + theme.muted + '; margin-bottom: 10px; }',
     '.label.live { color: ' + theme.accent + '; }',
@@ -86,7 +87,7 @@
     '.track { font-size: 12.5px; color: ' + theme.sub + '; margin: 10px 0 0; }',
     '.artist { font-size: 11.5px; color: ' + theme.muted + '; margin: 3px 0 0; }',
     '.track, .artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
-    '.card.no-mood .track { font-size: 17px; font-weight: 700; color: ' + theme.fg + '; margin-top: 0; white-space: normal; }',
+    '.card.no-mood .track { font-size: 17px; font-weight: 700; color: ' + theme.fg + '; margin-top: 0; white-space: normal; overflow-wrap: anywhere; }',
     '.idle { font-size: 17px; font-weight: 700; color: ' + theme.muted + '; margin: 0; }',
     '@media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 8px; } a.card:hover { transform: none; } }'
   ].join('\n');

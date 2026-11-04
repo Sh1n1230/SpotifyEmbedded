@@ -7,7 +7,7 @@
  */
 import type { TrackSummary, MoodResult } from '../types/index.js';
 import { THEMES, FONT_STACK, formatDateTimeJa, type ThemeName } from './theme.js';
-import { escapeXml, wrapToWidth, truncateToWidth } from './text.js';
+import { escapeXml, svgIdSuffix, wrapToWidth, truncateToWidth } from './text.js';
 
 export type PlaybackState =
   /** 再生中 */
@@ -54,22 +54,27 @@ export function renderNowPlayingCard(input: CardInput): string {
   const bgFill = isTransparent ? 'none' : theme.bg;
 
   const unavailable = input.unavailable === true;
-  const label = unavailable ? UNAVAILABLE_LABEL : playbackLabel(state, input.since);
-  const hasArt = state !== 'idle' && !unavailable;
+  // 曲が無ければ、playing・recent と渡されても曲なし（idle）として描く（ジャケ写の枠と「再生していません」が重ならない）
+  const shownState: PlaybackState = track ? state : 'idle';
+  const label = unavailable ? UNAVAILABLE_LABEL : playbackLabel(shownState, input.since);
+  const hasArt = shownState !== 'idle' && !unavailable;
+  // 同じページに複数のカードをインラインで置いても id が衝突しないよう、内容から決まる接尾辞を付ける
+  // （生成のたびに変わると静的モードの出力の差分が増えるので、ランダムにはしない）
+  const idSuffix = svgIdSuffix(input.theme ?? 'dark', shownState, track?.id ?? '', track?.name ?? '');
   const idleText = unavailable ? UNAVAILABLE_TEXT : IDLE_TEXT;
 
-  const body = state === 'idle' || !track || unavailable
+  const body = shownState === 'idle' || !track || unavailable
     ? renderIdleBody(theme.muted, idleText)
     : renderTrackBody(track, mood, theme);
 
-  const ariaLabel = unavailable ? idleText : buildAriaLabel(state, track, mood);
+  const ariaLabel = unavailable ? idleText : buildAriaLabel(shownState, track, mood);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
   <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${HEIGHT - 1}" rx="12" fill="${bgFill}" stroke="${theme.border}"/>
-  ${hasArt ? renderArt(input.artDataUri ?? null, theme.placeholder, theme.muted) : ''}
+  ${hasArt ? renderArt(input.artDataUri ?? null, theme.placeholder, theme.sub, idSuffix) : ''}
   <g font-family="${FONT_STACK}">
-    ${renderLabel(label, state, theme.accent, theme.muted, hasArt ? TEXT_X : PAD)}
+    ${renderLabel(label, shownState, theme.accent, theme.muted, hasArt ? TEXT_X : PAD)}
     ${body}
   </g>
 </svg>
@@ -87,15 +92,16 @@ export function playbackLabel(state: PlaybackState, since: string | undefined): 
   return 'NOTHING PLAYING';
 }
 
-function renderArt(dataUri: string | null, placeholder: string, muted: string): string {
+/** 「no art」の文字色は、枠（placeholder）の上で 4.5:1 を満たす sub を使う（muted はライトテーマで 4.0:1 しかない） */
+function renderArt(dataUri: string | null, placeholder: string, textColor: string, idSuffix: string): string {
   if (dataUri) {
     // 角丸の rect を重ねるのではなく、clip-path で image 自体を角丸に切り抜く
-    return `<defs><clipPath id="art-clip"><rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8"/></clipPath></defs>
-  <image x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" href="${dataUri}" clip-path="url(#art-clip)" preserveAspectRatio="xMidYMid slice"/>`;
+    return `<defs><clipPath id="art-clip-${idSuffix}"><rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8"/></clipPath></defs>
+  <image x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" href="${dataUri}" clip-path="url(#art-clip-${idSuffix})" preserveAspectRatio="xMidYMid slice"/>`;
   }
 
   return `<rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8" fill="${placeholder}"/>
-  <text x="${PAD + ART_SIZE / 2}" y="${PAD + ART_SIZE / 2 + 5}" font-family="${FONT_STACK}" font-size="13" fill="${muted}" text-anchor="middle">no art</text>`;
+  <text x="${PAD + ART_SIZE / 2}" y="${PAD + ART_SIZE / 2 + 5}" font-family="${FONT_STACK}" font-size="13" fill="${textColor}" text-anchor="middle" aria-hidden="true">no art</text>`;
 }
 
 function renderLabel(
