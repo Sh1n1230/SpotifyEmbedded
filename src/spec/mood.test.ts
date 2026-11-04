@@ -304,6 +304,26 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       expect(attempt).toBe(2);
     });
 
+    it('引き直す前の待ちは固定でなく、600〜1200ms の間でばらつく', async () => {
+      let attempt = 0;
+      respondWith((url) => {
+        if (!url.includes('/chat/completions')) return null;
+        attempt += 1;
+        return attempt === 1
+          ? new Response('busy', { status: 503 })
+          : jsonOk({ choices: [{ message: { content: 'ok' } }] });
+      });
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+      try {
+        await expect(callLlm()).resolves.toBe('ok');
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 600);
+      } finally {
+        random.mockRestore();
+        setTimeoutSpy.mockRestore();
+      }
+    });
+
     it('引き直しても 5xx なら諦める', async () => {
       respondWith((url) =>
         url.includes('/chat/completions') ? new Response('busy', { status: 503 }) : null
