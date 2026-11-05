@@ -69,6 +69,15 @@ describe('CLI（spotify-embedded）', () => {
     expect(run.stdout).toContain('npm run setup');
   }, 30_000);
 
+  it.each(['--help', '-h'])('generate %s は使い方を表示して成功する', (flag) => {
+    const run = runCli(['generate', flag]);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain('generate のオプション');
+    expect(run.stderr).toBe('');
+    expect(readdirSync(run.cwd)).toEqual([]);
+  }, 30_000);
+
   describe('generate は Spotify が受け付けない指定を、取得を始める前に弾く', () => {
     it.each([
       [['--range', 'two_weeks'], '--range'],

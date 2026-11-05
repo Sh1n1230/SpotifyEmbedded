@@ -10,6 +10,7 @@
 
 ### 修正
 
+- `npm run generate -- --help` と `-h` で使い方を表示し、正常終了するようにした
 - README の JSON データ取得例で、再生中に `mood` が `null` でも曲情報を表示できるようにする
 - 再生中の曲に Spotify のリンク（`external_urls`）が無いときも落ちず、`spotify_url` を空文字にしてキーを残す
 - OpenAI 互換 API が `message.content` を text parts の配列で返す場合も、ムード文を取り出せる
