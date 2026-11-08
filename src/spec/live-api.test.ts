@@ -309,7 +309,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
       const res = await callback(() => 'error=access_denied&state=wrong');
 
       expect(res.status).toBe(400);
-      expect(await res.text()).toContain('Invalid state');
+      expect(await res.text()).toContain('state が一致しません');
     });
 
     it('認可コードの交換に失敗したら、直す場所の分かる説明を 502 で返す（Spotify の本文や Secret は含めない）', async () => {

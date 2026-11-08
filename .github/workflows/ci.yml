@@ -40,6 +40,20 @@ jobs:
       - run: npm run lint
       # カバレッジはレポートを残すだけで、ゲートにはしない（#119）
       - run: npm run test:coverage
+
+      # 目安として見るだけで、ゲートにはしない
+      - name: カバレッジの要約
+        if: always()
+        run: |
+          node -e '
+            const fs = require("fs");
+            const file = "coverage/coverage-summary.json";
+            if (!fs.existsSync(file)) process.exit(0);
+            const { total } = JSON.parse(fs.readFileSync(file, "utf8"));
+            const row = (key, name) => `| ${name} | ${total[key].pct}% |`;
+            const lines = ["### カバレッジ", "", "| 項目 | 割合 |", "|---|---|", row("lines", "行"), row("branches", "分岐"), row("functions", "関数"), row("statements", "文"), ""];
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
+          '
       - run: npm run build
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

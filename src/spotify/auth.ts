@@ -63,7 +63,7 @@ function describeAuthFailure(reason: SpotifyAuthFailure): string {
     case 'invalid_client':
       return 'Spotify の Client ID / Client Secret が正しくありません（invalid_client）。設定を確認してください。';
     default:
-      return 'Spotify authentication failed';
+      return 'Spotify の認証に失敗しました（unauthorized）。トークンを取り直しても 401 のため、スコープの不足や連携の解除が考えられます。`npm run setup` で取り直してください。';
   }
 }
 

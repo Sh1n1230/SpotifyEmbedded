@@ -590,6 +590,7 @@ async function offerGitHubSecrets(rl: Interface, values: StoredAuth, gh: GhRunne
     console.log('\nGitHub Actions で静的生成する場合は、リポジトリの Secrets に');
     console.log('以下を登録してください（gh CLI があれば自動登録できます）:\n');
     printEnvBlock(values);
+    console.log('\n登録先: リポジトリの Settings → Secrets and variables → Actions');
     return;
   }
 
@@ -599,6 +600,7 @@ async function offerGitHubSecrets(rl: Interface, values: StoredAuth, gh: GhRunne
 
   if (answer === 'n' || answer === 'no') {
     printEnvBlock(values);
+    console.log(`\n登録先: https://github.com/${repo}/settings/secrets/actions`);
     return;
   }
 

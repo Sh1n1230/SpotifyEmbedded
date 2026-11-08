@@ -209,6 +209,10 @@ export async function generate(options: GenerateOptions): Promise<void> {
 
   flushOutputs(outDir, outputs);
   console.log(`\n生成しました: ${outDir}`);
+  if (!process.env['CI']) {
+    console.log('  README には now-playing.svg（ライトテーマは -light）、Web サイトには index.html を iframe で貼れます。');
+    console.log('  貼り方: https://github.com/Sh1n1230/SpotifyEmbedded#4-埋め込みコードの配置');
+  }
   writeStepSummary(snapshot, previous);
 }
 

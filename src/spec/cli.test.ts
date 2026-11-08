@@ -82,6 +82,21 @@ describe('CLI（spotify-embedded）', () => {
     expect(run.stdout.trim()).toBe(version);
   }, 30_000);
 
+  it.each(['--help', '-h'])('setup %s は対話を始めず、使い方を表示して成功する', (flag) => {
+    const run = runCli(['setup', flag]);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain('npm run setup');
+    expect(run.stdout).not.toContain('セットアップ\n');
+  }, 30_000);
+
+  it('setup に知らないオプションを渡すと、対話を始めず終了コード 1 で終わる', () => {
+    const run = runCli(['setup', '--nope']);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('不明なオプション: --nope');
+  }, 30_000);
+
   it('設定が何も無くても、読み込みだけでは落ちない（npm run setup が動くために必要）', () => {
     const run = runCli(['help']);
 

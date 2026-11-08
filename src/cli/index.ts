@@ -51,6 +51,16 @@ async function main(): Promise<void> {
       console.log(packageVersion());
       return;
     case 'setup':
+      if (args.includes('--help') || args.includes('-h')) {
+        console.log(USAGE);
+        return;
+      }
+      if (args.length > 0) {
+        console.error(`✗ 不明なオプション: ${args[0]}\n`);
+        console.error(USAGE);
+        process.exitCode = 1;
+        return;
+      }
       await setup();
       return;
 
