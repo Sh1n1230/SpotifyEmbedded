@@ -1,0 +1,21 @@
+name: ドキュメントの誤り
+description: README・CONTRIBUTING などの説明が間違っている・足りないとき
+labels: [documentation]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: 該当の箇所
+      description: ファイルと見出し、または GitHub の URL（行番号付きのリンクでも構いません）
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 何が間違っている・足りないか
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: 正しい内容（分かれば）

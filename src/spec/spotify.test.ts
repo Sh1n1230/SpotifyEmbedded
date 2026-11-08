@@ -9,12 +9,19 @@ import { loadStoredAuth } from '../authStore.js';
 import { nowPlayingCache } from '../cache/index.js';
 import { artistGenresAvailable } from '../spotify/artists.js';
 import { getAccessToken } from '../spotify/auth.js';
+import { exchangeCodeForTokens } from '../spotify/oauth.js';
 import { collectNowPlaying, collectRecentlyPlayed, collectTopTracks } from '../core/collect.js';
 import { isTopTracksLimit, isTopTracksRange } from '../core/topTracksParams.js';
 import { generate } from '../cli/generate.js';
 import { createApp } from '../app.js';
 import { renderNowPlayingCard } from '../render/card.js';
-import { SpotifyApiError, SpotifyAuthError, spotifyFetch } from '../spotify/client.js';
+import {
+  MAX_RETRY_AFTER_SECONDS,
+  SpotifyApiError,
+  SpotifyAuthError,
+  parseRetryAfter,
+  spotifyFetch,
+} from '../spotify/client.js';
 import { TOP_TRACKS_RANGES, type TopTracksRange } from '../types/index.js';
 import {
   NOW,
@@ -746,5 +753,179 @@ describe('アクセストークンの更新', () => {
 
       expect(vi.mocked(console.warn)).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('Spotify の応答を読めないとき・届かないとき', () => {
+  /** ヘッダーは返るが、本文を読む途中で時間切れになる応答 */
+  function bodyTimesOut(): Response {
+    const body = new ReadableStream({
+      pull() {
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
+  it('本文の読み取りの途中で時間切れになったら、ライブAPIは 504 を返す', async () => {
+    respondWith((url) => (url.includes('/me/player/currently-playing') ? bodyTimesOut() : null));
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(504);
+    expect(await res.json()).toEqual({ error: 'Spotify API timed out' });
+  });
+
+  it('Spotify に接続できない（DNS・接続拒否など）なら、ライブAPIは 502 を返し、接続先をログに出す', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    respondWith((url) => {
+      if (!url.includes('/me/player/currently-playing')) return null;
+      throw new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }) });
+    });
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'Could not reach Spotify' });
+    expect(String(error.mock.calls.at(-1)?.[1])).toMatch(/currently-playing.*ENOTFOUND/);
+  });
+
+  it('接続できなくても、/badge.svg は「取得できませんでした」のカードを返す', async () => {
+    respondWith((url) => {
+      if (!url.includes('/me/player/currently-playing')) return null;
+      throw new TypeError('fetch failed');
+    });
+
+    const res = await createApp().request('/badge.svg');
+
+    expect(res.status).toBe(200);
+    expect(XMLValidator.validate(await res.text())).toBe(true);
+  });
+
+  it('JSON として読めない応答なら、ライブAPIは 502 を返す', async () => {
+    respondWith((url) =>
+      url.includes('/me/player/currently-playing') ? new Response('<html>oops</html>', { status: 200 }) : null
+    );
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'Spotify API request failed', spotify_status: 200 });
+  });
+
+  it.each([200, 202])('本文の無い %d は、再生していないものとして扱う', async (status) => {
+    respondWith((url) =>
+      url.includes('/me/player/currently-playing') ? new Response('', { status }) : null
+    );
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ is_playing: false, track: null });
+  });
+
+  it('/artists の応答が JSON でなくても、ジャンル無しで曲情報を返し、次の呼び出しでまた試す', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    respondWith((url) => (url.includes('/artists?ids=') ? new Response('not json', { status: 200 }) : null));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { is_playing: boolean; track: { name: string } | null };
+    expect(body.is_playing).toBe(true);
+    expect(body.track?.name).toBe(aSpotifyTrack().name);
+    expect(artistGenresAvailable()).toBe(true);
+  });
+});
+
+describe('トークンの更新の応答の検査', () => {
+  // トークンはモジュール内にキャッシュされるので、API の 401 で取り直しを起こす
+  function givenTokenResponse(response: () => Response): void {
+    respondWith((url) =>
+      url.includes('/me/player/currently-playing') ? new Response('expired', { status: 401 }) : null
+    );
+    respondWith((url) => (url.includes('accounts.spotify.com/api/token') ? response() : null));
+  }
+
+  it('トークンエンドポイントが 503 なら、ライブAPIは 502 と spotify_status を返し、ログの本文は 200 文字までにする', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    givenTokenResponse(() => new Response('x'.repeat(1000), { status: 503 }));
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'Spotify API request failed', spotify_status: 503 });
+    const logged = String(error.mock.calls.at(-1)?.[1]);
+    expect(logged).toContain('/api/token');
+    expect(logged.match(/x+/)?.[0].length).toBeLessThanOrEqual(200);
+  });
+
+  it('トークンエンドポイントが Retry-After 付きの 429 なら、ライブAPIも 429 と Retry-After を返す', async () => {
+    givenTokenResponse(() => new Response('slow down', { status: 429, headers: { 'Retry-After': '5' } }));
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('5');
+  });
+
+  it('access_token の無い応答なら、ライブAPIは 502 を返す', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    givenTokenResponse(() => jsonOk({ token_type: 'Bearer', expires_in: 3600 }));
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(502);
+  });
+
+  it.each([
+    ['expires_in の無い応答', { access_token: 'fresh-token' }],
+    ['expires_in が 30 秒の応答', { access_token: 'fresh-token', expires_in: 30 }],
+  ])('%s のあと、続けて呼んでもトークンを取り直さない', async (_name, body) => {
+    respondWith((url) => (url.includes('accounts.spotify.com/api/token') ? jsonOk(body) : null));
+
+    await getAccessToken();
+    await getAccessToken();
+    await getAccessToken();
+
+    expect(callsTo('accounts.spotify.com/api/token')).toHaveLength(1);
+  });
+});
+
+describe('Retry-After の解釈（RFC 9110 の形だけを日付として読み、上限で丸める）', () => {
+  it.each([
+    ['1.5', 1],
+    ['1e3', 1],
+    ['99999999999999999999', MAX_RETRY_AFTER_SECONDS],
+    ['2026-09-21', 1],
+    // IMF-fixdate・rfc850-date・asctime-date の未来の時刻は、現在時刻との差の秒数
+    ['Mon, 21 Sep 2026 12:00:30 GMT', 30],
+    ['Monday, 21-Sep-26 12:00:30 GMT', 30],
+    ['Mon Sep 21 12:00:30 2026', 30],
+  ])('Retry-After: %j → %d 秒', (header, expected) => {
+    expect(parseRetryAfter(header, NOW.getTime())).toBe(expected);
+  });
+});
+
+describe('認可コードの交換（setup・/auth/callback）', () => {
+  const app = { clientId: 'id', clientSecret: 'secret', redirectUri: 'http://127.0.0.1:3000/auth/callback' };
+
+  it('応答に refresh_token が無ければ、原因の分かるエラーにする', async () => {
+    respondWith((url) =>
+      url.includes('accounts.spotify.com/api/token') ? jsonOk({ access_token: 'a', expires_in: 3600 }) : null
+    );
+
+    await expect(exchangeCodeForTokens(app, 'code')).rejects.toThrow(/refresh_token がありませんでした/);
+  });
+
+  it('refresh_token があれば、そのまま返す', async () => {
+    respondWith((url) =>
+      url.includes('accounts.spotify.com/api/token')
+        ? jsonOk({ access_token: 'a', refresh_token: 'r', expires_in: 3600, scope: '', token_type: 'Bearer' })
+        : null
+    );
+
+    await expect(exchangeCodeForTokens(app, 'code')).resolves.toMatchObject({ refresh_token: 'r' });
   });
 });

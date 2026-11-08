@@ -40,7 +40,11 @@ export const UNKNOWN_CLIENT = 'unknown';
 export function rateLimitKey(address: string | null | undefined): string {
   const raw = address?.trim().replace(/^\[|\]$/g, '').replace(/%.*$/, '') ?? '';
   if (raw === '') return UNKNOWN_CLIENT;
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(raw)) return raw;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(raw)) {
+    // 各オクテットを数にして 0〜255 を確かめ、01 と 1 のような書き方の違いを同じキーにする
+    const octets = raw.split('.').map(Number);
+    return octets.every((octet) => octet <= 255) ? octets.join('.') : UNKNOWN_CLIENT;
+  }
 
   const groups = expandIpv6(raw);
   if (!groups) return UNKNOWN_CLIENT;
@@ -88,9 +92,40 @@ export function clientKey(
 ): string {
   if (trustedProxyHeader) {
     const value = c.req.header(trustedProxyHeader)?.split(',').at(-1)?.trim();
-    if (value) return rateLimitKey(value);
+    if (value) {
+      const address = trustedProxyHeader === 'forwarded' ? forwardedFor(value) : value;
+      const key = rateLimitKey(address === null ? null : stripPort(address));
+      if (key === UNKNOWN_CLIENT) warnUnreadableProxyHeader(trustedProxyHeader);
+      return key;
+    }
   }
   return rateLimitKey(remoteAddress(c));
+}
+
+/** Forwarded（RFC 7239）の1要素から for= の値を取り出す（`for=192.0.2.1;proto=https`、`for="[2001:db8::1]:443"`）。 */
+function forwardedFor(element: string): string | null {
+  for (const pair of element.split(';')) {
+    const [name, ...rest] = pair.split('=');
+    if (name?.trim().toLowerCase() === 'for') return rest.join('=').trim().replace(/^"|"$/g, '');
+  }
+  return null;
+}
+
+/** `192.0.2.1:5678` と `[2001:db8::1]:443` のポートを外す（角括弧の無い IPv6 はそのまま）。 */
+function stripPort(address: string): string {
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(address);
+  if (bracketed) return bracketed[1] ?? address;
+  const v4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(address);
+  return v4WithPort?.[1] ?? address;
+}
+
+let warnedUnreadableProxyHeader = false;
+
+/** ヘッダーの値は偽装されうるのでログに出さず、読めなかったことだけを一度知らせる。 */
+function warnUnreadableProxyHeader(header: string): void {
+  if (warnedUnreadableProxyHeader) return;
+  warnedUnreadableProxyHeader = true;
+  console.warn(`[rate-limit] TRUSTED_PROXY_HEADER（${header}）の値をアドレスとして読めませんでした。`);
 }
 
 export interface MemoryRateLimiterOptions {

@@ -1,13 +1,25 @@
 /** CLI（spotify-embedded）の起動と引数の検証。方針は ./support.ts の冒頭を参照。 */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { get } from 'node:http';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { askCustomBaseUrl, browserCommand, invalidInputReason, refreshTokenRenewalDate } from '../cli/setup.js';
-import './support.js';
+import {
+  askCustomBaseUrl,
+  browserCommand,
+  currentRepo,
+  deleteGitHubSecret,
+  invalidInputReason,
+  refreshTokenRenewalDate,
+  runOAuthFlow,
+  setGitHubSecret,
+  setupRedirectUriProblem,
+  type GhRunner,
+} from '../cli/setup.js';
+import { jsonOk, respondWith } from './support.js';
 
 interface RunOptions {
   /** 標準入力に流す内容。流し終えると EOF になる。 */
@@ -61,6 +73,14 @@ describe('CLI（spotify-embedded）', () => {
   function runCli(args: string[], options: RunOptions = {}): RunResult {
     return runEntry('../cli/index.ts', args, options, cwds);
   }
+
+  it.each(['--version', '-v', 'version'])('%s で package.json の版を表示する', (flag) => {
+    const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+    const run = runCli([flag]);
+
+    expect(run.status).toBe(0);
+    expect(run.stdout.trim()).toBe(version);
+  }, 30_000);
 
   it('設定が何も無くても、読み込みだけでは落ちない（npm run setup が動くために必要）', () => {
     const run = runCli(['help']);
@@ -129,22 +149,49 @@ describe('npm run auth（/auth/* を有効にした Node のサーバー）', ()
   });
 
   it('シェルの構文に頼らず有効にし、設定ファイルの ENABLE_AUTH_ROUTES=false より優先する', () => {
-    // サーバーは止まらないので、時間切れで止める。設定が無くても /auth を使うために起動は続く
+    // サーバーは止まらないので、時間切れで止める。refresh_token が無くても /auth を使うために起動は続く
+    // （PORT=0 は受け付けないので、ほかと重ならない番号を使う）
     const run = runEntry(
       '../authServer.ts',
       [],
-      { env: { PORT: '0' }, files: { '.env': 'ENABLE_AUTH_ROUTES=false\n' }, timeout: 8_000 },
+      {
+        env: { PORT: String(40_000 + (process.pid % 20_000)), SPOTIFY_CLIENT_ID: 'id', SPOTIFY_CLIENT_SECRET: 'secret' },
+        files: { '.env': 'ENABLE_AUTH_ROUTES=false\n' },
+        timeout: 8_000,
+      },
       cwds
     );
 
     expect(run.stdout).toContain('Auth routes enabled');
   }, 30_000);
 
+  it('npm run setup は、入力が端末でなければ理由を示して終了コード 1 で終わる', () => {
+    const run = runEntry('../cli/index.ts', ['setup'], { input: '', timeout: 8_000 }, cwds);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('端末');
+  }, 30_000);
+
   it('npm run dev（src/index.ts）では /auth/* は無効のまま（設定が無ければ起動しない）', () => {
-    const run = runEntry('../index.ts', [], { env: { PORT: '0' }, timeout: 8_000 }, cwds);
+    const run = runEntry('../index.ts', [], { env: { PORT: String(40_001 + (process.pid % 20_000)) }, timeout: 8_000 }, cwds);
 
     expect(run.status).toBe(1);
     expect(run.stdout).not.toContain('Auth routes enabled');
+  }, 30_000);
+
+  it('npm run auth でも Client ID / Secret が無ければ、/auth/login が動かないので起動しない', () => {
+    const run = runEntry('../authServer.ts', [], { env: { PORT: String(40_002 + (process.pid % 20_000)) }, timeout: 8_000 }, cwds);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('SPOTIFY_CLIENT_ID');
+  }, 30_000);
+
+  it.each(['abc', '3000abc', '0', '70000'])('PORT=%s ならスタックトレースではなく直し方を出して終わる', (port) => {
+    const run = runEntry('../index.ts', [], { env: { PORT: port }, timeout: 8_000 }, cwds);
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`PORT は 1〜65535 の整数で指定してください（今の値: ${port}）`);
+    expect(run.stderr).not.toMatch(/\n\s+at /);
   }, 30_000);
 });
 
@@ -210,6 +257,88 @@ describe('npm run setup の LLM エンドポイントの入力（API キーの�
 });
 
 describe('setup の部品', () => {
+  it.each(['http://127.0.0.1:3000/auth/callback', 'http://[::1]:3000/auth/callback'])(
+    'ループバックの Redirect URI %s は使える',
+    (uri) => {
+      expect(setupRedirectUriProblem(uri)).toBeNull();
+    }
+  );
+
+  it.each(['https://127.0.0.1:3000/auth/callback', 'http://localhost:3000/auth/callback', 'http://192.168.0.2:3000/cb'])(
+    '%s では、setup の一時サーバーで受けられないことを案内する',
+    (uri) => {
+      expect(setupRedirectUriProblem(uri)).toMatch(/ループバックの Redirect URI/);
+    }
+  );
+
+  it('一時サーバーは、state の合わないリクエストを断るだけで待ち続け、その後の正しいコールバックで成功する', async () => {
+    // 認可コードの交換（fetch）は spec の共通のモックが応答する。一時サーバーへは本物の HTTP で送る
+    respondWith((url) =>
+      url.includes('accounts.spotify.com/api/token')
+        ? jsonOk({ access_token: 'a', refresh_token: 'fresh-refresh-token', expires_in: 3600 })
+        : null
+    );
+    const port = 41_000 + (process.pid % 20_000);
+    const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
+    let authorizeUrl = '';
+    const flow = runOAuthFlow({ clientId: 'id', clientSecret: 'secret', redirectUri }, (url) => {
+      authorizeUrl = url;
+    });
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(''));
+    const state = new URL(authorizeUrl).searchParams.get('state')!;
+    const status = (query: string) =>
+      new Promise<number>((done, fail) => {
+        get(`${redirectUri}?${query}`, (res) => {
+          res.resume();
+          done(res.statusCode ?? 0);
+        }).on('error', fail);
+      });
+
+    expect(await status('code=c&state=wrong')).toBe(400);
+    expect(await status(`code=c&state=${state}`)).toBe(200);
+    await expect(flow).resolves.toBe('fresh-refresh-token');
+  });
+
+  describe('GitHub Secrets（gh を差し替えて、渡す引数を確かめる）', () => {
+    function fakeGh(responses: Record<string, { code: number; stdout?: string; stderr?: string }>) {
+      const calls: { args: string[]; input: string | undefined }[] = [];
+      const gh: GhRunner = (args, input) => {
+        calls.push({ args, input });
+        const response = responses[args.join(' ')] ?? { code: 0 };
+        return Promise.resolve({ code: response.code, stdout: response.stdout ?? '', stderr: response.stderr ?? '' });
+      };
+      return { gh, calls };
+    }
+
+    it('登録と削除には、確認に表示したリポジトリを --repo で渡し、値は標準入力で渡す', async () => {
+      const { gh, calls } = fakeGh({});
+
+      await setGitHubSecret(gh, 'me/SpotifyEmbedded', 'LLM_API_KEY', 'secret-value');
+      await deleteGitHubSecret(gh, 'me/SpotifyEmbedded', 'LLM_MODEL');
+
+      expect(calls[0]).toEqual({ args: ['secret', 'set', 'LLM_API_KEY', '--repo', 'me/SpotifyEmbedded'], input: 'secret-value' });
+      expect(calls[1]?.args).toEqual(['secret', 'delete', 'LLM_MODEL', '--repo', 'me/SpotifyEmbedded']);
+    });
+
+    it('削除は、元から無い（not found）ときだけ成功として扱い、権限エラーは理由を示して失敗する', async () => {
+      const missing = fakeGh({ 'secret delete K --repo r': { code: 1, stderr: 'HTTP 404: Not Found' } });
+      const denied = fakeGh({ 'secret delete K --repo r': { code: 1, stderr: 'HTTP 403: Resource not accessible by integration' } });
+
+      await expect(deleteGitHubSecret(missing.gh, 'r', 'K')).resolves.toBeUndefined();
+      await expect(deleteGitHubSecret(denied.gh, 'r', 'K')).rejects.toThrow(/403/);
+    });
+
+    it('gh repo fork --clone した作業ツリーでは、フォーク元ではなく自分のフォークを提案する', async () => {
+      const { gh } = fakeGh({
+        'repo view --json nameWithOwner -q .nameWithOwner': { code: 0, stdout: 'Sh1n1230/SpotifyEmbedded\n' },
+        'api user -q .login': { code: 0, stdout: 'me\n' },
+        'repo view me/SpotifyEmbedded --json nameWithOwner -q .nameWithOwner': { code: 0, stdout: 'me/SpotifyEmbedded\n' },
+      });
+
+      await expect(currentRepo(gh)).resolves.toBe('me/SpotifyEmbedded');
+    });
+  });
+
   it('Windows では cmd.exe を通さずに開き、& を含む認可 URL を1つの引数のまま渡す', () => {
     const url = 'https://accounts.spotify.com/authorize?response_type=code&client_id=abc&state=xyz';
 

@@ -12,6 +12,23 @@ body:
         - ライブAPI（Node / Docker）
     validations:
       required: true
+  - type: input
+    id: version
+    attributes:
+      label: SpotifyEmbedded の版
+      description: 'package.json の version、静的モードならフォークの最新のコミット（例 1.7.0、または abc1234）'
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js の版（Node・Docker・ローカルでの生成のとき）
+      placeholder: '例: 24.11.0（node --version）'
+  - type: input
+    id: llm
+    attributes:
+      label: LLM のプロバイダ（任意）
+      description: Gemini・OpenAI・Ollama など。API キーは貼らないでください。
   - type: textarea
     id: what
     attributes:

@@ -23,6 +23,7 @@ import {
   type StoredAuth,
 } from '../authStore.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
+import { config } from '../config.js';
 import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
 import { chatCompletion } from '../llm/client.js';
 import { isLocalLlmEndpoint, llmBaseUrlProblem } from '../llm/endpoint.js';
@@ -50,14 +51,41 @@ export function refreshTokenRenewalDate(issuedAt: Date): string {
   return formatDateJa(renewal);
 }
 
+/**
+ * setup の一時サーバーで受けられる Redirect URI か。だめならその理由。
+ * Spotify はループバックの http（127.0.0.1・[::1]）だけを http で許す（localhost は不可）。
+ * https://developer.spotify.com/documentation/web-api/concepts/redirect_uri
+ */
+export function setupRedirectUriProblem(redirectUri: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    return `SPOTIFY_REDIRECT_URI が URL として読めません: ${redirectUri}`;
+  }
+  if (url.protocol !== 'http:' || (url.hostname !== '127.0.0.1' && url.hostname !== '[::1]')) {
+    return (
+      `npm run setup は、ループバックの Redirect URI（http://127.0.0.1:PORT/… か http://[::1]:PORT/…）でだけ使えます（今の値: ${redirectUri}）。` +
+      'SPOTIFY_REDIRECT_URI を直すか、未設定にしてください。'
+    );
+  }
+  return null;
+}
+
 export async function setup(): Promise<void> {
+  // 入力が端末でない（パイプ・/dev/null）と、質問に答えられないまま途中で終わる
+  if (!process.stdin.isTTY) {
+    throw new Error('npm run setup は対話が必要です。端末（ターミナル）で実行してください。');
+  }
+
+  const redirectUri = config.spotify.redirectUri;
+  const redirectProblem = setupRedirectUriProblem(redirectUri);
+  if (redirectProblem) throw new Error(redirectProblem);
+
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
   try {
     console.log('\n🎵 SpotifyEmbedded セットアップ\n');
-
-    const redirectUri =
-      process.env['SPOTIFY_REDIRECT_URI'] ?? 'http://127.0.0.1:3000/auth/callback';
 
     const clientId = await ensureValue(rl, 'spotifyClientId', {
       label: 'Spotify Client ID',
@@ -311,11 +339,11 @@ async function verifyLlm(rl: Interface, settings: StoredAuth): Promise<boolean> 
 }
 
 function ask(rl: Interface, query: string, secret: boolean): Promise<string> {
-  if (!secret) return new Promise((done) => rl.question(query, done));
+  if (!secret) return questionOrFail(rl, query);
 
   // 入力エコーを伏せる。readline の内部APIなので、使えない環境では
   // そのまま表示される（機能は失われない）。
-  return new Promise((done) => {
+  return new Promise((done, fail) => {
     const target = rl as unknown as { _writeToOutput?: (text: string) => void };
     const original = target._writeToOutput?.bind(rl);
 
@@ -327,9 +355,27 @@ function ask(rl: Interface, query: string, secret: boolean): Promise<string> {
       };
     }
 
+    questionOrFail(rl, query).then(
+      (answer) => {
+        if (original) target._writeToOutput = original;
+        process.stdout.write('\n');
+        done(answer);
+      },
+      (err: unknown) => {
+        if (original) target._writeToOutput = original;
+        fail(err instanceof Error ? err : new Error(String(err)));
+      }
+    );
+  });
+}
+
+/** 入力待ちの途中で入力が閉じられたら（Ctrl+D など）、黙って終わらずに例外にする。 */
+function questionOrFail(rl: Interface, query: string): Promise<string> {
+  return new Promise((done, fail) => {
+    const onClose = () => fail(new Error('入力が閉じられたため、セットアップを中止しました。'));
+    rl.once('close', onClose);
     rl.question(query, (answer) => {
-      if (original) target._writeToOutput = original;
-      process.stdout.write('\n');
+      rl.off('close', onClose);
       done(answer);
     });
   });
@@ -337,8 +383,11 @@ function ask(rl: Interface, query: string, secret: boolean): Promise<string> {
 
 // ── OAuth ────────────────────────────────────────────────────────────
 
-/** ローカルに一時サーバーを立て、ブラウザの承認が戻ってくるのを待つ。 */
-async function runOAuthFlow(app: OAuthApp): Promise<string> {
+/**
+ * ローカルに一時サーバーを立て、ブラウザの承認が戻ってくるのを待つ。
+ * @param open 認可の URL を開く処理（テストで差し替える）
+ */
+export async function runOAuthFlow(app: OAuthApp, open: (url: string) => void = openBrowser): Promise<string> {
   const callback = new URL(app.redirectUri);
   const port = Number(callback.port || '3000');
   const state = randomBytes(16).toString('hex');
@@ -359,8 +408,10 @@ async function runOAuthFlow(app: OAuthApp): Promise<string> {
         if (error) fail(error);
       };
 
+      // state の合わないリクエスト（古いタブ・別のブラウザなど）は断るだけにし、正しいコールバックを待ち続ける
       if (url.searchParams.get('state') !== state) {
-        finish(400, 'state が一致しません。もう一度やり直してください。', new Error('state mismatch'));
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(resultPage('state が一致しません。ターミナルに表示された URL から開き直してください。', false));
         return;
       }
 
@@ -400,9 +451,10 @@ async function runOAuthFlow(app: OAuthApp): Promise<string> {
       );
     });
 
-    server.listen(port, callback.hostname, () => {
+    // [::1] の角括弧は URL の書き方なので、listen には外して渡す
+    server.listen(port, callback.hostname.replace(/^\[|\]$/g, ''), () => {
       const authorizeUrl = buildAuthorizeUrl(app, state);
-      openBrowser(authorizeUrl);
+      open(authorizeUrl);
       console.log('  ブラウザが開かない場合は、次のURLを手動で開いてください:');
       console.log(`  ${authorizeUrl}\n`);
     });
@@ -483,15 +535,15 @@ export function upsertEnvFile(path: string, values: StoredAuth): string[] {
     if (value === '') {
       for (const name of authEnvNames(field)) {
         const before = lines.length;
-        lines = lines.filter((line) => !line.trimStart().startsWith(`${name}=`));
+        lines = lines.filter((line) => !definesEnv(line, name));
         if (lines.length < before) removed.push(name);
       }
       continue;
     }
 
     const key = AUTH_ENV[field];
-    const index = lines.findIndex((line) => line.trimStart().startsWith(`${key}=`));
-    const entry = `${key}=${value}`;
+    const index = lines.findIndex((line) => definesEnv(line, key));
+    const entry = `${key}=${quoteEnvValue(value)}`;
     if (index >= 0) lines[index] = entry;
     else lines.push(entry);
   }
@@ -503,9 +555,27 @@ export function upsertEnvFile(path: string, values: StoredAuth): string[] {
   return removed;
 }
 
+/** dotenv の文法で、その行が name を定義しているか（`export NAME=` や `NAME = value` も含む）。 */
+function definesEnv(line: string, name: string): boolean {
+  return new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(line);
+}
+
+/**
+ * dotenv が値のとおりに読めるように書く。# は行のコメントの始まり、前後の空白は取り除かれ、クォートは囲みとして
+ * 扱われるため、それらを含む値は囲む。dotenv は囲みの中のエスケープ（\\"）を戻さず、"…" の中の \\n は改行に
+ * 変えるので、中身をそのまま扱う '…' を優先し、値に ' があれば `…`、" を使うのは \\ を含まないときだけにする。
+ */
+export function quoteEnvValue(value: string): string {
+  if (!/[#\s"'`\\]/.test(value)) return value;
+  if (!value.includes("'")) return `'${value}'`;
+  if (!value.includes('`')) return `\`${value}\``;
+  if (!value.includes('"') && !value.includes('\\')) return `"${value}"`;
+  throw new Error('値に \' と ` と " がすべて含まれているため、.env に書けません。');
+}
+
 /** gh CLI があれば GitHub Secrets への登録まで済ませる。 */
-async function offerGitHubSecrets(rl: Interface, values: StoredAuth): Promise<void> {
-  const repo = await currentRepo();
+async function offerGitHubSecrets(rl: Interface, values: StoredAuth, gh: GhRunner = runGh): Promise<void> {
+  const repo = await currentRepo(gh);
   if (!repo) {
     console.log('\nGitHub Actions で静的生成する場合は、リポジトリの Secrets に');
     console.log('以下を登録してください（gh CLI があれば自動登録できます）:\n');
@@ -530,10 +600,10 @@ async function offerGitHubSecrets(rl: Interface, values: StoredAuth): Promise<vo
     try {
       // 入れ替えで空にした項目は消す。残ると Actions だけが古いキーで動く。
       if (value === '') {
-        await deleteGitHubSecret(key);
+        await deleteGitHubSecret(gh, repo, key);
         console.log(`  － ${key}（削除）`);
       } else {
-        await setGitHubSecret(key, value);
+        await setGitHubSecret(gh, repo, key, value);
         console.log(`  ✓ ${key}`);
       }
     } catch (err) {
@@ -542,61 +612,69 @@ async function offerGitHubSecrets(rl: Interface, values: StoredAuth): Promise<vo
   }
 }
 
-/** gh CLI が使えて、かつ cwd がGitHubリポジトリなら "owner/name" を返す。 */
-async function currentRepo(): Promise<string | null> {
+/** gh の呼び出し。テストで差し替えられるようにしている。input は標準入力に渡す（値をコマンド引数に書かない）。 */
+export type GhRunner = (args: string[], input?: string) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+const runGh: GhRunner = (args, input) =>
+  new Promise((done, fail) => {
+    const child = spawn('gh', args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', fail);
+    child.on('close', (code) => done({ code: code ?? 1, stdout, stderr }));
+    if (input !== undefined) child.stdin?.end(input);
+  });
+
+/**
+ * Secrets を登録するリポジトリ（"owner/name"）。gh CLI が使えて、cwd が GitHub のリポジトリのときだけ。
+ *
+ * gh repo fork --clone した作業ツリーでは、gh が既定に選ぶのはフォーク元（upstream）になる。フォーク元が自分の
+ * ものでなく、同じ名前の自分のフォークがあれば、そちらを使う（Actions が動くのは自分のフォークのため）。
+ */
+export async function currentRepo(gh: GhRunner = runGh): Promise<string | null> {
   try {
-    const status = await run('gh', ['auth', 'status']);
+    const status = await gh(['auth', 'status']);
     if (status.code !== 0) return null;
 
-    const view = await run('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner']);
+    const view = await gh(['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner']);
     if (view.code !== 0) return null;
-
     const name = view.stdout.trim();
-    return name || null;
+    if (!name) return null;
+
+    const login = (await gh(['api', 'user', '-q', '.login'])).stdout.trim();
+    const [owner, repoName] = name.split('/');
+    if (login && owner !== login && repoName) {
+      const fork = await gh(['repo', 'view', `${login}/${repoName}`, '--json', 'nameWithOwner', '-q', '.nameWithOwner']);
+      if (fork.code === 0 && fork.stdout.trim()) return fork.stdout.trim();
+    }
+    return name;
   } catch {
     return null;
   }
 }
 
 /**
- * 値はコマンド引数ではなく stdin で渡す。
- * 引数に書くと ps などから他プロセスに見えてしまう。
+ * 値はコマンド引数ではなく stdin で渡す（引数に書くと ps などから他プロセスに見えてしまう）。
+ * gh は Secrets の操作に既定のリポジトリを使わないため、確認に表示したリポジトリを --repo で必ず渡す。
  */
-function setGitHubSecret(key: string, value: string): Promise<void> {
-  return new Promise((done, fail) => {
-    const child = spawn('gh', ['secret', 'set', key], {
-      stdio: ['pipe', 'ignore', 'pipe'],
-    });
-
-    let stderr = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on('error', fail);
-    child.on('close', (code) => {
-      if (code === 0) done();
-      else fail(new Error(stderr.trim() || `gh secret set が終了コード ${code} で失敗しました`));
-    });
-
-    child.stdin.end(value);
-  });
+export async function setGitHubSecret(gh: GhRunner, repo: string, key: string, value: string): Promise<void> {
+  const result = await gh(['secret', 'set', key, '--repo', repo], value);
+  if (result.code !== 0) {
+    throw new Error(result.stderr.trim() || `gh secret set が終了コード ${result.code} で失敗しました`);
+  }
 }
 
-/** 不要になったシークレットを消す。元から無い場合も成功扱いにする。 */
-async function deleteGitHubSecret(key: string): Promise<void> {
-  await run('gh', ['secret', 'delete', key]);
-}
-
-function run(command: string, args: string[]): Promise<{ code: number; stdout: string }> {
-  return new Promise((done, fail) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'] });
-    let stdout = '';
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.on('error', fail);
-    child.on('close', (code) => done({ code: code ?? 1, stdout }));
-  });
+/** 不要になったシークレットを消す。元から無い場合だけ成功扱いにし、権限エラーなどは理由を示して失敗する。 */
+export async function deleteGitHubSecret(gh: GhRunner, repo: string, key: string): Promise<void> {
+  const result = await gh(['secret', 'delete', key, '--repo', repo]);
+  if (result.code === 0 || /not found|404/i.test(result.stderr)) return;
+  throw new Error(result.stderr.trim() || `gh secret delete が終了コード ${result.code} で失敗しました`);
 }
 
 function printEnvBlock(values: StoredAuth): void {

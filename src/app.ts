@@ -49,6 +49,10 @@ export function createApp(options: AppOptions = {}): Hono {
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
 
+  // 静的ファイル（デモ画面・embed.js）はレート制限より前に配り、数えない。Spotify も LLM も呼ばないので守る対象ではなく、
+  // Workers の Static Assets（Worker より先に応答する）とも揃う
+  if (options.staticFiles) app.use(options.staticFiles);
+
   if (options.rateLimiter) {
     const limiter = options.rateLimiter;
     app.use(async (c, next) => {
@@ -64,8 +68,6 @@ export function createApp(options: AppOptions = {}): Hono {
     });
   }
 
-  if (options.staticFiles) app.use(options.staticFiles);
-
   app.route('/api/now-playing', nowPlayingRouter);
 
   // /embed, /badge.svg
@@ -74,6 +76,15 @@ export function createApp(options: AppOptions = {}): Hono {
   if (config.server.enableAuthRoutes) app.route('/auth', authRouter);
 
   app.onError(handleError);
+  // 未定義のパスも、ほかのエラーと同じく JSON で返す。ランキングはライブAPIでは出さない（静的モード専用）
+  app.notFound((c) =>
+    c.json(
+      c.req.path.startsWith('/api/top-tracks')
+        ? { error: 'Not found', hint: 'ランキングは静的モード（top-tracks.json）でだけ提供しています' }
+        : { error: 'Not found' },
+      404
+    )
+  );
 
   return app;
 }

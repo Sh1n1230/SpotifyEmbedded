@@ -1,8 +1,17 @@
 import { config } from '../config.js';
 import { authValueSource, saveStoredAuth } from '../authStore.js';
-import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
+import { SpotifyApiError, SpotifyRateLimitError, parseRetryAfter } from './errors.js';
+import { fetchWithTimeout, readBodyText, SPOTIFY_TIMEOUT_MS } from './timeout.js';
+import { discardBody } from '../http/body.js';
 
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
+/** エラーメッセージとログに出す、トークンエンドポイントの短い名前 */
+const TOKEN_PATH = '/api/token';
+
+/** expires_in が無い・不正なときに使うアクセストークンの寿命（秒）。Spotify の既定は 3600。 */
+const DEFAULT_EXPIRES_IN_SECONDS = 3600;
+/** 期限の少し前に取り直す余裕（秒）。寿命が短いときは寿命の半分まで。 */
+const EXPIRY_MARGIN_SECONDS = 60;
 
 interface TokenState {
   accessToken: string;
@@ -97,25 +106,42 @@ async function fetchAccessToken(): Promise<TokenState> {
   );
 
   if (!res.ok) {
-    const body = await res.text();
+    // 429 は Spotify API と同じく Retry-After を伝える
+    if (res.status === 429) {
+      await discardBody(res);
+      throw new SpotifyRateLimitError(parseRetryAfter(res.headers.get('Retry-After')));
+    }
+    const body = await readBodyText(res, TOKEN_PATH, SPOTIFY_TIMEOUT_MS);
     const failure = authFailureOf(res.status, body);
     if (failure) throw new SpotifyAuthError(failure);
-    // 5xx などは設定の問題ではないので、認証エラーにはしない
-    throw new Error(`Spotify token refresh failed (${res.status}): ${body}`);
+    // 5xx などは設定の問題ではないので、認証エラーにはしない。SpotifyApiError にして 502 と、
+    // 本文を切り詰めたログを Spotify API の失敗と共有する
+    throw new SpotifyApiError(res.status, TOKEN_PATH, body);
   }
 
-  const data = (await res.json()) as {
-    access_token: string;
-    expires_in: number;
-    /** 返らないこともある。返らなければ今のものを使い続ける。 */
-    refresh_token?: string;
-  };
-  if (data.refresh_token && data.refresh_token !== refreshToken) {
+  const text = await readBodyText(res, TOKEN_PATH, SPOTIFY_TIMEOUT_MS);
+  let data: { access_token?: unknown; expires_in?: unknown; refresh_token?: unknown };
+  try {
+    data = JSON.parse(text) as typeof data;
+  } catch {
+    throw new SpotifyApiError(res.status, TOKEN_PATH, `JSON ではない応答: ${text}`);
+  }
+  if (typeof data.access_token !== 'string' || data.access_token === '') {
+    throw new SpotifyApiError(res.status, TOKEN_PATH, '応答に access_token がありません');
+  }
+  /** refresh_token は返らないこともある。返らなければ今のものを使い続ける。 */
+  if (typeof data.refresh_token === 'string' && data.refresh_token && data.refresh_token !== refreshToken) {
     adoptRotatedRefreshToken(data.refresh_token);
   }
+  // expires_in が無い・不正だと期限が NaN になり、以降のすべての呼び出しで取り直してしまう
+  const expiresIn =
+    typeof data.expires_in === 'number' && Number.isFinite(data.expires_in) && data.expires_in > 0
+      ? data.expires_in
+      : DEFAULT_EXPIRES_IN_SECONDS;
+  const margin = Math.min(EXPIRY_MARGIN_SECONDS, expiresIn / 2);
   return {
     accessToken: data.access_token,
-    expiresAt: Date.now() + (data.expires_in - 60) * 1000,
+    expiresAt: Date.now() + (expiresIn - margin) * 1000,
   };
 }
 

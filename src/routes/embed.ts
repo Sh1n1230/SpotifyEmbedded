@@ -164,10 +164,10 @@ function sendEmbedPage(c: Context, fetched: NowPlayingResponse | null): Response
   );
 }
 
+/** ?refresh= の秒数。数字だけの値を 10〜3600 に丸め、それ以外（10abc・1e3 など）は既定の 30 にする（embed.js と同じ規則）。 */
 function parseRefresh(raw: string | undefined): number {
-  const value = Number.parseInt(raw ?? '', 10);
-  if (Number.isNaN(value)) return 30;
-  return Math.min(Math.max(value, 10), 3600);
+  if (!raw || !/^\d+$/.test(raw)) return 30;
+  return Math.min(Math.max(Number(raw), 10), 3600);
 }
 
 export default router;

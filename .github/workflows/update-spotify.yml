@@ -15,7 +15,9 @@ on:
     # 30分おきを「要求」するが、実際にこの通り走るとは限らない。
     # GitHub のスケジュール実行は混雑時に遅延・間引きされ、実測では
     # 2〜5時間あくこともある。秒単位の鮮度が要るならライブAPIモードを使う。
-    - cron: '*/30 * * * *'
+    # 毎時0分・30分は GitHub の定期実行が混み、遅延・間引きされやすいのでずらす
+    # https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
+    - cron: '7,37 * * * *'
   workflow_dispatch:
     inputs:
       range:
@@ -120,6 +122,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "Update Spotify snapshot ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+          # 認証ヘルパーの中の $GITHUB_TOKEN は、git がヘルパーを実行するときに展開させる（ここでは展開しない）
+          # shellcheck disable=SC2016
           git -c credential.helper= \
             -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' \
             push -q --force "https://github.com/${GITHUB_REPOSITORY}.git" spotify-data
