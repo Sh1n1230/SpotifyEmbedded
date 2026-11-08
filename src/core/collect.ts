@@ -224,6 +224,10 @@ export async function collectRecentlyPlayed(
   return { track: data.track, mood, played_at: playedAt };
 }
 
+/**
+ * a が b より新しいか。a が読めなければ採らない（false）。b（前回の観測時刻）が読めなければ a を採る（true）。
+ * readSnapshot() は読めない observed_at を捨てるので、通常 b は読める。
+ */
 function isLater(a: string, b: string): boolean {
   const ta = Date.parse(a);
   const tb = Date.parse(b);

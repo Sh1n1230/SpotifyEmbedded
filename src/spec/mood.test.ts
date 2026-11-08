@@ -954,3 +954,29 @@ describe('ランキングのムード文の作り直しの条件は、文書と�
     expect(read('../../CLAUDE.md').replace(/\s+/g, ' ')).toContain(`≥${newcomers} of the current top ${RANKING_MOOD_BASIS_SIZE}`);
   });
 });
+
+describe('ムード文のプロンプトのアルバムの行', () => {
+  const promptOf = () => JSON.stringify(bodyOf(callsTo('/chat/completions')[0]!)['messages']);
+  const track = (album: string) => aSpotifyTrack({ name: 'Sunflower', album: { name: album, images: [], release_date: '' } });
+
+  beforeEach(() => {
+    givenLlmConfigured();
+    givenLlmReplies('静かな夜のようです');
+  });
+
+  it.each(['Sunflower', ' sunflower '])('アルバム名が曲名と同じ（%j）なら行を省く', async (album) => {
+    givenNowPlaying(track(album));
+
+    await collectNowPlaying();
+
+    expect(promptOf()).not.toContain('アルバム:');
+  });
+
+  it('アルバム名が曲名と違えば行を入れる', async () => {
+    givenNowPlaying(track('Hollywood'));
+
+    await collectNowPlaying();
+
+    expect(promptOf()).toContain('アルバム: Hollywood');
+  });
+});

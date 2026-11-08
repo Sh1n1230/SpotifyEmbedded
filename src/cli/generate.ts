@@ -8,7 +8,7 @@
  * 利用側は fetch 先のURLを差し替えるだけで静的↔ライブを行き来できる。
  * カードと同じ「最後に聴いた曲」は、スキーマを変えないよう last-played.json に分けて書く。
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { toYaml } from '../core/yaml.js';
 
@@ -138,24 +138,19 @@ export async function generate(options: GenerateOptions): Promise<void> {
     snapshot.track?.album_art_url
       ? fetchImageDataUri(albumArtAtSize(snapshot.track.album_art_url, 300))
       : Promise.resolve(null),
-    Promise.all(
-      topTracks.tracks
-        .slice(0, options.count)
-        .map((track) =>
-          track.album_art_url
-            ? fetchImageDataUri(albumArtAtSize(track.album_art_url, 64))
-            : Promise.resolve(null)
-        )
+    mapWithLimit(topTracks.tracks.slice(0, options.count), IMAGE_CONCURRENCY, (track) =>
+      track.album_art_url ? fetchImageDataUri(albumArtAtSize(track.album_art_url, 64)) : Promise.resolve(null)
     ),
   ]);
 
+  const outputs = new Map<string, string>();
   const themes = options.theme === 'both' ? (['dark', 'light'] as const) : ([options.theme] as const);
 
   for (const theme of themes) {
     const suffix = theme === 'light' ? '-light' : '';
 
     write(
-      outDir,
+      outputs,
       `now-playing${suffix}.svg`,
       renderNowPlayingCard({
         state: snapshot.state,
@@ -168,7 +163,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
     );
 
     write(
-      outDir,
+      outputs,
       `ranking${suffix}.svg`,
       renderRankingCard({
         tracks: topTracks.tracks,
@@ -183,21 +178,21 @@ export async function generate(options: GenerateOptions): Promise<void> {
   }
 
   // データ（ライブAPIと同一スキーマ）
-  write(outDir, 'now-playing.json', JSON.stringify(nowPlaying, null, 2) + '\n');
-  write(outDir, 'top-tracks.json', JSON.stringify(topTracks, null, 2) + '\n');
-  write(outDir, 'now-playing.yaml', toYaml(nowPlaying));
-  write(outDir, 'top-tracks.yaml', toYaml(topTracks));
+  write(outputs, 'now-playing.json', JSON.stringify(nowPlaying, null, 2) + '\n');
+  write(outputs, 'top-tracks.json', JSON.stringify(topTracks, null, 2) + '\n');
+  write(outputs, 'now-playing.yaml', toYaml(nowPlaying));
+  write(outputs, 'top-tracks.yaml', toYaml(topTracks));
 
   // カードと同じ「最後に聴いた曲」（now-playing.json のスキーマは変えない）
   const lastPlayed = snapshotToLastPlayed(snapshot);
-  write(outDir, 'last-played.json', JSON.stringify(lastPlayed, null, 2) + '\n');
-  write(outDir, 'last-played.yaml', toYaml(lastPlayed));
+  write(outputs, 'last-played.json', JSON.stringify(lastPlayed, null, 2) + '\n');
+  write(outputs, 'last-played.yaml', toYaml(lastPlayed));
 
   // iframe 用ページ（ホバー・Spotifyリンクが効く）。both のときはライトを -light に分ける
   // （SVG と同じ命名）。単独指定のときは今までどおり index.html だけ
   for (const theme of themes) {
     write(
-      outDir,
+      outputs,
       theme === 'light' && options.theme === 'both' ? 'index-light.html' : 'index.html',
       renderEmbedPage({
         nowPlaying: snapshotToResponse(snapshot, nowPlaying),
@@ -210,8 +205,9 @@ export async function generate(options: GenerateOptions): Promise<void> {
     );
   }
 
-  write(outDir, SNAPSHOT_FILE, JSON.stringify(snapshot, null, 2) + '\n');
+  write(outputs, SNAPSHOT_FILE, JSON.stringify(snapshot, null, 2) + '\n');
 
+  flushOutputs(outDir, outputs);
   console.log(`\n生成しました: ${outDir}`);
   writeStepSummary(snapshot, previous);
 }
@@ -275,7 +271,7 @@ function resolveSnapshot(
 
   if (previous?.track) {
     // observed_at は更新しない。更新すると「たった今」のまま固まってしまう。
-    return { ...previous, state: 'recent', source: 'carried' };
+    return { state: 'recent', source: 'carried', track: previous.track, mood: previous.mood, observed_at: previous.observed_at };
   }
 
   return { state: 'idle', track: null, mood: null, observed_at: nowPlaying.fetched_at };
@@ -306,12 +302,8 @@ function readSnapshot(outDir: string): Snapshot | null {
   if (!existsSync(path)) return null;
 
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Snapshot;
-    if (!parsed || typeof parsed !== 'object') return null;
-    // 日時として読めない observed_at は描画で落ちるうえ、毎回復元されて直らないので捨てる。
-    if (typeof parsed.observed_at !== 'string' || Number.isNaN(Date.parse(parsed.observed_at))) return null;
-    // state・track・mood も、描画が前提にする形でなければ同じく捨てる（復元のたびに描画で落ち続けないように）
-    if (!isSnapshotState(parsed.state) || !isTrackOrNull(parsed.track) || !isMoodOrNull(parsed.mood)) return null;
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    if (!isSnapshot(parsed)) return null;
     // 壊れていたら無視して作り直す（1回余分に LLM を呼ぶだけで済む）。
     if (!isRankingMoodRecord(parsed.ranking_mood)) parsed.ranking_mood = null;
     return parsed;
@@ -319,6 +311,15 @@ function readSnapshot(outDir: string): Snapshot | null {
     console.warn('[generate] %s を読めませんでした。無視します:', SNAPSHOT_FILE, err);
     return null;
   }
+}
+
+function isSnapshot(value: unknown): value is Snapshot {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as Record<string, unknown>;
+  // 日時として読めない observed_at は描画で落ちるうえ、毎回復元されて直らないので捨てる。
+  if (typeof snapshot['observed_at'] !== 'string' || Number.isNaN(Date.parse(snapshot['observed_at']))) return false;
+  // state・track・mood も、描画が前提にする形でなければ同じく捨てる（復元のたびに描画で落ち続けないように）
+  return isSnapshotState(snapshot['state']) && isTrackOrNull(snapshot['track']) && isMoodOrNull(snapshot['mood']);
 }
 
 function isSnapshotState(value: unknown): boolean {
@@ -381,7 +382,41 @@ function logState(snapshot: Snapshot): void {
   }
 }
 
-function write(outDir: string, name: string, content: string): void {
-  writeFileSync(join(outDir, name), content, 'utf8');
-  console.log(`  ✓ ${name}`);
+function write(outputs: Map<string, string>, name: string, content: string): void {
+  outputs.set(name, content);
+}
+
+/**
+ * すべてを一時ファイルに書いてから、まとめて名前を変える。途中で失敗しても（描画の例外・ディスクの空き不足など）
+ * 古い SVG と新しい JSON が混ざった出力を残さない。
+ */
+function flushOutputs(outDir: string, outputs: Map<string, string>): void {
+  const entries = [...outputs].map(([name, content]) => ({ name, content, target: join(outDir, name), temp: join(outDir, `.${name}.tmp`) }));
+  try {
+    for (const entry of entries) writeFileSync(entry.temp, entry.content, 'utf8');
+    for (const entry of entries) {
+      renameSync(entry.temp, entry.target);
+      console.log(`  ✓ ${entry.name}`);
+    }
+  } finally {
+    for (const entry of entries) rmSync(entry.temp, { force: true });
+  }
+}
+
+/** ジャケ写の同時取得数。最大51枚を一度に取りに行かない。 */
+const IMAGE_CONCURRENCY = 8;
+
+/** 順番を保ったまま、同時に動かす数を limit までに抑える。 */
+async function mapWithLimit<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await task(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
 }

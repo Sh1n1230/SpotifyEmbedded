@@ -97,7 +97,7 @@ function renderArt(dataUri: string | null, placeholder: string, textColor: strin
   if (dataUri) {
     // 角丸の rect を重ねるのではなく、clip-path で image 自体を角丸に切り抜く
     return `<defs><clipPath id="art-clip-${idSuffix}"><rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8"/></clipPath></defs>
-  <image x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" href="${dataUri}" clip-path="url(#art-clip-${idSuffix})" preserveAspectRatio="xMidYMid slice"/>`;
+  <image x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" href="${escapeXml(dataUri)}" clip-path="url(#art-clip-${idSuffix})" preserveAspectRatio="xMidYMid slice"/>`;
   }
 
   return `<rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8" fill="${placeholder}"/>
