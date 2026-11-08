@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { XMLValidator } from 'fast-xml-parser';
 import yaml from 'js-yaml';
 
 import { moodCache } from '../cache/index.js';
@@ -27,6 +26,7 @@ import {
   givenTopTracks,
   givenLlmConfigured,
   givenLlmReplies,
+  expectValidXml,
 } from './support.js';
 
 describe('要件3: ランキングの静的な画像を得られる', () => {
@@ -43,7 +43,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
   it('XMLとして妥当なSVGを返す', () => {
     const svg = render([aTopTrackEntry()]);
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).toContain('<svg');
     expect(svg).toContain('Midnight Drive');
   });
@@ -55,7 +55,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
     const nasty = 'Rock & Roll <script>alert("x")</script> \'quoted\'';
     const svg = render([aTopTrackEntry({ name: nasty, artist: nasty, album: nasty })]);
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).not.toContain('<script>');
     expect(svg).toContain('&amp;');
   });
@@ -75,7 +75,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
   it('1件も無いときは空白ではなく「データがありません」を描く', () => {
     const svg = render([]);
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).toContain('データがありません');
     expect(svg).toMatch(/<desc id="rank-desc-[0-9a-z]+">データがありません<\/desc>/);
   });
@@ -88,7 +88,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
 
     const svg = render(tracks, 3);
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     const suffix = /aria-labelledby="rank-title-([0-9a-z]+)"/.exec(svg)?.[1];
     expect(svg).toMatch(
       new RegExp(`<svg [^>]*role="img"[^>]*aria-labelledby="rank-title-${suffix}"[^>]*aria-describedby="rank-desc-${suffix}"`)
@@ -154,7 +154,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
       theme: 'light',
     });
 
-    expect(XMLValidator.validate(light)).toBe(true);
+    expectValidXml(light);
     expect(light).not.toBe(dark);
   });
 });
@@ -233,7 +233,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       await runGenerate();
 
       const svg = read('ranking.svg');
-      expect(XMLValidator.validate(svg)).toBe(true);
+      expectValidXml(svg);
       expect(svg.match(/<image /g)).toHaveLength(1);
     });
 
@@ -310,7 +310,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       await runGenerate();
 
       for (const name of ['now-playing.svg', 'ranking.svg', 'ranking-light.svg']) {
-        expect(XMLValidator.validate(read(name))).toBe(true);
+        expectValidXml(read(name));
       }
     });
 
@@ -674,7 +674,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       const snapshot = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
       expect(snapshot['state']).toBe('idle');
       expect(snapshot['track']).toBeNull();
-      expect(XMLValidator.validate(read('now-playing.svg'))).toBe(true);
+      expectValidXml(read('now-playing.svg'));
     });
   });
 

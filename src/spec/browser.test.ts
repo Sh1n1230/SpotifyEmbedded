@@ -414,6 +414,37 @@ describe('デモ画面（public/demo.js）', () => {
     runScript(source);
   }
 
+  const text = (id: string) => document.getElementById(id)?.textContent;
+  const art = () => document.getElementById('album-art') as HTMLImageElement;
+  const placeholder = () => document.getElementById('album-art-placeholder') as HTMLElement;
+
+  it('曲 → 停止 → 別の曲（ムード文もジャケ写も無し）で、各時点の表示が応答と一致する', async () => {
+    givenLiveResponses(
+      aNowPlaying('A', 'ムード'),
+      { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      aNowPlaying('B', null, { album_art_url: '' })
+    );
+
+    openDemo();
+    await settle();
+    expect(text('track-name')).toBe('A');
+    expect(text('mood-text')).toBe('ムード');
+    expect(art().hidden).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(text('track-name')).toBe('');
+    expect(text('artist-name')).toBe('');
+    expect(text('mood-text')).toBe('');
+    expect(art().hidden).toBe(true);
+    expect(placeholder().textContent).toBe('再生中の曲はありません');
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(text('track-name')).toBe('B');
+    expect(text('mood-text')).toBe('');
+    expect(art().hidden).toBe(true);
+    expect(placeholder().hidden).toBe(false);
+  });
+
   it('最初の取得が失敗したら、枠に「読み込み中...」を残さない', async () => {
     givenLiveResponses(500);
 

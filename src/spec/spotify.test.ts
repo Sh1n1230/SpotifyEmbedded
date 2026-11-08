@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { XMLValidator } from 'fast-xml-parser';
 
 import { loadStoredAuth } from '../authStore.js';
 import { nowPlayingCache } from '../cache/index.js';
@@ -45,6 +44,7 @@ import {
   givenArtistGenres,
   givenLlmConfigured,
   givenLlmReplies,
+  expectValidXml,
 } from './support.js';
 
 describe('要件1: Spotify API を叩いて、直近3種類のランキングを取得できる', () => {
@@ -175,7 +175,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       expect(embed.status).toBe(200);
       expect(await embed.text()).toContain('再生していません');
       expect(badge.status).toBe(200);
-      expect(XMLValidator.validate(await badge.text())).toBe(true);
+      expectValidXml(await badge.text());
     });
 
     it('静的モードでは前回の曲を引き継いで生成を続ける', async () => {
@@ -368,7 +368,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       theme: 'dark',
     });
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).toContain('Midnight Drive');
     expect(svg).toContain('今チルな気分になっています');
   });
@@ -376,7 +376,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
   it('何も分からないとき（idle）も、壊れたカードにはしない', () => {
     const svg = renderNowPlayingCard({ state: 'idle', track: null, mood: null });
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
   });
 });
 
@@ -506,7 +506,7 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
       const svg = await res.text();
 
       expect(res.status).toBe(200);
-      expect(XMLValidator.validate(svg)).toBe(true);
+      expectValidXml(svg);
       expect(svg).not.toContain('data:image/jpeg');
       expect(callsTo('.scdn.co')[0]?.init?.signal).toBeInstanceOf(AbortSignal);
     });
@@ -800,7 +800,7 @@ describe('Spotify の応答を読めないとき・届かないとき', () => {
     const res = await createApp().request('/badge.svg');
 
     expect(res.status).toBe(200);
-    expect(XMLValidator.validate(await res.text())).toBe(true);
+    expectValidXml(await res.text());
   });
 
   it('JSON として読めない応答なら、ライブAPIは 502 を返す', async () => {
@@ -1032,5 +1032,19 @@ describe('トークンの更新と認可コードの交換で送るフォーム'
     expect(form['grant_type']).toBe('authorization_code');
     expect(form['code']).toBe('the-code');
     expect(form['redirect_uri']).toBe(redirectUri);
+  });
+});
+
+describe('アクセストークンの使い回し', () => {
+  it('期限の60秒前までは取り直さず、過ぎたら取り直す', async () => {
+    await getAccessToken();
+
+    vi.setSystemTime(new Date(NOW.getTime() + 3539 * 1000));
+    await getAccessToken();
+    expect(callsTo('accounts.spotify.com/api/token')).toHaveLength(1);
+
+    vi.setSystemTime(new Date(NOW.getTime() + 3541 * 1000));
+    await getAccessToken();
+    expect(callsTo('accounts.spotify.com/api/token')).toHaveLength(2);
   });
 });

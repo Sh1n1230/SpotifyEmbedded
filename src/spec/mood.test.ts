@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { XMLValidator } from 'fast-xml-parser';
 
 import { moodCache, nowPlayingCache, setDurableStore, type DurableStore } from '../cache/index.js';
 import { collectNowPlaying } from '../core/collect.js';
@@ -34,6 +33,7 @@ import {
   givenLlmConfigured,
   givenLlmReplies,
   type RecordedCall,
+  expectValidXml,
 } from './support.js';
 
 describe('要件5: LLM は任意機能であり、何が起きても曲情報は出る', () => {
@@ -699,7 +699,7 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
       mood: { text: '夜に似合う曲 & <深夜> ばかり聴いているようです', generated_at: NOW_ISO },
     });
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).toContain('&amp; &lt;深夜&gt;');
   });
 
