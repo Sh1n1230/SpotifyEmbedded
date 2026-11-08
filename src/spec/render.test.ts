@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { XMLValidator } from 'fast-xml-parser';
 
-import { THEMES, FONT_STACK } from '../render/theme.js';
+import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa } from '../render/theme.js';
 import { renderNowPlayingCard } from '../render/card.js';
 import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
 import { renderRankingCard } from '../render/ranking.js';
@@ -524,5 +524,43 @@ describe('透過の /embed の配色', () => {
 
   it('transparent でなければ、今までどおりテーマ名', () => {
     expect(renderEmbedPage({ nowPlaying, state: 'idle', theme: 'light' })).toContain('<meta name="color-scheme" content="light">');
+  });
+});
+
+describe('日付の表示は日本時間の境界で切り替わる', () => {
+  it.each([
+    ['2026-09-21T14:59:00.000Z', '2026-09-21', '9/21 23:59'],
+    ['2026-09-21T15:00:00.000Z', '2026-09-22', '9/22 00:00'],
+    ['2026-12-31T14:59:00.000Z', '2026-12-31', '12/31 23:59'],
+    ['2026-12-31T15:00:00.000Z', '2027-01-01', '1/1 00:00'],
+  ])('%s → %s / %s', (iso, date, dateTime) => {
+    expect(formatDateJa(new Date(iso))).toBe(date);
+    expect(formatDateTimeJa(new Date(iso))).toBe(dateTime);
+  });
+});
+
+describe('ランキング SVG の見出しは、ムード文の行数が変わっても行に重ならない', () => {
+  function positions(moodText: string | null) {
+    const svg = renderRankingCard({
+      tracks: [aTopTrackEntry()],
+      fetchedAt: NOW_ISO,
+      mood: moodText ? { text: moodText, generated_at: NOW_ISO } : null,
+    });
+    const moodYs = [...svg.matchAll(/y="(\d+)" font-size="15"/g)].map((match) => Number(match[1]));
+    const lineY = Number(/<line [^>]*y1="(\d+)"/.exec(svg)?.[1]);
+    const firstRowY = Number(/y="(\d+)"[^>]*text-anchor="end">1</.exec(svg)?.[1]);
+    return { moodYs, lineY, firstRowY };
+  }
+
+  it.each([
+    ['0行', null, 0],
+    ['1行', '静かな夜のようです', 1],
+    ['2行', 'とても長いムード文がカードの幅に収まらずに二行目まで折り返されていくようなランキングです', 2],
+  ])('ムード文が%s', (_label, text, lines) => {
+    const { moodYs, lineY, firstRowY } = positions(text);
+
+    expect(moodYs).toHaveLength(lines);
+    expect(Math.max(0, ...moodYs)).toBeLessThan(lineY);
+    expect(lineY).toBeLessThan(firstRowY);
   });
 });

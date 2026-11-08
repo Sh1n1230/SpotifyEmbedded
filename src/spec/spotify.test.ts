@@ -9,7 +9,7 @@ import { loadStoredAuth } from '../authStore.js';
 import { nowPlayingCache } from '../cache/index.js';
 import { artistGenresAvailable } from '../spotify/artists.js';
 import { getAccessToken } from '../spotify/auth.js';
-import { exchangeCodeForTokens } from '../spotify/oauth.js';
+import { buildAuthorizeUrl, exchangeCodeForTokens } from '../spotify/oauth.js';
 import { collectNowPlaying, collectRecentlyPlayed, collectTopTracks } from '../core/collect.js';
 import { isTopTracksLimit, isTopTracksRange } from '../core/topTracksParams.js';
 import { generate } from '../cli/generate.js';
@@ -34,6 +34,7 @@ import {
   jsonOk,
   callsTo,
   headerOf,
+  formBodyOf,
   installDefaultHandlers,
   clearHandlers,
   aSpotifyTrack,
@@ -927,5 +928,109 @@ describe('認可コードの交換（setup・/auth/callback）', () => {
     );
 
     await expect(exchangeCodeForTokens(app, 'code')).resolves.toMatchObject({ refresh_token: 'r' });
+  });
+});
+
+describe('Spotify に送るリクエストの中身', () => {
+  it('currently-playing は additional_types=track だけを指定する（エピソードは扱わない）', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    await collectNowPlaying();
+
+    const url = new URL(callsTo('/me/player/currently-playing')[0]!.url);
+    expect(url.searchParams.get('additional_types')).toBe('track');
+  });
+
+  it('再生履歴は 10 件取る（直近がローカルファイルでも手前のカタログの曲を拾うため）', async () => {
+    givenRecentlyPlayedItems([{ track: aSpotifyTrack(), playedAt: NOW_ISO }]);
+
+    await collectRecentlyPlayed();
+
+    const url = new URL(callsTo('/me/player/recently-played')[0]!.url);
+    expect(url.searchParams.get('limit')).toBe('10');
+  });
+
+  // スコープを増やすと全利用者に再認証が要る。増やすときは CHANGELOG の「アップグレード時に確かめること」に書く
+  it('認可 URL のスコープは3つ（過不足なし）', () => {
+    const url = new URL(
+      buildAuthorizeUrl({ clientId: 'id', clientSecret: 'secret', redirectUri: 'http://127.0.0.1:3000/auth/callback' }, 'state')
+    );
+
+    expect(url.searchParams.get('scope')?.split(' ').sort()).toEqual([
+      'user-read-currently-playing',
+      'user-read-recently-played',
+      'user-top-read',
+    ]);
+  });
+});
+
+describe('複数アーティストのジャンルは重複を除く', () => {
+  const twoArtists = aSpotifyTrack({
+    artists: [
+      { id: 'a1', name: 'A', external_urls: { spotify: 'https://open.spotify.com/artist/a1' } },
+      { id: 'a2', name: 'B', external_urls: { spotify: 'https://open.spotify.com/artist/a2' } },
+    ],
+  });
+
+  it('ランキングの genres に同じジャンルが2回入らない', async () => {
+    givenTopTracks([twoArtists]);
+    givenArtistGenres({ a1: ['j-pop', 'rock'], a2: ['rock'] });
+
+    const result = await collectTopTracks();
+
+    expect(result.tracks[0]?.genres).toEqual(['j-pop', 'rock']);
+  });
+
+  it('ムード文のプロンプトのジャンルの行にも重複が無い', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('静かな夜のようです');
+    givenNowPlaying(twoArtists);
+    givenArtistGenres({ a1: ['j-pop', 'rock'], a2: ['rock'] });
+
+    await collectNowPlaying();
+
+    const prompt = JSON.stringify(JSON.parse(callsTo('/chat/completions')[0]!.init!.body as string));
+    expect(prompt.match(/rock/g)).toHaveLength(1);
+  });
+});
+
+describe('広告の再生中（currently_playing_type: ad）', () => {
+  it('曲が無いので、再生していないものとして扱う', async () => {
+    respondWith((url) =>
+      url.includes('/me/player/currently-playing')
+        ? jsonOk({ is_playing: true, item: null, currently_playing_type: 'ad', timestamp: 0 })
+        : null
+    );
+
+    const result = await collectNowPlaying();
+
+    expect(result.is_playing).toBe(false);
+    expect(result.track).toBeNull();
+  });
+});
+
+describe('トークンの更新と認可コードの交換で送るフォーム', () => {
+  it('トークンの更新は grant_type=refresh_token と refresh_token を送る', async () => {
+    await getAccessToken();
+
+    const form = formBodyOf(callsTo('accounts.spotify.com/api/token')[0]!);
+    expect(form['grant_type']).toBe('refresh_token');
+    expect(form['refresh_token']).toBe('spec-refresh-token');
+  });
+
+  it('認可コードの交換は grant_type=authorization_code と code と redirect_uri を送る', async () => {
+    respondWith((url) =>
+      url.includes('accounts.spotify.com/api/token')
+        ? jsonOk({ access_token: 'a', refresh_token: 'r', expires_in: 3600, scope: '', token_type: 'Bearer' })
+        : null
+    );
+    const redirectUri = 'http://127.0.0.1:3000/auth/callback';
+
+    await exchangeCodeForTokens({ clientId: 'id', clientSecret: 'secret', redirectUri }, 'the-code');
+
+    const form = formBodyOf(callsTo('accounts.spotify.com/api/token')[0]!);
+    expect(form['grant_type']).toBe('authorization_code');
+    expect(form['code']).toBe('the-code');
+    expect(form['redirect_uri']).toBe(redirectUri);
   });
 });

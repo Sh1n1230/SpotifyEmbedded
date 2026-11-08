@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createApp } from '../app.js';
 import { renderEmbedPage } from '../render/page.js';
+import { THEMES } from '../render/theme.js';
 import type { NowPlayingResponse } from '../types/index.js';
 import { NOW, NOW_ISO, ART_640, respondWith, jsonOk, callsTo, aSpotifyTrack, givenNowPlaying } from './support.js';
 
@@ -598,6 +599,42 @@ describe('ライブ更新の周期と再試行（3つのスクリプトで同じ
 
       expect(document.querySelector('.spotify-embedded')?.parentElement).toBe(mount);
       expect(document.head.querySelector('.spotify-embedded')).toBeNull();
+    });
+
+    const shadowStyle = () => document.querySelector('.spotify-embedded')?.shadowRoot?.querySelector('style')?.textContent ?? '';
+
+    it('data-theme="light" ならライトテーマの色を使う', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+
+      runEmbed({ 'data-theme': 'light' });
+      await settle();
+
+      expect(shadowStyle()).toContain(THEMES.light.bg);
+      expect(shadowStyle()).toContain(THEMES.light.accent);
+    });
+
+    it.each([[undefined], ['Light'], ['nope']])('data-theme=%j ならダークテーマになる', async (theme) => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+
+      runEmbed(theme ? { 'data-theme': theme } : {});
+      await settle();
+
+      expect(shadowStyle()).toContain(THEMES.dark.bg);
+    });
+
+    it('data-transparent="true" のときだけ背景を透過にする', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed({ 'data-transparent': 'true' });
+      await settle();
+      expect(shadowStyle()).toContain('background: transparent');
+      expect(shadowStyle()).not.toContain(`background: ${THEMES.dark.bg}`);
+    });
+
+    it('data-transparent が true 以外なら theme の背景を塗る', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed({ 'data-transparent': '1' });
+      await settle();
+      expect(shadowStyle()).toContain(`background: ${THEMES.dark.bg}`);
     });
 
     it('data-target の要素が最後まで見つからなければ、理由を console.warn に出す', () => {
