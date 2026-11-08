@@ -183,6 +183,38 @@
 
 - ムード文の取りこぼし: タイムアウト時に再試行し、失敗した null を使い回さない（#22）
 
+## [1.2.0] - 2026-10-04
+
+### 変更
+
+- 依存パッケージと GitHub Actions の更新（利用者から見える変更はありません）
+
+## [1.1.0] - 2026-09-28
+
+### アップグレード時に確かめること
+
+- ライブAPIは now-playing だけになりました。ランキングは静的モード（`top-tracks.json`・`ranking.svg`）を使ってください
+
+### 追加
+
+- ランキング全体のムード文（上位曲の顔ぶれが変わったときだけ作り直す）
+- Gemini への対応と、`npm run setup` の LLM の接続確認
+
+### 変更
+
+- ライブAPIの推奨の実行環境を Cloudflare Workers にする
+
+### 修正
+
+- 2024年11月以降に作成された Spotify アプリで返らない項目（`popularity` など）を扱えるようにする
+- ライブ更新でカードが再生状況とずれていた
+
+## [1.0.1] - 2026-09-19
+
+### 修正
+
+- リリースの成果物のパッケージングを直す
+
 [Unreleased]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.7.0...HEAD
 [1.7.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.0...v1.6.1
@@ -192,3 +224,6 @@
 [1.4.1]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.0.0...v1.0.1
