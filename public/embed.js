@@ -97,6 +97,7 @@
       '  transition: border-color .18s ease, transform .18s ease;',
       '}',
       'a.card:hover { border-color: ' + theme.accent + '; transform: translateY(-1px); }',
+      'a.card:focus-visible { outline: 2px solid ' + theme.accent + '; outline-offset: 2px; }',
       '.art, .art-ph { width: 112px; height: 112px; flex: none; border-radius: 8px; object-fit: cover; background: ' + theme.placeholder + '; }',
       // 枠の上で 4.5:1 を満たす色（muted はライトテーマで 4.0:1 しかない）
       '.art-ph { display: grid; place-items: center; font-size: 12px; color: ' + theme.sub + '; }',
@@ -183,7 +184,9 @@
         img.decoding = 'async';
         card.appendChild(img);
       } else {
-        card.appendChild(el('div', 'art-ph', 'no art'));
+        var noArt = el('div', 'art-ph', 'no art');
+        noArt.setAttribute('aria-hidden', 'true');
+        card.appendChild(noArt);
       }
 
       var body = el('div', 'body');

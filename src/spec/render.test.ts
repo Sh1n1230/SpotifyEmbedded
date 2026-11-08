@@ -712,3 +712,52 @@ describe('SVG のジャケ写の data URI', () => {
     expect(svg).not.toContain('"><x');
   });
 });
+
+describe('ページの読み上げ', () => {
+  const entries = [aTopTrackEntry({ rank: 1, name: '曲A', artist: '人A' })];
+  const page = (overrides: object = {}) =>
+    renderEmbedPage({
+      nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      state: 'idle',
+      topTracks: { range: 'short_term', tracks: entries, mood: null, fetched_at: NOW_ISO },
+      ...overrides,
+    } as Parameters<typeof renderEmbedPage>[0]);
+  const track = {
+    id: 't',
+    name: '曲',
+    artist: '人',
+    album: 'A',
+    album_art_url: '',
+    duration_ms: 1,
+    popularity: null,
+    spotify_url: 'https://open.spotify.com/track/t',
+    preview_url: null,
+  };
+
+  it('ランキングは見出しつきのリストとして読まれ、リンクは行き先を伝える', () => {
+    const html = page();
+
+    expect(html).toContain('<ol role="list">');
+    expect(html).toContain('<section class="ranking" aria-labelledby="ranking-title">');
+    expect(html).toContain('<h2 class="ranking-title" id="ranking-title">');
+    expect(html).toContain('aria-label="1位 曲A / 人A（Spotifyで開く）"');
+  });
+
+  it('ランキングのジャケ写は見えてから読む', () => {
+    const html = page({ topTracks: { range: 'short_term', tracks: [aTopTrackEntry({ album_art_url: ART_640 })], mood: null, fetched_at: NOW_ISO } });
+
+    expect(html).toMatch(/<img [^>]*loading="lazy"/);
+  });
+
+  it('曲の無いカードの「no art」は読み上げない', () => {
+    expect(page()).toContain('<div class="art-placeholder" aria-hidden="true">no art</div>');
+  });
+
+  it('最後に聴いた曲の読み上げに日時を入れる（ページと SVG）', () => {
+    const since = '2026-10-16T12:04:00.000Z';
+    const html = page({ nowPlaying: { is_playing: false, track, mood: null, fetched_at: NOW_ISO }, state: 'recent', since });
+
+    expect(html).toContain('aria-label="最後に再生（10/16 21:04）: 曲 / 人（Spotifyで開く）"');
+    expect(renderNowPlayingCard({ track, mood: null, state: 'recent', since })).toContain('aria-label="最後に再生（10/16 21:04）: 曲 / 人"');
+  });
+});
