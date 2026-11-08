@@ -33,6 +33,22 @@ CI はこのほかに、Workers 向けのバンドル（`npx wrangler deploy --d
 - 実際の Spotify API や LLM の API は呼ばない
 - ブラウザで動くスクリプト（`public/embed.js`・`public/demo.js`・`/embed` のライブ更新）は `src/spec/browser.test.ts` で jsdom の上で動かす
 
+絞り込んで実行するときは次のようにします。
+
+```bash
+npx vitest run src/spec/mood.test.ts      # 1ファイルだけ
+npx vitest run -t '見出しの一部'           # 見出しで絞る
+npx vitest src/spec/mood.test.ts          # 変更を監視して実行し直す
+```
+
+## ライブAPIの確かめ方
+
+| 実行環境 | 起動 | 認証情報なしで確かめられること |
+|---|---|---|
+| Node | `npm run dev` | 必須の値が無いと案内を出して終わる。ダミーの値を渡せば `/health` と失敗時のカード |
+| Workers | `.dev.vars.example` を `.dev.vars` にコピーして `npm run dev:worker` | `/health` と失敗時のカード |
+| Docker | `docker build -t spotify-embedded .` のあと `docker run -p 3000:3000 --env-file .env spotify-embedded` | ダミーの値で `/health` と失敗時のカード |
+
 振る舞いを変える PR では、その振る舞いを表すテストを追加・更新してください。カバレッジは目安としてレポートを残すだけで、下限は設けていません。
 
 ## プルリクエスト

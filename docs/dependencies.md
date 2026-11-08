@@ -5,6 +5,8 @@
 
 いずれも devDependencies 経由で、Workers のバンドルと Docker イメージには入らない。
 
+最終確認: 2026-11-08（`npm ls source-map-js undici` で、下の表の経由と版を確かめた）
+
 | 対象 | 固定する版 | 理由 | 経由する依存 | 外せる条件 |
 |---|---|---|---|---|
 | `source-map-js` | 1.2.2 | GHSA-68fv-2mgg-jv7q（1.2.1 以前）。#24 / #26 で導入 | `css-tree`（jsdom）・`magicast`（@vitest/coverage-v8）が `^1.2.1` を要求。`postcss`（vite）は `^1.2.2` | 経由するすべての依存の要求範囲が `^1.2.2` 以上になったとき |

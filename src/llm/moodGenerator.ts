@@ -53,7 +53,7 @@ function wrapData(lines: string[]): string {
   return `<data>\n${body}\n</data>`;
 }
 
-/** 出力に許す最大文字数。指示は15〜35文字なので、多少のはみ出しは許す。 */
+/** 出力に許す最大文字数。指示は曲ごとが15〜30文字、ランキングが15〜35文字なので、多少のはみ出しは許す。 */
 const MAX_MOOD_LENGTH = 40;
 
 /**
