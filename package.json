@@ -28,7 +28,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "prepack": "npm run build",
-    "start": "node dist/index.js",
+    "start": "node --enable-source-maps dist/index.js",
     "deploy": "wrangler deploy",
     "setup": "tsx src/cli/index.ts setup",
     "generate": "tsx src/cli/index.ts generate",

@@ -211,6 +211,19 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       }
     });
 
+    it('GitHub Actions ではジョブのサマリーに結果を書き、曲名の Markdown を無効にする', async () => {
+      const summary = join(outDir, 'summary.md');
+      vi.stubEnv('GITHUB_STEP_SUMMARY', summary);
+      givenNowPlaying(aSpotifyTrack({ name: '[link](http://x)' }));
+      givenTopTracks([aSpotifyTrack()]);
+
+      await runGenerate();
+
+      const text = readFileSync(summary, 'utf8');
+      expect(text).toContain('状態: playing');
+      expect(text).toContain('\\[link\\]\\(http://x\\)');
+    });
+
     it('--out の出力先が無ければ、ネストしたパスでも作る', async () => {
       givenNowPlaying(aSpotifyTrack());
       givenTopTracks([aSpotifyTrack()]);

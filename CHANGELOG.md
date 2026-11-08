@@ -17,6 +17,7 @@
 
 ### 追加
 
+- Node 版・Docker・Workers の例外のスタックが、ソースマップで `src/*.ts` の行を指す
 - `HOST` 環境変数（Node 版の待ち受けるホスト）
 - ローカルの LLM（Ollama など）では `LLM_API_KEY` が無くてもムード文を作れる
 - `TRUSTED_PROXY_HEADER=forwarded`（RFC 7239）に対応

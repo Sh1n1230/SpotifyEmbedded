@@ -12,7 +12,8 @@ permissions:
 
 concurrency:
   group: github-pages
-  cancel-in-progress: true
+  # 進行中のデプロイは最後まで終わらせ、待っている実行だけを置き換える
+  cancel-in-progress: false
 
 jobs:
   deploy:

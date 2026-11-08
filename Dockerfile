@@ -16,6 +16,12 @@ RUN npm run build
 
 # --- runtime stage ---
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runtime
+# 版はビルドのときに --build-arg VERSION=1.2.3 で渡せる（渡さなくてもビルドできる）
+ARG VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/Sh1n1230/SpotifyEmbedded" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.description="Spotify の再生状況を AI のムード文つきで埋め込むライブAPI" \
+      org.opencontainers.image.version="${VERSION}"
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
@@ -26,4 +32,4 @@ USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "dist/index.js"]
+CMD ["node", "--enable-source-maps", "dist/index.js"]

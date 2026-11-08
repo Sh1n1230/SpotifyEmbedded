@@ -87,6 +87,18 @@ describe('すべてのワークフロー', () => {
   });
 });
 
+describe('本番へのデプロイは途中で取り消さない', () => {
+  it.each(['deploy-pages.yml', 'deploy-workers.yml'])('%s は cancel-in-progress: false', (name) => {
+    const workflow = loadWorkflow(name) as unknown as { concurrency: { 'cancel-in-progress': boolean } };
+    expect(workflow.concurrency['cancel-in-progress']).toBe(false);
+  });
+
+  it('deploy-workers.yml はデプロイの後に /health を確かめる', () => {
+    const steps = loadWorkflow('deploy-workers.yml').jobs['deploy']!.steps.map((step) => step.run ?? '');
+    expect(steps.join('\n')).toContain('/health');
+  });
+});
+
 describe('ワークフロー定義 (.github/workflows/deploy-workers.yml) の権限', () => {
   it('GITHUB_TOKEN には contents: read だけを与える（Deployments API は使わない）', () => {
     expect(loadWorkflow('deploy-workers.yml').permissions).toEqual({ contents: 'read' });
@@ -105,6 +117,10 @@ describe('ワークフロー定義 (.github/workflows/ci.yml)', () => {
   it('Docker イメージをビルドして起動し、/health を確かめる（push はしない）', () => {
     expect(runs('docker')).toContain('docker build');
     expect(runs('docker')).toContain('/health');
+    // HEALTHCHECK・root で動かないこと・SIGTERM ですぐ終わること
+    expect(runs('docker')).toContain('.State.Health.Status');
+    expect(runs('docker')).toContain('id -u');
+    expect(runs('docker')).toContain('docker stop');
     expect(runs('docker')).not.toContain('docker push');
     expect(JSON.stringify(ci.jobs['docker'])).not.toContain('secrets.');
   });
