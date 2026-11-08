@@ -68,5 +68,8 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; skipping creation"
           else
-            gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --generate-notes
+            # CHANGELOG のその版の内容（アップグレード時の注意）を先頭に載せ、PR の一覧を続ける
+            version="${GITHUB_REF_NAME#v}"
+            awk -v heading="## [$version]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, heading) == 1) { found = 1; next } } found' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+            gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
           fi

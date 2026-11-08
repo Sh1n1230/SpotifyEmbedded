@@ -72,7 +72,7 @@ router.get('/callback', async (c) => {
   deleteCookie(c, STATE_COOKIE, { path: '/auth' });
 
   if (!state || !expected || !sameState(state, expected)) {
-    return c.text('Invalid state parameter. Please restart the auth flow from /auth/login.', 400);
+    return c.text('state が一致しません。/auth/login からやり直してください。', 400);
   }
 
   // 承認を拒否された（access_denied など）。state の検証を先に済ませてから見る。
@@ -83,7 +83,7 @@ router.get('/callback', async (c) => {
   }
 
   if (!code) {
-    return c.text('Missing code parameter', 400);
+    return c.text('認可コードがありません。/auth/login からやり直してください。', 400);
   }
 
   let tokens;

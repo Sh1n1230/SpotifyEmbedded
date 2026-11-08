@@ -264,6 +264,19 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(peak).toBeLessThanOrEqual(9); // ジャケ写の枠 8 ＋ カードの1枚
     });
 
+    it.each([
+      ['手元', '', true],
+      ['CI', 'true', false],
+    ])('%s の generate の最後の次の手順の案内', async (_label, ci, shown) => {
+      vi.stubEnv('CI', ci);
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+
+      await runGenerate();
+
+      expect(vi.mocked(console.log).mock.calls.flat().join('\n').includes('貼り方:')).toBe(shown);
+    });
+
     it('--out の出力先が無ければ、ネストしたパスでも作る', async () => {
       givenNowPlaying(aSpotifyTrack());
       givenTopTracks([aSpotifyTrack()]);
