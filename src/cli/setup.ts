@@ -26,7 +26,7 @@ import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spot
 import { config } from '../config.js';
 import { escapeXml } from '../render/text.js';
 import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
-import { chatCompletion } from '../llm/client.js';
+import { generateMood, UnacceptableMoodError } from '../llm/moodGenerator.js';
 import { isLocalLlmEndpoint, llmBaseUrlProblem } from '../llm/endpoint.js';
 import { formatDateJa } from '../render/theme.js';
 
@@ -210,6 +210,14 @@ async function askValue(prompt: Prompt, query: string, kind: 'text' | 'token'): 
  * 形式・スキームを検査し、プリセットにもローカルにも無いホストなら送り先を見せて確認を取る。
  * 空なら null（LLM なしで進める）。
  */
+/** 番号の入力。数字だけの 1〜max を受け付け、それ以外（1abc・2.9・空）は null。 */
+export function parseProviderChoice(input: string, max: number): number | null {
+  const value = input.trim();
+  if (!/^\d+$/.test(value)) return null;
+  const choice = Number(value);
+  return choice >= 1 && choice <= max ? choice : null;
+}
+
 export async function askCustomBaseUrl(prompt: Prompt): Promise<string | null> {
   for (;;) {
     const baseUrl = await askValue(prompt, '  エンドポイントURL (例: http://localhost:11434/v1): ', 'text');
@@ -262,10 +270,15 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
   });
   console.log(`  ${PROVIDERS.length + 1}) 使わない（曲情報のみ表示する）`);
 
-  const choice = (await ask(rl, `\n  番号 (1-${PROVIDERS.length + 1}): `, false)).trim();
-  const index = Number.parseInt(choice, 10) - 1;
+  let selected: number | null = null;
+  while (selected === null) {
+    selected = parseProviderChoice(await ask(rl, `\n  番号 (1-${PROVIDERS.length + 1}): `, false), PROVIDERS.length + 1);
+    if (selected === null) console.log('  → 一覧の番号を入力してください。');
+  }
+  const index = selected - 1;
 
-  if (!Number.isInteger(index) || index < 0 || index >= PROVIDERS.length) {
+  // 「使わない」は一覧の最後の番号を選んだときだけ（打ち間違いで既存のキーを消さない）
+  if (index >= PROVIDERS.length) {
     console.log('  → ムード文なしで進めます。');
     // 入れ替えの途中でここに来た場合は、古いキーを残さず消す。
     return existingKey ? { llmApiKey: '', llmBaseUrl: '', llmModel: '' } : {};
@@ -312,32 +325,41 @@ async function askLlm(rl: Interface): Promise<StoredAuth> {
  * 入力されたLLM設定で実際に1文生成してみる。
  * 失敗したら原因を見せて、入力し直すか、このまま保存するかを選ばせる。
  */
+/** 本番と同じプロンプトと検査で試す（接続できても、ムード文の形式で捨てられるモデルを見逃さない）。 */
+export async function checkLlm(settings: StoredAuth): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+  try {
+    const text = await generateMood(
+      { trackName: 'Sunflower', artistName: 'Post Malone', albumName: "Hollywood's Bleeding", genres: [], popularity: null },
+      { baseUrl: settings.llmBaseUrl ?? DEFAULT_BASE_URL, apiKey: settings.llmApiKey || null, model: settings.llmModel ?? '' }
+    );
+    return { ok: true, text };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message:
+        err instanceof UnacceptableMoodError
+          ? `接続はできましたが、出力がムード文の形式に合いません（${message}）。別のモデルを試してください。`
+          : message,
+    };
+  }
+}
+
 async function verifyLlm(rl: Interface, settings: StoredAuth): Promise<boolean> {
   console.log('\n  接続を確認しています...');
 
-  try {
-    const text = await chatCompletion({
-      baseUrl: settings.llmBaseUrl ?? DEFAULT_BASE_URL,
-      apiKey: settings.llmApiKey ?? '',
-      model: settings.llmModel ?? '',
-      messages: [
-        { role: 'system', content: '15〜30文字の日本語1文のみを出力する。説明やクォートは付けない。' },
-        { role: 'user', content: '曲名: Sunflower\nアーティスト: Post Malone' },
-      ],
-      maxTokens: 80,
-      temperature: 0.7,
-    });
-    console.log(`  ✓ 生成できました: ${text.trim()}`);
+  const result = await checkLlm(settings);
+  if (result.ok) {
+    console.log(`  ✓ 生成できました: ${result.text}`);
     return true;
-  } catch (err) {
-    console.log(`  ✗ ${err instanceof Error ? err.message : String(err)}`);
-    const answer = (await ask(rl, '  入力し直しますか？ (Y/n): ', false)).trim().toLowerCase();
-    if (answer === 'n' || answer === 'no') {
-      console.log('  → このまま保存します（ムード文は出ないかもしれません）。');
-      return true;
-    }
-    return false;
   }
+  console.log(`  ✗ ${result.message}`);
+  const answer = (await ask(rl, '  入力し直しますか？ (Y/n): ', false)).trim().toLowerCase();
+  if (answer === 'n' || answer === 'no') {
+    console.log('  → このまま保存します（ムード文は出ないかもしれません）。');
+    return true;
+  }
+  return false;
 }
 
 function ask(rl: Interface, query: string, secret: boolean): Promise<string> {

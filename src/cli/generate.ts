@@ -20,6 +20,7 @@ import {
 } from '../core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
 import { hasLlmConfigured } from '../llm/settings.js';
+import { missingAuthValues } from '../authStore.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
@@ -92,6 +93,12 @@ export interface LastPlayed {
 }
 
 export async function generate(options: GenerateOptions): Promise<void> {
+  // 取得を始める前に、足りない値をまとめて知らせる（出力先のフォルダも作らない）
+  const missing = missingAuthValues();
+  if (missing.length > 0) {
+    throw new Error(`Spotify の設定が見つかりません: ${missing.join(', ')}。\`npm run setup\` を実行してください。`);
+  }
+
   const outDir = resolve(options.outDir);
   mkdirSync(outDir, { recursive: true });
 
@@ -106,24 +113,26 @@ export async function generate(options: GenerateOptions): Promise<void> {
 
   console.log('Spotify からデータを取得しています...');
   const [nowPlaying, topTracks] = await Promise.all([
-    collectNowPlaying({ bypassCache: true, skipMood: options.skipMood }),
+    timed('再生状況', () => collectNowPlaying({ bypassCache: true, skipMood: options.skipMood })),
     // ランキングのムード文は snapshot.json を根拠に下で決める
-    collectTopTracks({ range: options.range, limit: options.limit }),
+    timed('ランキング', () => collectTopTracks({ range: options.range, limit: options.limit })),
   ]);
 
   const previous = readSnapshot(outDir);
   // 停止中は、前回の観測より後に聴き終えた曲がないかを履歴で確かめる
   const recent = nowPlaying.is_playing
     ? null
-    : await collectRecentlyPlayed({
-        skipMood: options.skipMood,
-        previous: previous?.track
-          ? { trackId: previous.track.id, mood: previous.mood, observedAt: previous.observed_at }
-          : null,
-      });
+    : await timed('再生履歴', () =>
+        collectRecentlyPlayed({
+          skipMood: options.skipMood,
+          previous: previous?.track
+            ? { trackId: previous.track.id, mood: previous.mood, observedAt: previous.observed_at }
+            : null,
+        })
+      );
   const rankingMood =
     !options.skipMood && hasLlmConfigured()
-      ? await resolveRankingMood(topTracks.range, topTracks.tracks, previous?.ranking_mood ?? null)
+      ? await timed('ランキングのムード文', () => resolveRankingMood(topTracks.range, topTracks.tracks, previous?.ranking_mood ?? null))
       : null;
   topTracks.mood = rankingMood?.mood ?? null;
 
@@ -134,14 +143,16 @@ export async function generate(options: GenerateOptions): Promise<void> {
   logState(snapshot);
 
   // ジャケ写は SVG に焼き込むため data URI 化する（GitHub の camo 対策）
-  const [cardArt, rankingArts] = await Promise.all([
-    snapshot.track?.album_art_url
-      ? fetchImageDataUri(albumArtAtSize(snapshot.track.album_art_url, 300))
-      : Promise.resolve(null),
-    mapWithLimit(topTracks.tracks.slice(0, options.count), IMAGE_CONCURRENCY, (track) =>
-      track.album_art_url ? fetchImageDataUri(albumArtAtSize(track.album_art_url, 64)) : Promise.resolve(null)
-    ),
-  ]);
+  const [cardArt, rankingArts] = await timed('ジャケ写', () =>
+    Promise.all([
+      snapshot.track?.album_art_url
+        ? fetchImageDataUri(albumArtAtSize(snapshot.track.album_art_url, 300))
+        : Promise.resolve(null),
+      mapWithLimit(topTracks.tracks.slice(0, options.count), IMAGE_CONCURRENCY, (track) =>
+        track.album_art_url ? fetchImageDataUri(albumArtAtSize(track.album_art_url, 64)) : Promise.resolve(null)
+      ),
+    ])
+  );
 
   const outputs = new Map<string, string>();
   const themes = options.theme === 'both' ? (['dark', 'light'] as const) : ([options.theme] as const);
@@ -384,6 +395,14 @@ function logState(snapshot: Snapshot): void {
         `（${snapshot.ranking_mood.mood.generated_at} 生成）`
     );
   }
+}
+
+/** どこで時間がかかっているかをログに残す。 */
+async function timed<T>(label: string, task: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  const result = await task();
+  console.log(`  ${label}: ${Date.now() - startedAt}ms`);
+  return result;
 }
 
 function write(outputs: Map<string, string>, name: string, content: string): void {

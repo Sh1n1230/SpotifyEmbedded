@@ -15,11 +15,13 @@ import {
 const USAGE = `SpotifyEmbedded
 
 使い方:
-  npm run setup       Spotify と連携し、設定を保存する
-  npm run generate    静的ファイル（SVG / JSON / HTML）を生成する
-  --version           版を表示する
+  spotify-embedded setup                Spotify と連携し、設定を保存する
+  spotify-embedded generate [オプション]  静的ファイル（SVG / JSON / HTML）を生成する
+  spotify-embedded --version            版を表示する
 
-generate のオプション（npm 経由では -- を挟みます）:
+このリポジトリを clone して使うときは、npm run setup / npm run generate -- [オプション] でも実行できます。
+
+generate のオプション:
   --out <dir>     出力先ディレクトリ（既定: ./out）
   --range <name>  集計期間（既定: short_term）
                     short_term  ≒ 直近4週間
@@ -171,5 +173,7 @@ function requireValue(args: string[], index: number, flag: string): string {
 
 main().catch((err: unknown) => {
   console.error(`\n✗ ${err instanceof Error ? err.message : String(err)}`);
+  // 想定外の例外の原因の行を調べるときだけ、スタックトレース（と cause）を出す
+  if ((process.env['DEBUG'] ?? '').split(',').includes('spotify-embedded')) console.error(err);
   process.exitCode = 1;
 });

@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   askCustomBaseUrl,
+  checkLlm,
+  parseProviderChoice,
   browserCommand,
   currentRepo,
   deleteGitHubSecret,
@@ -19,7 +21,7 @@ import {
   setupRedirectUriProblem,
   type GhRunner,
 } from '../cli/setup.js';
-import { TSX_LOADER, jsonOk, respondWith } from './support.js';
+import { TSX_LOADER, callsTo, jsonOk, respondWith } from './support.js';
 
 interface RunOptions {
   /** 標準入力に流す内容。流し終えると EOF になる。 */
@@ -95,6 +97,34 @@ describe('CLI（spotify-embedded）', () => {
 
     expect(run.status).toBe(1);
     expect(run.stderr).toContain('不明なオプション: --nope');
+  }, 30_000);
+
+  it('generate は足りない設定をまとめて知らせ、出力先のフォルダも作らない', () => {
+    const run = runCli(['generate', '--no-mood', '--out', 'made']);
+
+    expect(run.status).toBe(1);
+    for (const name of ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SPOTIFY_REFRESH_TOKEN']) {
+      expect(run.stderr).toContain(name);
+    }
+    expect(readdirSync(run.cwd)).toEqual([]);
+  }, 30_000);
+
+  it.each([
+    ['spotify-embedded', true],
+    ['other', false],
+  ])('DEBUG=%s のときのスタックトレース', (debug, shown) => {
+    const run = runCli(['generate', '--limit', 'nope'], { env: { DEBUG: debug } });
+
+    expect(run.status).toBe(1);
+    expect(/\n\s+at /.test(run.stderr)).toBe(shown);
+  }, 30_000);
+
+  it('使い方は npm パッケージで動く形を先に案内し、clone の形も残す', () => {
+    const run = runCli(['help']);
+
+    expect(run.stdout).toContain('spotify-embedded setup');
+    expect(run.stdout).toContain('spotify-embedded generate');
+    expect(run.stdout).toContain('npm run setup');
   }, 30_000);
 
   it('設定が何も無くても、読み込みだけでは落ちない（npm run setup が動くために必要）', () => {
@@ -399,5 +429,47 @@ describe('setup の部品', () => {
   it('普通の値は受け付ける', () => {
     expect(invalidInputReason('gemini-3.1-flash-lite', 'text')).toBeNull();
     expect(invalidInputReason('AQD-abc_123', 'token')).toBeNull();
+  });
+});
+
+describe('npm run setup の LLM の選択と接続確認', () => {
+  it.each([
+    ['1', 1],
+    [' 3 ', 3],
+    ['1abc', null],
+    ['2.9', null],
+    ['', null],
+    ['0', null],
+    ['9', null],
+  ])('番号 %j → %j', (input, expected) => {
+    expect(parseProviderChoice(input, 4)).toBe(expected);
+  });
+
+  const settings = { llmBaseUrl: 'https://api.groq.com/openai/v1', llmApiKey: 'key', llmModel: 'm' };
+  const reply = (content: string) =>
+    respondWith((url) => (url.includes('/chat/completions') ? jsonOk({ choices: [{ message: { content } }] }) : null));
+
+  it('本番と同じ検査を通ったら成功', async () => {
+    reply('静かな夜に寄り添っているようです');
+
+    await expect(checkLlm(settings)).resolves.toEqual({ ok: true, text: '静かな夜に寄り添っているようです' });
+    expect(callsTo('/chat/completions')).toHaveLength(1);
+  });
+
+  it('形式で捨てられる出力は、接続の失敗と分けて知らせる', async () => {
+    reply('This is an English sentence that is clearly not acceptable as a mood.');
+
+    const result = await checkLlm(settings);
+
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ message: expect.stringContaining('接続はできましたが') as string });
+  });
+
+  it('接続の失敗はそのまま知らせる', async () => {
+    respondWith((url) => (url.includes('/chat/completions') ? new Response('no', { status: 401 }) : null));
+
+    const result = await checkLlm(settings);
+
+    expect(result).toMatchObject({ ok: false, message: expect.stringContaining('APIキーが拒否されました') as string });
   });
 });
