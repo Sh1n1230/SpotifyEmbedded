@@ -950,6 +950,7 @@ describe('ランキングのムード文の作り直しの条件は、文書と�
   });
 
   it('CLAUDE.md', () => {
-    expect(read('../../CLAUDE.md')).toContain(`≥${newcomers} of the current top ${RANKING_MOOD_BASIS_SIZE}`);
+    // CLAUDE.md は行を折り返しているので、空白をそろえて比べる
+    expect(read('../../CLAUDE.md').replace(/\s+/g, ' ')).toContain(`≥${newcomers} of the current top ${RANKING_MOOD_BASIS_SIZE}`);
   });
 });
