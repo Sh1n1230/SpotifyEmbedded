@@ -1,3 +1,4 @@
+# 質問も Issue で受け付ける（Discussions は有効にしていない）。テンプレートに当てはまらないものは空の Issue で
 blank_issues_enabled: true
 contact_links:
   - name: 脆弱性の報告

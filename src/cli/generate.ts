@@ -19,7 +19,7 @@ import {
   type RecentlyPlayed,
 } from '../core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
-import { hasLlmConfigured } from '../authStore.js';
+import { hasLlmConfigured } from '../llm/settings.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
@@ -280,6 +280,8 @@ function readSnapshot(outDir: string): Snapshot | null {
     if (!parsed || typeof parsed !== 'object') return null;
     // 日時として読めない observed_at は描画で落ちるうえ、毎回復元されて直らないので捨てる。
     if (typeof parsed.observed_at !== 'string' || Number.isNaN(Date.parse(parsed.observed_at))) return null;
+    // state・track・mood も、描画が前提にする形でなければ同じく捨てる（復元のたびに描画で落ち続けないように）
+    if (!isSnapshotState(parsed.state) || !isTrackOrNull(parsed.track) || !isMoodOrNull(parsed.mood)) return null;
     // 壊れていたら無視して作り直す（1回余分に LLM を呼ぶだけで済む）。
     if (!isRankingMoodRecord(parsed.ranking_mood)) parsed.ranking_mood = null;
     return parsed;
@@ -287,6 +289,25 @@ function readSnapshot(outDir: string): Snapshot | null {
     console.warn('[generate] %s を読めませんでした。無視します:', SNAPSHOT_FILE, err);
     return null;
   }
+}
+
+function isSnapshotState(value: unknown): boolean {
+  return value === 'playing' || value === 'recent' || value === 'idle';
+}
+
+/** null か、描画に使う TrackSummary の必須の項目が文字列で揃っているもの */
+function isTrackOrNull(value: unknown): boolean {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object') return false;
+  const track = value as Record<string, unknown>;
+  return ['id', 'name', 'artist', 'album', 'spotify_url'].every((key) => typeof track[key] === 'string');
+}
+
+function isMoodOrNull(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== 'object') return false;
+  const mood = value as Record<string, unknown>;
+  return typeof mood['text'] === 'string' && typeof mood['generated_at'] === 'string';
 }
 
 function isRankingMoodRecord(value: unknown): value is RankingMoodRecord {
@@ -301,21 +322,30 @@ function isRankingMoodRecord(value: unknown): value is RankingMoodRecord {
   );
 }
 
+/**
+ * ログに出す外部由来の文字列（曲名・ムード文など）。改行と制御文字を空白に置き換えて1行に収める。
+ * GitHub Actions は行頭の「::」をワークフローコマンドとして解釈するため、改行を含む曲名でコマンドを差し込めてしまう。
+ */
+export function forLog(value: string): string {
+  // eslint-disable-next-line no-control-regex -- 制御文字を取り除くため、意図して指定している
+  return value.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ');
+}
+
 function logState(snapshot: Snapshot): void {
   if (snapshot.state === 'playing' && snapshot.track) {
-    console.log(`  再生中: ${snapshot.track.name} / ${snapshot.track.artist}`);
-    if (snapshot.mood) console.log(`  ムード: ${snapshot.mood.text}`);
+    console.log(`  再生中: ${forLog(snapshot.track.name)} / ${forLog(snapshot.track.artist)}`);
+    if (snapshot.mood) console.log(`  ムード: ${forLog(snapshot.mood.text)}`);
   } else if (snapshot.state === 'recent' && snapshot.track && snapshot.source === 'history') {
-    console.log(`  停止中。再生履歴から最後に聴いた曲を取得しました: ${snapshot.track.name}`);
-    if (snapshot.mood) console.log(`  ムード: ${snapshot.mood.text}`);
+    console.log(`  停止中。再生履歴から最後に聴いた曲を取得しました: ${forLog(snapshot.track.name)}`);
+    if (snapshot.mood) console.log(`  ムード: ${forLog(snapshot.mood.text)}`);
   } else if (snapshot.state === 'recent' && snapshot.track) {
-    console.log(`  停止中。前回の観測を引き継ぎます: ${snapshot.track.name}`);
+    console.log(`  停止中。前回の観測を引き継ぎます: ${forLog(snapshot.track.name)}`);
   } else {
     console.log('  再生中の曲はなく、引き継げる前回データもありません。');
   }
   if (snapshot.ranking_mood) {
     console.log(
-      `  ランキングのムード: ${snapshot.ranking_mood.mood.text}` +
+      `  ランキングのムード: ${forLog(snapshot.ranking_mood.mood.text)}` +
         `（${snapshot.ranking_mood.mood.generated_at} 生成）`
     );
   }

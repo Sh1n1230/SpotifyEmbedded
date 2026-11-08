@@ -77,19 +77,20 @@ export function renderEmbedPage(input: PageInput): string {
     ? renderRanking(topTracks, input.rankingCount)
     : '';
 
+  // 透過のときは color-scheme を light dark にする。テーマ名だと埋め込み先と配色が違う場合に、iframe の中の
+  // キャンバスが不透明になって背景が透けない（文字と枠の色は CSS 変数で明示しているので見た目は変わらない）
   return `<!DOCTYPE html>
 <html lang="ja" data-state="${escapeXml(state)}">
 <head>
 <meta charset="utf-8">${input.liveEndpoint ? '' : `\n<meta http-equiv="Content-Security-Policy" content="${STATIC_PAGE_CSP}">`}
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="${themeName}">
+<meta name="color-scheme" content="${input.transparent ? 'light dark' : themeName}">
 <title>${escapeXml(unavailable ? idleText : buildTitle(state, track?.name, track?.artist))}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
     --bg: ${input.transparent ? 'transparent' : theme.bg};
-    --surface: ${theme.surface};
     --fg: ${theme.fg};
     --sub: ${theme.sub};
     --muted: ${theme.muted};
@@ -136,7 +137,8 @@ export function renderEmbedPage(input: PageInput): string {
     display: grid;
     place-items: center;
     font-size: 12px;
-    color: var(--muted);
+    /* 枠（placeholder）の上で 4.5:1 を満たす色（muted はライトテーマで 4.0:1 しかない） */
+    color: var(--sub);
   }
 
   .body { min-width: 0; padding-top: 2px; }
@@ -188,7 +190,7 @@ export function renderEmbedPage(input: PageInput): string {
   .track, .artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ムードが無い場合は曲名を主役サイズに昇格させる */
-  .card[data-no-mood] .track { font-size: 17px; font-weight: 700; color: var(--fg); margin-top: 0; white-space: normal; }
+  .card[data-no-mood] .track { font-size: 17px; font-weight: 700; color: var(--fg); margin-top: 0; white-space: normal; overflow-wrap: anywhere; }
 
   .idle { font-size: 17px; font-weight: 700; color: var(--muted); }
 
@@ -420,15 +422,28 @@ function renderLiveScript(
 
   function schedule() {
     if (timer !== null) clearTimeout(timer);
-    timer = setTimeout(tick, Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS));
+    var delay = Math.max(Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS), waitAtLeastMs);
+    waitAtLeastMs = 0;
+    timer = setTimeout(tick, delay);
   }
+
+  // 429・503 の Retry-After（秒）。次の取得を少なくともその時間は待つ（倍々の間隔より長ければこちらを使う）
+  function retryAfterMs(res) {
+    var value = res.headers.get('Retry-After');
+    return value && /^\\d+$/.test(value) ? Number(value) * 1000 : 0;
+  }
+
+  var waitAtLeastMs = 0;
 
   function load() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var abort = setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
     return fetch(endpoint, { headers: { Accept: 'application/json' }, signal: controller ? controller.signal : undefined })
       .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+          if (res.status === 429 || res.status === 503) waitAtLeastMs = retryAfterMs(res);
+          throw new Error('HTTP ' + res.status);
+        }
         return res.json();
       })
       .then(function (data) { update(data); })
@@ -439,6 +454,8 @@ function renderLiveScript(
   }
 
   function tick() {
+    // 待機中の取得があれば取り消す（表示に戻ったときに呼ばれても、周期を1本に保つ）
+    if (timer !== null) clearTimeout(timer);
     timer = null;
     // 非表示のタブでは取得しない（誰も見ていないカードのために API を叩かない）。
     // 表示に戻ったら下の visibilitychange ですぐ取り直す。

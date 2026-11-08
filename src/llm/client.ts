@@ -14,7 +14,8 @@ export interface ChatMessage {
 
 export interface ChatCompletionParams {
   baseUrl: string;
-  apiKey: string;
+  /** null なら Authorization を付けない（キーの要らないローカルのサーバー） */
+  apiKey: string | null;
   model: string;
   messages: ChatMessage[];
   maxTokens?: number;
@@ -70,12 +71,37 @@ function extractContentText(content: unknown): string {
  */
 function noReasoningParams(baseUrl: string): Record<string, unknown> {
   // OpenRouter 独自形式。`reasoning_effort` は受け付けない。
-  if (baseUrl.includes('openrouter.ai')) return { reasoning: { effort: 'none' } };
+  if (isHost(baseUrl, 'openrouter.ai')) return { reasoning: { effort: 'none' } };
   // Gemini の OpenAI 互換層は OpenAI 標準の `reasoning_effort` を解釈する。
-  if (baseUrl.includes('generativelanguage.googleapis.com')) {
+  if (isHost(baseUrl, 'generativelanguage.googleapis.com')) {
     return { reasoning_effort: 'none' };
   }
   return {};
+}
+
+/**
+ * 出力の上限のパラメータ。OpenAI は `max_tokens` を非推奨にしており、推論モデル（o 系・gpt-5 系）は
+ * 受け付けない（400）ため `max_completion_tokens` を送る。ほかのプロバイダは互換のため `max_tokens` のまま。
+ */
+function maxTokensParams(baseUrl: string, maxTokens: number): Record<string, unknown> {
+  return isHost(baseUrl, 'api.openai.com') ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };
+}
+
+/** URL のホストが domain かその下か。文字列の一部（パスなど）に含まれるだけでは一致させない。 */
+function isHost(baseUrl: string, domain: string): boolean {
+  try {
+    const hostname = new URL(baseUrl).hostname;
+    return hostname === domain || hostname.endsWith(`.${domain}`);
+  } catch {
+    return false;
+  }
+}
+
+/** `{baseUrl}/chat/completions`。クエリ（?api-version= など）は保ったまま、パスにだけ足す。 */
+export function chatCompletionsUrl(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/chat/completions`;
+  return url.toString();
 }
 
 /** 応答テキストを返す。失敗時は原因が分かるメッセージを添えて throw。 */
@@ -84,21 +110,23 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   const problem = llmBaseUrlProblem(params.baseUrl);
   if (problem) throw new Error(problem);
 
-  const url = `${params.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const url = chatCompletionsUrl(params.baseUrl);
+  // 推論モデルなど、temperature を受け付けないモデルがある。400 で拒まれたら、外して一度だけ送り直す
+  let includeTemperature = true;
 
   const send = async (): Promise<Response | 'timeout'> => {
     try {
       return await fetch(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${params.apiKey}`,
+          ...(params.apiKey ? { Authorization: `Bearer ${params.apiKey}` } : {}),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           model: params.model,
           messages: params.messages,
-          max_tokens: params.maxTokens ?? 160,
-          temperature: params.temperature ?? 0.7,
+          ...maxTokensParams(params.baseUrl, params.maxTokens ?? 160),
+          ...(includeTemperature ? { temperature: params.temperature ?? 0.7 } : {}),
           ...noReasoningParams(params.baseUrl),
         }),
         signal: AbortSignal.timeout(params.timeoutMs ?? 15000),
@@ -126,6 +154,17 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   }
   if (res === 'timeout') throw new Error(`LLMへのリクエストがタイムアウトしました (${url})`);
 
+  if (res.status === 400) {
+    const message = await detail(res);
+    if (/temperature/i.test(message)) {
+      includeTemperature = false;
+      res = await send();
+      if (res === 'timeout') throw new Error(`LLMへのリクエストがタイムアウトしました (${url})`);
+    } else {
+      throw new Error(`${describeStatus(400, params)} (400)${message}`);
+    }
+  }
+
   if (!res.ok) {
     throw new Error(`${describeStatus(res.status, params)} (${res.status})${await detail(res)}`);
   }
@@ -150,6 +189,8 @@ function describeStatus(status: number, params: ChatCompletionParams): string {
     case 401:
     case 403:
       return 'LLMのAPIキーが拒否されました。LLM_API_KEY を確認してください';
+    case 400:
+      return `LLM がリクエストを受け付けませんでした。モデル "${params.model}" が LLM_BASE_URL の送り先で使えるかを確認してください`;
     case 404:
       return `モデル "${params.model}" が見つかりません。LLM_MODEL と LLM_BASE_URL の組み合わせを確認してください`;
     case 429:

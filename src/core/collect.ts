@@ -10,7 +10,7 @@ import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
 import { fetchRecentlyPlayed } from '../spotify/recentlyPlayed.js';
 import { generateMood } from '../llm/moodGenerator.js';
-import { hasLlmConfigured } from '../authStore.js';
+import { hasLlmConfigured } from '../llm/settings.js';
 import {
   nowPlayingCache,
   moodCache,
@@ -159,7 +159,9 @@ async function fetchAndBuildNowPlaying(options: CollectOptions): Promise<NowPlay
     fetched_at: new Date().toISOString(),
   };
 
-  if (!options.bypassCache) cacheSet(nowPlayingCache, 'now-playing', response);
+  // skipMood の結果はムード文を欠くので、共有のキャッシュに入れない（in-flight を共有しないのと同じ理由。
+  // 入れると、続く既定の呼び出しが30秒間ムード文なしになる）
+  if (!options.bypassCache && !options.skipMood) cacheSet(nowPlayingCache, 'now-playing', response);
   return response;
 }
 

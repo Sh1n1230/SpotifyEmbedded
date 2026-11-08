@@ -4,7 +4,6 @@
 
 export interface Theme {
   bg: string;
-  surface: string;
   fg: string;
   /** 曲名など、ムード文より一段落とす情報 */
   sub: string;
@@ -19,7 +18,6 @@ export interface Theme {
 export const THEMES = {
   dark: {
     bg: '#0e1013',
-    surface: '#161a1f',
     fg: '#f2f4f7',
     sub: '#c7cdd6',
     muted: '#8b95a1',
@@ -29,7 +27,6 @@ export const THEMES = {
   },
   light: {
     bg: '#ffffff',
-    surface: '#f7f8fa',
     fg: '#11151a',
     sub: '#39424d',
     muted: '#6b7681',

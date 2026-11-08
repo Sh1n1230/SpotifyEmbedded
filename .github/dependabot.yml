@@ -6,6 +6,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # PR のタイトルを CONTRIBUTING の形（chore(deps): …）にそろえる
+    commit-message:
+      prefix: chore
+      include: scope
     groups:
       minor-and-patch:
         update-types: [minor, patch]
@@ -18,9 +22,19 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    # アクションの更新は1つの PR にまとめる
+    groups:
+      actions:
+        patterns: ['*']
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope

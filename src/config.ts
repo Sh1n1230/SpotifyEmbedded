@@ -1,9 +1,38 @@
-import { requireAuthValue, resolveAuthValue } from './authStore.js';
-import { DEFAULT_BASE_URL, DEFAULT_MODEL } from './llm/providers.js';
+import { requireAuthValue } from './authStore.js';
 import { parseCorsOrigins } from './http/cors.js';
 
-function optional_env(name: string, fallback: string): string {
-  return process.env[name] ?? fallback;
+
+const TRUE_VALUES = new Set(['true', '1', 'yes', 'on']);
+const FALSE_VALUES = new Set(['false', '0', 'no', 'off', '']);
+const warnedBooleans = new Set<string>();
+
+/**
+ * 真偽値の環境変数。前後の空白を除いて小文字にし、true・1・yes・on を真、false・0・no・off・未設定を偽とする。
+ * それ以外は偽として扱い、一度だけ警告する（TRUE や 1 を黙って無効にしない）。
+ */
+export function parseBooleanEnv(name: string): boolean {
+  const value = (process.env[name] ?? '').trim().toLowerCase();
+  if (TRUE_VALUES.has(value)) return true;
+  if (!FALSE_VALUES.has(value) && !warnedBooleans.has(name)) {
+    warnedBooleans.add(name);
+    console.warn(`${name} の値 ${process.env[name]} を真偽値として読めません。true か false を指定してください。`);
+  }
+  return false;
+}
+
+/** ポートの既定値 */
+const DEFAULT_PORT = 3000;
+/** TCP のポート番号の上限 */
+const MAX_PORT = 65535;
+
+/** PORT を読む。1〜65535 の整数でなければ、何が悪いかを示して throw する（3000abc を 3000 として読まない）。 */
+export function parsePort(value: string | undefined): number {
+  if (value === undefined || value === '') return DEFAULT_PORT;
+  const port = /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!Number.isInteger(port) || port < 1 || port > MAX_PORT) {
+    throw new Error(`PORT は 1〜${MAX_PORT} の整数で指定してください（今の値: ${value}）`);
+  }
+  return port;
 }
 
 /**
@@ -27,29 +56,28 @@ export const config = {
     get refreshToken(): string {
       return requireAuthValue('spotifyRefreshToken');
     },
+    /** 未設定なら PORT から組み立てる（npm run auth のコールバックが届くように）。Dashboard の登録値と一致させること */
     get redirectUri(): string {
-      return optional_env('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:3000/auth/callback');
+      return (
+        process.env['SPOTIFY_REDIRECT_URI'] ||
+        `http://127.0.0.1:${parsePort(process.env['PORT'])}/auth/callback`
+      );
     },
   },
-  /**
-   * OpenAI互換であれば提供元は問わない（OpenAI / OpenRouter / Gemini /
-   * ローカルのサーバーなど）。未設定でもムード文を省いて動作するため、
-   * apiKey 以外は既定値を持たせている。
-   */
-  llm: {
-    get apiKey(): string {
-      return requireAuthValue('llmApiKey');
-    },
-    get baseUrl(): string {
-      return resolveAuthValue('llmBaseUrl') ?? DEFAULT_BASE_URL;
-    },
-    get model(): string {
-      return resolveAuthValue('llmModel') ?? DEFAULT_MODEL;
-    },
-  },
+  // LLM の設定（送り先・キー・モデル）は src/llm/settings.ts の resolveLlm() が決める
   server: {
     get port(): number {
-      return parseInt(optional_env('PORT', '3000'), 10);
+      return parsePort(process.env['PORT']);
+    },
+    /**
+     * 待ち受けるホスト。HOST が無ければすべてのインターフェース（Docker で必要）。
+     * npm run auth（/auth/* を有効にしたとき）は、同じネットワークのほかの機器から /auth を開けないよう、
+     * 既定でループバック（127.0.0.1）だけにする
+     */
+    get host(): string | undefined {
+      const host = process.env['HOST']?.trim();
+      if (host) return host;
+      return this.enableAuthRoutes ? '127.0.0.1' : undefined;
     },
     /** 許可するオリジン。CORS_ORIGIN はカンマ区切りで複数書ける。未設定なら ['*']。 */
     get corsOrigins(): string[] {
@@ -64,7 +92,7 @@ export const config = {
       return process.env['TRUSTED_PROXY_HEADER']?.trim().toLowerCase() || null;
     },
     get enableAuthRoutes(): boolean {
-      return optional_env('ENABLE_AUTH_ROUTES', 'false') === 'true';
+      return parseBooleanEnv('ENABLE_AUTH_ROUTES');
     },
   },
 };

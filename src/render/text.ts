@@ -26,6 +26,19 @@ export function escapeXml(value: string): string {
 }
 
 /**
+ * SVG の id の接尾辞。同じページにインラインで置いた複数の SVG の id が衝突しないよう、内容から決める
+ * 短いハッシュ（FNV-1a 32 ビット）。同じ内容なら同じ値になる（静的モードの出力が実行のたびに変わらない）。
+ */
+export function svgIdSuffix(...parts: string[]): string {
+  let hash = 0x811c9dc5;
+  for (const character of parts.join('\u0000')) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+/**
  * 書記素クラスタ（見た目の1文字）に分ける。絵文字の ZWJ シーケンス・国旗・肌の色の修飾子・
  * 結合文字は複数のコードポイントで1文字になるので、コードポイント単位で数えたり切ったりすると
  * 幅を見誤り、途中で切れて別の文字に化ける。Node 22 と Cloudflare Workers の両方で使える。
@@ -38,8 +51,8 @@ function graphemes(text: string): string[] {
 
 /**
  * 文字幅を em 単位で見積もる。
- * 全角（CJK・かな・全角記号・絵文字）を 1em、それ以外を 0.5em として扱う。
- * 正確な字送りはフォント依存なので、あくまで折り返し判定用の近似。
+ * 全角（CJK・かな・全角記号・絵文字）を 1em、半角は字の形でおおまかに分ける（halfWidth）。
+ * 正確な字送りはフォント依存なので、あくまで折り返し判定用の近似。はみ出さないよう大きめに寄せる。
  */
 export function visualWidth(text: string): number {
   let width = 0;
@@ -53,7 +66,21 @@ export function visualWidth(text: string): number {
  */
 function clusterWidth(cluster: string): number {
   if (isFullWidth(cluster)) return 1;
-  return /\u200d|\ufe0f|\u20e3/.test(cluster) ? 1 : 0.5;
+  return /\u200d|\ufe0f|\u20e3/.test(cluster) ? 1 : halfWidth(cluster);
+}
+
+/**
+ * 半角の文字の幅（em）。Helvetica・Arial の字送り（1000 単位の em で i・l が 222〜278、小文字の多くが 500〜556、
+ * 大文字の多くが 667〜722、M・W が 833〜944）を、はみ出さない側（大きめ）に丸めた値。
+ * 一律 0.5em だと、大文字の多い英語の曲名がカードの右端からはみ出していた。
+ */
+function halfWidth(cluster: string): number {
+  const base = cluster.normalize('NFD')[0] ?? cluster;
+  if (/[iljt.,:;'|!]/.test(base)) return 0.3;
+  if (base === ' ') return 0.3;
+  if (/[MW]/.test(base)) return 0.85;
+  if (/[mw]|\p{Lu}/u.test(base)) return 0.7;
+  return 0.55;
 }
 
 /** 既定で絵文字として表示される文字（⚡ ☕ 🫠 国旗の地域指示子など）。# * 0-9 は含まない。 */
@@ -117,16 +144,30 @@ export function wrapToWidth(text: string, maxWidthEm: number, maxLines: number):
   const all = wrapUnbounded(text, maxWidthEm);
   if (all.length <= maxLines) return all;
 
-  // 収まらない分は最終行にまとめ、省略記号で締める
+  // 収まらない分は最終行にまとめ、省略記号で締める。行どうしを join すると、折った位置の空白が失われて
+  // 単語がつながる（「bbbbc…」）ので、元の文字列のうち、残す行より後ろをそのまま使う
   const kept = all.slice(0, maxLines);
-  kept[maxLines - 1] = truncateToWidth(all.slice(maxLines - 1).join(''), maxWidthEm);
+  kept[maxLines - 1] = truncateToWidth(remainderAfter(text, all.slice(0, maxLines - 1)), maxWidthEm);
   return kept;
 }
 
-/** 半角の文字（ラテン文字まで）か。半角の連続は途中で割らない1語として扱う。 */
+/** 折り返した先頭の行の後ろに続く、元の文字列の残り。各行は元の文字列の一部（前後の空白を除いたもの）である。 */
+function remainderAfter(text: string, lines: string[]): string {
+  let position = 0;
+  for (const line of lines) {
+    while (position < text.length && /\s/.test(text[position] ?? '')) position += 1;
+    position += line.length;
+  }
+  return text.slice(position).trimStart();
+}
+
+/**
+ * 半角の語の文字か。全角でない文字・結合記号・数字（ラテン文字に限らず、ギリシャ文字・キリル文字・ベトナム語なども）と、
+ * 語の中に出る記号と空白。これらの連続は途中で割らない1語として扱う（空白の直後で区切る）。
+ */
 function isHalfWidthWordChar(cluster: string): boolean {
-  const code = cluster.codePointAt(0) ?? 0;
-  return code <= 0x024f && clusterWidth(cluster) === 0.5;
+  if (isFullWidth(cluster) || /\u200d|\ufe0f|\u20e3/.test(cluster)) return false;
+  return /^[\p{L}\p{M}\p{N} '’\-.,!?&()]/u.test(cluster);
 }
 
 /**

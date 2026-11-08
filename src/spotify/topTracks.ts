@@ -1,4 +1,4 @@
-import { spotifyFetch } from './client.js';
+import { readSpotifyJson, spotifyFetch } from './client.js';
 import { fetchArtistGenres } from './artists.js';
 import { isCatalogTrack, toTrackSummary } from './track.js';
 import {
@@ -18,12 +18,13 @@ export async function fetchTopTracks(
   range: TopTracksRange = DEFAULT_TOP_TRACKS_RANGE,
   limit: TopTracksLimit = DEFAULT_TOP_TRACKS_LIMIT
 ): Promise<TopTrackEntry[]> {
-  const res = await spotifyFetch(`/me/top/tracks?time_range=${range}&limit=${limit}`);
+  const path = `/me/top/tracks?time_range=${range}&limit=${limit}`;
+  const res = await spotifyFetch(path);
   if (!res) return [];
 
-  const data = (await res.json()) as { items?: SpotifyTrack[] };
+  const data = await readSpotifyJson<{ items?: SpotifyTrack[] }>(res, path);
   // トップトラックにローカルファイルは入らないが、公開スキーマ（id は文字列）を守るため通す
-  const tracks = Array.isArray(data.items) ? data.items.filter(isCatalogTrack) : [];
+  const tracks = Array.isArray(data?.items) ? data.items.filter(isCatalogTrack) : [];
 
   const allArtistIds = Array.from(
     new Set(tracks.flatMap((t) => t.artists.map((a) => a.id)))
