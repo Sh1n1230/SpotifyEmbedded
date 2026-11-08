@@ -38,3 +38,7 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # Node のメジャーは CONTRIBUTING の「依存の更新」で、CI の matrix などと一緒に手で上げる（奇数版はサポートが短い）
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

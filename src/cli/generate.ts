@@ -8,7 +8,7 @@
  * 利用側は fetch 先のURLを差し替えるだけで静的↔ライブを行き来できる。
  * カードと同じ「最後に聴いた曲」は、スキーマを変えないよう last-played.json に分けて書く。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { toYaml } from '../core/yaml.js';
 
@@ -101,6 +101,8 @@ export async function generate(options: GenerateOptions): Promise<void> {
         `表示されるのは最大 ${options.limit} 件です。`
     );
   }
+
+  if (!options.skipMood && !hasLlmConfigured()) console.log('LLM が未設定のため、ムード文なしで生成します');
 
   console.log('Spotify からデータを取得しています...');
   const [nowPlaying, topTracks] = await Promise.all([
@@ -207,6 +209,34 @@ export async function generate(options: GenerateOptions): Promise<void> {
 
   flushOutputs(outDir, outputs);
   console.log(`\n生成しました: ${outDir}`);
+  writeStepSummary(snapshot, previous);
+}
+
+/** Markdown の記号をエスケープする（曲名は外部由来で、ジョブのサマリーでリンクや見出しにさせない）。 */
+function escapeMarkdown(value: string): string {
+  return forLog(value).replace(/[\\`*_{}[\]()<>#+\-.!|~]/g, '\\$&');
+}
+
+/** GitHub Actions のジョブのサマリーに結果を書く（Actions の外では何もしない。失敗しても生成は成功のまま）。 */
+function writeStepSummary(snapshot: Snapshot, previous: Snapshot | null): void {
+  const path = process.env['GITHUB_STEP_SUMMARY'];
+  if (!path) return;
+  const rankingMood = snapshot.ranking_mood?.mood;
+  const regenerated = rankingMood !== undefined && rankingMood.generated_at !== previous?.ranking_mood?.mood.generated_at;
+  const lines = [
+    '### Spotify snapshot',
+    '',
+    `- 状態: ${snapshot.state}`,
+    `- 曲: ${snapshot.track ? `${escapeMarkdown(snapshot.track.name)} / ${escapeMarkdown(snapshot.track.artist)}` : 'なし'}`,
+    `- ムード文: ${snapshot.mood ? 'あり' : 'なし'}`,
+    `- ランキングのムード文: ${rankingMood ? (regenerated ? '作り直した' : '前回のまま') : 'なし'}`,
+    '',
+  ];
+  try {
+    appendFileSync(path, lines.join('\n'));
+  } catch (err) {
+    console.warn('[generate] ジョブのサマリーを書けませんでした:', err instanceof Error ? err.message : err);
+  }
 }
 
 /**

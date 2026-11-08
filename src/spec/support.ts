@@ -20,15 +20,21 @@
  *   現実の大多数がこちらで、かつ「欠けていてもキーは必ず存在する」という
  *   スキーマ契約が既定ケースで検証される。
  */
-import { afterEach, beforeEach, vi } from 'vitest';
+import { afterEach, beforeEach, expect, vi } from 'vitest';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
+import { JSDOM } from 'jsdom';
 
 import { loadStoredAuth } from '../authStore.js';
 import { artCache, moodCache, nowPlayingCache, setDurableStore } from '../cache/index.js';
 import { resetArtistGenreAvailability } from '../spotify/artists.js';
 import { resetAccessToken } from '../spotify/auth.js';
 import type { SpotifyTrack, TopTrackEntry } from '../types/index.js';
+
+/** 子プロセスに `--import` で渡す tsx の入口（package.json の exports にある公開の入口）。 */
+export const TSX_LOADER = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
 
 // ── 固定値 ───────────────────────────────────────────────────────────────────
 
@@ -122,6 +128,11 @@ export function formBodyOf(call: RecordedCall): Record<string, string> {
   const body = call.init?.body;
   if (!(body instanceof URLSearchParams)) throw new TypeError('リクエストの本文が URLSearchParams ではありません');
   return Object.fromEntries(body);
+}
+
+/** XML として正しいことを確かめる（jsdom の XML パーサーは、壊れていれば例外を投げる）。 */
+export function expectValidXml(text: string): void {
+  expect(() => new JSDOM(text, { contentType: 'image/svg+xml' })).not.toThrow();
 }
 
 /** 毎テスト共通の土台となるハンドラ（テスト側は後から上書きできる）。 */
@@ -327,5 +338,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // 想定外の 500 を返す経路を、黙らせたログの中に埋もれさせない
+  if (vi.isMockFunction(console.error)) {
+    const logged = vi.mocked(console.error).mock.calls.filter(([first]) => first === '[error]');
+    expect(logged, '想定外の [error] ログが出ました').toEqual([]);
+  }
   vi.useRealTimers();
 });

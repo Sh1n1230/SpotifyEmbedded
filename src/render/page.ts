@@ -17,7 +17,7 @@ import {
 import { rangeLabelEn } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
-import { albumArtAtSize } from './image.js';
+import { albumArtAtSize, SIZE_PREFIX } from './image.js';
 import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, playbackLabel, type PlaybackState } from './card.js';
 
 export interface PageInput {
@@ -350,11 +350,12 @@ function renderLiveScript(
 
   // ジャケ写URLのプレフィックスは画像サイズを表す。112pxで描くので
   // 300px版に寄せる。640px版のままだと表示が目に見えて遅れる。
-  var ART_SIZES = ['ab67616d0000b273', 'ab67616d00001e02', 'ab67616d00004851'];
+  var ART_SIZES = ${JSON.stringify(Object.values(SIZE_PREFIX))};
+  var ART_300 = ${JSON.stringify(SIZE_PREFIX[300])};
 
   function artAt300(url) {
     for (var i = 0; i < ART_SIZES.length; i++) {
-      if (url.indexOf(ART_SIZES[i]) !== -1) return url.replace(ART_SIZES[i], ART_SIZES[1]);
+      if (url.indexOf(ART_SIZES[i]) !== -1) return url.replace(ART_SIZES[i], ART_300);
     }
     return url;
   }

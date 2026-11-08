@@ -9,5 +9,5 @@ what's being verified. Fixtures default to a post-Nov-2024 app (restricted field
 - The Spotify access token, the in-flight refresh and the `/artists` 403 latch are module-level
   state; `beforeEach` resets them (`resetAccessToken`, `resetArtistGenreAvailability`), so every
   test starts without a token.
-- CLI specs spawn `src/cli/index.ts` through `node_modules/tsx/dist/loader.mjs` in an empty temp
+- CLI specs spawn `src/cli/index.ts` through `TSX_LOADER` (tsx's public entry, from `support.ts`) in an empty temp
   dir with only `PATH`, so a developer's local config never leaks in.
