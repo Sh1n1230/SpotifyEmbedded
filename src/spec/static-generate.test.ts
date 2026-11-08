@@ -222,6 +222,8 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       const text = readFileSync(summary, 'utf8');
       expect(text).toContain('状態: playing');
       expect(text).toContain('\\[link\\]\\(http://x\\)');
+    });
+
     it('途中で失敗したら、前回の出力をそのまま残す', async () => {
       givenNowPlaying(aSpotifyTrack());
       givenTopTracks([aSpotifyTrack()]);
