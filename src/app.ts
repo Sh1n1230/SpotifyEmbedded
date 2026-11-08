@@ -42,9 +42,17 @@ export function createApp(options: AppOptions = {}): Hono {
 
   // CORS_ORIGIN は Workers では環境変数がリクエスト時に解決されるため、毎回読む。
   // 複数書かれていれば、リクエストの Origin が一覧にあるときだけそれを返す。
+  // 値はリクエストのたびに読むが（Workers の環境変数のため）、ミドルウェアは値が変わったときだけ作り直す
+  let corsKey: string | null = null;
+  let corsMiddleware: ReturnType<typeof cors> | null = null;
   app.use((c, next) => {
     const origins = config.server.corsOrigins;
-    return cors({ origin: origins.length === 1 ? (origins[0] ?? '*') : origins })(c, next);
+    const key = origins.join(',');
+    if (key !== corsKey || !corsMiddleware) {
+      corsKey = key;
+      corsMiddleware = cors({ origin: origins.length === 1 ? (origins[0] ?? '*') : origins });
+    }
+    return corsMiddleware(c, next);
   });
 
   app.get('/health', (c) => c.json({ status: 'ok' }));

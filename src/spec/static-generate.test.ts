@@ -1,6 +1,6 @@
 /** 静的モード（generate）の成果物と、ライブAPIとのスキーマの一致（要件3・4）。方針は ./support.ts の冒頭を参照。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { XMLValidator } from 'fast-xml-parser';
@@ -209,6 +209,46 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       ]) {
         expect(read(name).length).toBeGreaterThan(0);
       }
+    });
+
+    it('途中で失敗したら、前回の出力をそのまま残す', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+      const before = read('now-playing.json');
+
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      givenNowPlaying(aSpotifyTrack({ name: '別の曲' }));
+      givenTopTracks([aSpotifyTrack()]);
+      // 最後に書く一時ファイルの名前を塞いで、書き込みの途中で失敗させる
+      mkdirSync(join(outDir, '.snapshot.json.tmp'));
+      await expect(runGenerate()).rejects.toThrow();
+
+      expect(read('now-playing.json')).toBe(before);
+      expect(readdirSync(outDir).filter((name) => name.endsWith('.tmp'))).toEqual(['.snapshot.json.tmp']);
+    });
+
+    it('ジャケ写は同時に8枚までしか取りに行かない', async () => {
+      const inner = fetch;
+      let inFlight = 0;
+      let peak = 0;
+      vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
+        if (!String(input).includes('.scdn.co')) return inner(input, init);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        inFlight -= 1;
+        return inner(input, init);
+      });
+      givenNowPlaying(null);
+      givenTopTracks(Array.from({ length: 30 }, (_, index) => aSpotifyTrack({ id: `t${index}` })));
+
+      await generate({ outDir, count: 30, range: 'short_term', limit: 50, theme: 'dark', skipMood: true });
+
+      expect(peak).toBeGreaterThan(1);
+      expect(peak).toBeLessThanOrEqual(9); // ジャケ写の枠 8 ＋ カードの1枚
     });
 
     it('--out の出力先が無ければ、ネストしたパスでも作る', async () => {

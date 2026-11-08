@@ -10,7 +10,7 @@
  * 読むのは最初の1回と、必須の値が見つからなかったとき（requireAuthValue）だけ。動いているサーバーの横で
  * `npm run setup` を実行すると、次に値が要ったときに読み直して反映される（成功している間はファイルを読まない）。
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 export interface StoredAuth {
@@ -120,9 +120,16 @@ export function saveStoredAuth(update: StoredAuth): void {
   const merged: StoredAuth = { ...loadStoredAuth(true), ...update };
 
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
-  // 既存ファイルがある場合 writeFileSync の mode は適用されないため明示的に絞る
-  chmodSync(path, 0o600);
+  // 一時ファイルに書いてから置き換える。その場で書き換えると、途中で落ちたときに refresh_token を失う
+  const temp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temp, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
+    // 同じ名前の一時ファイルが残っていると writeFileSync の mode は適用されないため明示的に絞る
+    chmodSync(temp, 0o600);
+    renameSync(temp, path);
+  } finally {
+    rmSync(temp, { force: true });
+  }
 
   cached = merged;
 }
