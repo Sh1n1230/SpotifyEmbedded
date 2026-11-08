@@ -17,6 +17,13 @@
 | 最新のリリース | ✅ |
 | それより前 | ❌ |
 
+## 対象と対象外
+
+| | 例 |
+|---|---|
+| **対象** | このリポジトリのコード・GitHub Actions のワークフローの脆弱性 |
+| **対象外** | README で避けるよう書いている構成で起きること（`CORS_ORIGIN=*` のままの公開、プロキシの裏でない環境での `TRUSTED_PROXY_HEADER`、公開環境での `ENABLE_AUTH_ROUTES`）、Spotify や LLM のサービス側の問題 |
+
 ## 認証情報の扱い
 
 Spotify の Client Secret・refresh_token、LLM の API キー、GitHub Actions の Secrets は絶対にコミットしないでください。`npm run setup` を手元で実行し、本番の値はデプロイ先のシークレット管理機能（GitHub Secrets・`wrangler secret`・`fly secrets` など）に置いてください。

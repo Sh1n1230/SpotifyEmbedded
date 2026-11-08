@@ -7,7 +7,12 @@ import { XMLValidator } from 'fast-xml-parser';
 
 import { moodCache, nowPlayingCache, setDurableStore, type DurableStore } from '../cache/index.js';
 import { collectNowPlaying } from '../core/collect.js';
-import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
+import {
+  RANKING_MOOD_BASIS_SIZE,
+  RANKING_MOOD_MAX_NEWCOMERS,
+  resolveRankingMood,
+  type RankingMoodRecord,
+} from '../core/rankingMood.js';
 import { generate } from '../cli/generate.js';
 import { chatCompletion } from '../llm/client.js';
 import { renderRankingCard } from '../render/ranking.js';
@@ -931,5 +936,20 @@ describe('LLM へのリクエストの形（送り先ごとの違い）', () => 
   ])('%s は送る前に、原因の分かる理由で拒む', async (baseUrl, reason) => {
     await expect(send(baseUrl)).rejects.toThrow(reason);
     expect(callsTo('/chat/completions')).toHaveLength(0);
+  });
+});
+
+describe('ランキングのムード文の作り直しの条件は、文書と定数で一致する', () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+  const newcomers = RANKING_MOOD_MAX_NEWCOMERS + 1;
+
+  it('README の設計メモ', () => {
+    const readme = read('../../README.md');
+    expect(readme).toContain(`上位${RANKING_MOOD_BASIS_SIZE}曲`);
+    expect(readme).toContain(`${newcomers}曲以上`);
+  });
+
+  it('CLAUDE.md', () => {
+    expect(read('../../CLAUDE.md')).toContain(`≥${newcomers} of the current top ${RANKING_MOOD_BASIS_SIZE}`);
   });
 });

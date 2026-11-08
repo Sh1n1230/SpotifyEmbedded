@@ -25,12 +25,16 @@ Spotifyで再生中の楽曲をもとに、LLMが推論したムード文（今�
 
 本ツールには「静的モード」と「ライブAPIモード」の2つの動作方式があり、サーバーを常時稼働させない構成でも運用できます。
 
-| | サーバー | リアルタイム性 | 主な用途 |
-|---|---|---|---|
-| **静的モード** | 不要 | 数十分〜数時間ごと（※） | GitHub README、ブログ、手軽に導入したい場合 |
-| **ライブAPIモード** | 必要 | 秒単位 | ポートフォリオサイトで即時反映させたい場合 |
+| | サーバー | リアルタイム性 | 必要なアカウント | 費用の目安 | 主な用途 |
+|---|---|---|---|---|---|
+| **静的モード** | 不要 | 数十分〜数時間ごと（※） | GitHub・Spotify | 公開リポジトリなら無料（LLM は下記） | GitHub README、ブログ、手軽に導入したい場合 |
+| **ライブAPIモード** | 必要 | 秒単位 | Spotify と Cloudflare（または Docker を動かす場所） | Workers の無料枠で動く（LLM は下記） | ポートフォリオサイトで即時反映させたい場合 |
+
+どちらも、ムード文を使うなら LLM の API キーが要ります（Gemini などの無料枠で足ります。無くても動きます）。
 
 ライブAPIモードが対象とするデータは、リアルタイム更新が必要な再生中情報（now-playing）に限定されます。ランキング情報は数週間から1年単位の集計値であり即時性が求められないため、静的モードでのみ出力します。なお、now-playing のJSONスキーマは両モードで共通しているため、静的モードからライブAPIモードへの移行はデータ取得先URLの変更のみで完了します。
+
+**目次**: [静的モード](#静的モードサーバー不要) ・ [ライブAPIモード](#ライブapiモード) ・ [両方を使う](#静的モードとライブapiを両方使う) ・ [APIリファレンス](#apiリファレンス) ・ [デプロイ](#デプロイライブapiモードのみ) ・ [設定](#設定) ・ [ムード文が出ないとき](#トラブルシューティング-ムード文が出ない) ・ [設計メモ](#設計メモ)
 
 ---
 
@@ -48,11 +52,13 @@ cd SpotifyEmbedded
 npm ci --ignore-scripts
 ```
 
-[Spotify Developer Dashboard](https://developer.spotify.com/dashboard) でアプリケーションを作成し、**Settings → Redirect URIs** に次のURIを登録します。
+[Spotify Developer Dashboard](https://developer.spotify.com/dashboard) でアプリケーションを作成し（使う API を聞かれたら **Web API** を選びます）、**Settings → Redirect URIs** に次のURIを登録します。
 
 ```
 http://127.0.0.1:3000/auth/callback
 ```
+
+`localhost` は登録できません。Spotify は Redirect URI の http をループバックの IP アドレスの明示（`127.0.0.1` か `[::1]`）に限っています（[Redirect URIs](https://developer.spotify.com/documentation/web-api/concepts/redirect_uri)）。
 
 ムード文の生成に用いるLLMプロバイダは自由に選択できます。OpenAIのChat Completions API形式（`POST {baseUrl}/chat/completions`）を受け付けるエンドポイントであれば、任意のサービスを利用できます。セットアップスクリプトには代表的なプロバイダの入力補助が含まれており、一覧にないサービスでもカスタムURLを指定して利用可能です。
 
@@ -90,6 +96,32 @@ npm run setup
 
 `Update Spotify snapshot` が毎回失敗する、またはライブAPIが 502（`/badge.svg` と `/embed` は「取得できませんでした」）を返し、ログに `invalid_grant` と出る場合は、refresh_token が失効または取り消されています（6か月の期限切れ、Spotify のアプリ連携の解除、Client Secret の再発行など）。`npm run setup` で取り直して登録し直してください。静的モードのカードは、その間も最後に成功した時点の内容のまま残ります。
 
+新しい refresh_token は、使っている場所すべてに反映します。
+
+| 実行環境 | 反映の方法 |
+|---|---|
+| 静的モード（GitHub Actions） | `gh` があれば `npm run setup` が更新します。無ければ **Settings → Secrets and variables → Actions** で `SPOTIFY_REFRESH_TOKEN` を更新し、**Run workflow** で確かめます |
+| Cloudflare Workers | `npx wrangler secret put SPOTIFY_REFRESH_TOKEN` |
+| Docker | `.env` か `data/auth.json` を更新してコンテナを起動し直します（各ホストのシークレットを使っているなら、そちらを更新します） |
+
+#### トラブルシューティング: 認可の後に 403 になる
+
+新しく作った Spotify アプリは Development Mode で、Dashboard の **User Management** に登録したユーザーしか使えません（[Quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)）。アプリを作ったアカウントと聴いているアカウントが違う場合は、聴いているアカウントを登録してください。
+
+#### トラブルシューティング: ムード文が出ない
+
+曲の情報は出ているのにムード文だけが無いときは、ログ（Actions の `Update Spotify snapshot` の実行ログ・`wrangler tail`・コンテナのログ）に `[mood] ムード文を省略しました:` で始まる行が出ています。
+
+| ログのメッセージ | 原因と直し方 |
+|---|---|
+| `LLMのAPIキーが拒否されました` | `LLM_API_KEY` の誤りか失効です。キーを発行し直します |
+| `モデル "…" が見つかりません` | `LLM_MODEL` と `LLM_BASE_URL` の組み合わせを確かめます |
+| `LLM がリクエストを受け付けませんでした` | そのモデルが送り先で使えるかを確かめます |
+| `LLM_MODEL が設定されていません` | プリセットに無い送り先では `LLM_MODEL` が必須です |
+| `API キーが平文で送られるため…` | `LLM_BASE_URL` を `https://` にします（`http://` はローカルだけ） |
+| `LLMへのリクエストがタイムアウトしました` | 一時的なら次の回に作り直されます。続くなら送り先の状態を確かめます |
+| `ムード文として採れない出力でした` | モデルの出力が長すぎるか、使えない文字を含んでいます。別のモデルを試します |
+
 ### 3. 有効化
 
 フォークしたリポジトリでは、GitHub Actions がはじめは無効になっています。次の順で有効化してください。
@@ -104,7 +136,7 @@ npm run setup
 
 ### 4. 埋め込みコードの配置
 
-`https://<username>.github.io/SpotifyEmbedded/` 以下に生成物が公開されます。
+`https://<username>.github.io/SpotifyEmbedded/` 以下に生成物が公開されます。`SpotifyEmbedded` の部分はリポジトリ名です。リポジトリ名を変えた場合や `<username>.github.io` のリポジトリに入れた場合は、**Settings → Pages** に表示される URL を使ってください。
 
 ```markdown
 <!-- GitHub README（ダーク/ライト自動切替） -->
@@ -125,6 +157,8 @@ npm run setup
         title="Spotify で最後に聴いた曲"
         width="500" height="180" style="border: 0" loading="lazy"></iframe>
 ```
+
+> iframe 用のページにはカードの下にランキングも描かれます。`height="180"` ではカードだけが見え、ランキングはスクロールしないと見えません。ランキングまで見せるときの高さの目安は `260 + 57 × 件数`（ムード文があれば約 30 足す）です。
 
 ```js
 // データとしての利用（ライブAPIと同一スキーマ）
@@ -154,10 +188,12 @@ const res = await fetch('https://<username>.github.io/SpotifyEmbedded/now-playin
 > **更新の間隔について**
 > ワークフロー定義上は30分間隔でスケジュールを設定していますが、GitHub Actionsの `schedule` トリガーは定刻起動を保証せず、実行の遅延や間引きが発生します。環境や混雑状況によっては更新間隔が2〜5時間程度空く場合があります。また、GitHubによる画像キャッシュ（camoプロキシ）の影響により、README上の表示更新にはさらなる遅延が加わります。
 > 手動で即座に更新したい場合は、GitHub上の **Actions → Update Spotify snapshot → Run workflow** を実行してください。秒単位での即時反映が必要な場合は、後述のライブAPIモードを利用します。
+> `schedule` の最短の間隔は5分です。公開リポジトリの Actions は無料ですが、非公開リポジトリでは無料枠の分数を使います（30分おきで月に約1,440回。[About billing for GitHub Actions](https://docs.github.com/en/billing/concepts/product-billing/github-actions)）。
+> README の画像のキャッシュをすぐ消したいときは、ページの HTML で画像の `camo.githubusercontent.com/...` の URL を調べて `curl -X PURGE <その URL>` を送ります（[About anonymized URLs](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-anonymized-urls)）。
 
 ### ローカル環境での生成
 
-GitHub Actionsを利用せず、ローカル環境で直接静的ファイルを生成することもできます。
+GitHub Actionsを利用せず、ローカル環境で直接静的ファイルを生成することもできます。先に `npm run setup` を済ませておいてください（`.env` か `data/auth.json` の Spotify の設定を使います）。
 
 ```bash
 npm run generate                      # ./out に出力
@@ -183,6 +219,8 @@ npm run generate -- --no-mood         # LLM設定なしで実行
 | `dark` | `now-playing.svg`・`ranking.svg` | `index.html` |
 | `light` | `now-playing-light.svg`・`ranking-light.svg` | `index.html`（ライト） |
 
+ランキング SVG の高さは内容で変わります（`50 + 件数 × 56 + 12`。ムード文があれば行数ごとに 22 と余白の 6 を足します）。README に `width` だけで貼ると、`--count` やムード文の行数で周りの位置が変わります。
+
 出力ファイル名は集計期間によらず共通（`ranking.svg` / `top-tracks.json`）です。指定した集計期間は JSON/YAML の `range` フィールドに記録されます。GitHub Actions では手動実行（Run workflow）時に期間と件数を指定できます。
 
 ### ランキングの集計期間
@@ -206,7 +244,16 @@ npm run setup      # 初期設定が未完了の場合
 npm run dev        # http://127.0.0.1:3000
 ```
 
-レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外。IPv6 は /64 単位で数えます）。超えると `/api/now-playing` は 429 と `Retry-After` を返し、`/badge.svg` と `/embed` は「取得できませんでした」のカードを返します（理由は `X-Spotify-Embedded-Error: rate_limited` ヘッダー）。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません。
+レート制限は、Node.js 版・Cloudflare Workers 版ともに IP ごとに 60 秒あたり 100 リクエストが目安です（`/health` は対象外。IPv6 は /64 単位で数えます）。超えると `/api/now-playing` は 429 と `Retry-After` を返し、`/badge.svg` と `/embed` は「取得できませんでした」のカードを返します（理由は `X-Spotify-Embedded-Error: rate_limited` ヘッダー）。Workers 版は拠点ごとの近似カウントのため、厳密な上限ではありません（別の拠点から来るアクセスは別々に数えられ、上限を超えても通ることがあります）。
+
+| | Node.js 版 | Cloudflare Workers 版 |
+|---|---|---|
+| 数え方 | プロセスのメモリで厳密に数える | [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) の拠点ごとの近似 |
+| `RateLimit-Limit`・`RateLimit-Remaining`・`RateLimit-Reset` | 付く（上限・残り回数・窓が明けるまでの秒数） | 付かない（残り回数が分からないため） |
+| `Retry-After`（429 のとき） | 窓が明けるまでの秒数 | 常に 60 |
+
+> **聴いている曲は誰にでも見えます**
+> `/api/now-playing` に認証はなく、URL を知っている人は誰でも、曲名・アーティスト・アルバム・ジャケ写・再生中かどうか・ムード文を確かめられます（静的モードの公開ファイルも同じです）。
 
 > **公開範囲とコストについて**
 > `CORS_ORIGIN` が未設定（`*`）のままだと、どのサイトからでもこの API を呼べます。他人のサイトに埋め込まれると、自分の Spotify の利用枠と、ムード文を生成する LLM の利用料を使われます。本番では埋め込み先のオリジンに限ってください（カンマ区切りで複数書けます）。本番相当（`NODE_ENV=production`・Workers）で `*` のまま起動すると警告を出します。
@@ -298,6 +345,19 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 > **`popularity` / `preview_url` / `genres` について**
 > Spotify側の仕様変更により、2024年11月以降に作成された開発者アプリケーションではこれらの項目がAPIから返却されません（アーティスト情報のバッチ取得 `/artists?ids=` は 403 Forbidden となります）。スキーマの後方互換性を保つためレスポンス内のキーは維持されますが、`popularity` と `preview_url` は常に `null`、`genres` は空配列となります。詳細な背景は[設計メモ](#audio-features-を使わない理由)を参照してください。
 
+#### エラー応答
+
+| ステータス | 本文 | 意味 |
+|---|---|---|
+| 429 | `{ "error": "Too many requests, please try again later." }` | このAPIのレート制限（`Retry-After` つき） |
+| 429 | `{ "error": "Spotify rate limit exceeded", "retry_after": N }` | Spotify のレート制限（`Retry-After` つき） |
+| 502 | `{ "error": "Spotify authentication failed. ..." }` | refresh_token の失効など |
+| 502 | `{ "error": "Spotify API request failed", "spotify_status": N }` | Spotify の失敗 |
+| 502 | `{ "error": "Could not reach Spotify" }` | Spotify に接続できない |
+| 504 | `{ "error": "Spotify API timed out" }` | Spotify の時間切れ |
+| 404 | `{ "error": "Not found" }` | 未定義のパス |
+| 500 | `{ "error": "Internal server error" }` | 想定外のエラー |
+
 ### ランキング（`top-tracks.json`、静的モードのみ）
 
 このデータはライブAPIモードのエンドポイントとしては提供されず、静的モードでのみ `top-tracks.json` および `.yaml` として出力されます。各楽曲オブジェクトには `rank` と `genres` が付与されます。LLMが設定されている場合は、ランキング全体の傾向を表す `mood`（例: `"最近は夜に似合う曲ばかり聴いているようです"`）も記録されます（未設定時は `mood: null`）。
@@ -312,6 +372,23 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 | `GET /badge.svg` | now-playingカード画像（背景は透過。ライトの背景に貼るときは `theme=light`） | `theme` |
 | `GET /embed.js` | JavaScript埋め込みスクリプト | — |
 
+`/badge.svg` と `/embed` は失敗しても 200 でカードを返し、理由を `X-Spotify-Embedded-Error` ヘッダーで示します。
+
+| 値 | 意味 |
+|---|---|
+| `spotify_unavailable` | Spotify から取得できなかった |
+| `rate_limited` | レート制限を超えた |
+
+---
+
+## 静的モードとライブAPIを両方使う
+
+ランキングは静的モード、now-playing はライブAPI、という構成にできます。同じ設定を2か所に登録します。
+
+1. `npm run setup` で設定します（`gh` があれば GitHub Secrets にも登録されます）
+2. Workers に `npm run deploy` し、Secrets を登録します（[Cloudflare Workers](#cloudflare-workers推奨無料)）
+3. `npm run setup` で refresh_token を取り直したら、**GitHub Secrets と `wrangler secret` の両方**を更新します
+
 ---
 
 ## デプロイ（ライブAPIモードのみ）
@@ -322,7 +399,7 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Sh1n1230/SpotifyEmbedded)
 
-Cloudflare Workersの無料プラン（1日最大10万リクエスト）の範囲内で運用できます。常時待機しておりインスタンスのスリープが発生しないため、GitHub READMEに画像を埋め込んだ際にも、起動遅延に伴う画像プロキシ（camo）のタイムアウトを回避できます。
+Cloudflare Workersの無料プラン（1日最大10万リクエスト）の範囲内で運用できます。isolate の起動が数ミリ秒で済むため、しばらくアクセスが無くても、GitHub READMEに埋め込んだ画像が画像プロキシ（camo）の時間制限に間に合います。
 
 ```bash
 npx wrangler login
@@ -330,16 +407,18 @@ npm run deploy
 npx wrangler secret put SPOTIFY_CLIENT_ID        # プロンプトに従って各値を設定
 npx wrangler secret put SPOTIFY_CLIENT_SECRET
 npx wrangler secret put SPOTIFY_REFRESH_TOKEN
-npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_MODEL / CORS_ORIGIN も同様）
+npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_MODEL も同様）
 ```
 
 ムード文の保存先（Workers KV のネームスペース）は事前に作る必要はありません。`wrangler.jsonc` の `MOODS` バインディングには `id` を書いておらず、初回の `npm run deploy` で Wrangler が自動作成して Worker にバインドします（[automatic provisioning](https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning)）。対話的に実行した場合は、既存のネームスペースにつなぐか新しく作るかを聞かれることがあり、作成後は `id` が `wrangler.jsonc` に書き戻されます。書き戻された `id` は残しても消しても構いません。2回目以降のデプロイは、デプロイ済みの Worker の `MOODS` バインディングをそのまま引き継ぎます。
 
-`npm run setup` を実行済みの場合は、`npx wrangler secret bulk .env` で一括登録できます。
+`npm run setup` を実行済みの場合は、`npx wrangler secret bulk .env` で一括登録できます。`.env` の中身がそのまま Secret になるので、先に中身を確かめてください。Workers で使うのは `SPOTIFY_CLIENT_ID`・`SPOTIFY_CLIENT_SECRET`・`SPOTIFY_REFRESH_TOKEN`・`LLM_API_KEY`・`LLM_BASE_URL`・`LLM_MODEL`・`CORS_ORIGIN` だけで、`PORT` や `AUTH_STORE_PATH` は意味を持ちません。
+
+`CORS_ORIGIN` は秘密情報ではないので、`wrangler.jsonc` の `vars` か Cloudflare のダッシュボードの変数に書くと、値を確かめやすくなります（フォークにコミットしたくない場合は Secret でも動きます。[Environment variables](https://developers.cloudflare.com/workers/configuration/environment-variables/)）。
 
 デプロイ先URLは `https://spotify-embedded.<subdomain>.workers.dev` です。設定内容は [`wrangler.jsonc`](wrangler.jsonc) に記述されています。ローカル環境でWorkersとして動作確認を行うには、`.dev.vars.example` を `.dev.vars` にコピーして `npm run dev:worker` を実行します。
 
-- 楽曲ごとのムード文はWorkers KVに永続化します。Workersの実行インスタンスはリクエスト終了後に破棄されやすいため、インメモリキャッシュのみでは同一楽曲に対するLLMの重複呼び出しを防げません。
+- 楽曲ごとのムード文はWorkers KVに永続化します。Workersの実行インスタンスはリクエスト終了後に破棄されやすいため、インメモリキャッシュのみでは同一楽曲に対するLLMの重複呼び出しを防げません。KV の無料枠の書き込みは1日1,000回で、超えると保存に失敗し、isolate が入れ替わるたびにムード文を作り直します（[KV の制限](https://developers.cloudflare.com/kv/platform/limits/)）。
 - Workers環境ではファイルシステムが利用できないため、`data/auth.json` は読み込めません。設定値はすべてWranglerのシークレット機能で環境変数として設定します。
 - 認証用エンドポイント（`npm run auth` / `/auth/*`）はローカル実行専用です。セキュリティ上、Workers環境では有効化しないでください。
 
@@ -352,7 +431,13 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 
 `.env` は `npm run setup` が作ります（`.dockerignore` で除外しているので、イメージには入りません）。秘密情報を `-e KEY=値` でコマンドラインに書くと、シェルの履歴や `ps` に残るので避けてください。本番のプラットフォームでは、それぞれのシークレット機能（`fly secrets set` など）を使います。
 
-永続ボリュームを `/app/data` にマウントすることで、環境変数の代わりに `data/auth.json` による設定管理も可能です。
+`docker run --env-file` は dotenv と違って値の引用符を外さず、`export` も解釈しません。`npm run setup` は `#` や空白を含む値を引用符で囲んで `.env` に書くので、そのような値があるときは各ホストのシークレット機能か、引用符を外した `--env-file` 用のファイルを使ってください。
+
+永続ボリュームを `/app/data` にマウントすることで、環境変数の代わりに `data/auth.json` による設定管理も可能です。本番のイメージでは `npm run setup` を実行できないので、ホストで `npm run setup` を実行して作った `data/auth.json` を置きます。コンテナは `USER node`（uid 1000）で動くので、refresh_token が更新されたときに書き戻せるよう `chown 1000:1000` で書き込みを許してください。
+
+**待機中に止まるホストでは最小台数を設定してください。** Cloud Run は既定で0台まで、Fly.io は既定で使われていないマシンを止めるため、起動に数秒かかり、GitHub の camo が画像の取得を打ち切って README の画像が壊れます。Cloud Run は最小インスタンス数を1に、Fly.io は `auto_stop_machines = false`（または `min_machines_running = 1`）にします。
+
+**リバースプロキシの裏では `TRUSTED_PROXY_HEADER` を設定してください。** 設定しないと全員がプロキシのアドレスになり、レート制限の枠（60秒100回）を共有します。Fly.io は `fly-client-ip`、Cloud Run は `x-forwarded-for` が例です。
 
 ---
 
@@ -385,6 +470,8 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `OPENAI_API_KEY` | `https://api.openai.com/v1` |
 | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
 | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` |
+
+GitHub Actions（静的モード）のワークフローは `LLM_API_KEY`・`LLM_BASE_URL`・`LLM_MODEL` の名前の Secrets だけを渡すので、別名では登録しないでください（`npm run setup` の自動登録はこの名前を使います）。
 
 同様に `LLM_BASE_URL` は `OPENAI_BASE_URL`、`LLM_MODEL` は `GROQ_MODEL` でも指定できます。OpenAI には、推論モデル（o 系・gpt-5 系）でも動くよう `max_tokens` ではなく `max_completion_tokens` を送り、`temperature` を受け付けないモデルでは外して送り直します。
 
@@ -427,7 +514,7 @@ Spotify Web APIでは、2024年11月以降に作成された開発者アプリ�
 
 ## ライセンス
 
-MIT
+[MIT](LICENSE)
 
 ## コントリビューション
 

@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build commands
 
-`dev:worker` reads secrets from `.dev.vars`; `setup` is interactive OAuth (writes `.env` +
+Run the same checks as CI, in order: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`
+(see CONTRIBUTING.md). `dev:worker` reads secrets from `.dev.vars`; `setup` is interactive OAuth (writes `.env` +
 `data/auth.json`, optionally gh secrets); `auth` is legacy.
 
 ## Two delivery modes
@@ -76,7 +77,7 @@ The same core powers both. This split is the product's core idea — don't colla
   `public/_headers`
 - **Workers**: secrets reach `process.env` via `nodejs_compat`, so `config.ts` works unchanged;
   `data/auth.json` is unavailable there. Import `dotenv` only in the Node entries
-  (`src/index.ts`, `src/cli/index.ts`)
+  (`src/index.ts`, `src/cli/index.ts`; `src/authServer.ts` reaches it through `src/index.ts`)
 - Static mode carries `snapshot.json` forward so a paused Spotify doesn't produce empty cards.
   When paused, `generate` first asks `/me/player/recently-played` (`src/spotify/recentlyPlayed.ts`)
   and uses it if `played_at` is newer than the snapshot — Actions runs hours apart, so
