@@ -92,8 +92,11 @@ export async function generateMood(params: {
   const lines = [
     `曲名: ${truncate(params.trackName, 100)}`,
     `アーティスト: ${truncate(params.artistName, 100)}`,
-    `アルバム: ${truncate(params.albumName, 100)}`,
   ];
+  // シングルはアルバム名が曲名と同じことが多い。情報の増えない行は省く
+  if (params.albumName.trim().toLowerCase() !== params.trackName.trim().toLowerCase()) {
+    lines.push(`アルバム: ${truncate(params.albumName, 100)}`);
+  }
   if (params.genres.length > 0) {
     lines.push(`ジャンル: ${truncate(params.genres.join(', '), 100)}`);
   }

@@ -40,12 +40,12 @@ export interface SpotifyTrack {
   album: {
     name: string;
     images: SpotifyImage[];
-    release_date: string;
+    release_date?: string;
   };
   duration_ms: number;
   /** 2024年11月以降に作成されたアプリでは返らない。 */
   popularity?: number;
-  explicit: boolean;
+  explicit?: boolean;
   external_urls: { spotify: string };
   /** 同上。30秒プレビューも新しいアプリでは配信されない。 */
   preview_url?: string | null;

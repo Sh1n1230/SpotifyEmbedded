@@ -1034,3 +1034,38 @@ describe('トークンの更新と認可コードの交換で送るフォーム'
     expect(form['redirect_uri']).toBe(redirectUri);
   });
 });
+
+describe('401 の後の取り直し', () => {
+  it('別のリクエストがすでに取り直していれば、もう一度更新を送らない', async () => {
+    let issued = 0;
+    respondWith((url) => {
+      if (!url.includes('accounts.spotify.com/api/token')) return null;
+      issued += 1;
+      return jsonOk({ access_token: `token-${issued}`, expires_in: 3600 });
+    });
+    const stale = await getAccessToken();
+    expect(await getAccessToken(true, stale)).toBe('token-2');
+
+    expect(await getAccessToken(true, stale)).toBe('token-2');
+
+    expect(issued).toBe(2);
+  });
+});
+
+describe('ジャンルの50件ずつの問い合わせ', () => {
+  it('2回目のバッチが失敗しても、1回目で取れたジャンルは返す（403 ではないのでラッチしない）', async () => {
+    const artists = Array.from({ length: 60 }, (_, index) => ({
+      id: `a${index}`,
+      name: `A${index}`,
+      external_urls: { spotify: `https://open.spotify.com/artist/a${index}` },
+    }));
+    givenTopTracks([aSpotifyTrack({ artists })]);
+    givenArtistGenres({ a0: ['rock'] });
+    respondWith((url) => (url.includes('/artists?ids=') && url.includes('a59') ? new Response('busy', { status: 503 }) : null));
+
+    const result = await collectTopTracks();
+
+    expect(result.tracks[0]?.genres).toEqual(['rock']);
+    expect(artistGenresAvailable()).toBe(true);
+  });
+});

@@ -172,8 +172,13 @@ function adoptRotatedRefreshToken(token: string): void {
   );
 }
 
-export async function getAccessToken(forceRefresh = false): Promise<string> {
-  if (!forceRefresh && tokenState && Date.now() < tokenState.expiresAt) {
+/**
+ * @param forceRefresh 401 を受けた後の取り直し
+ * @param staleToken 401 を受けたトークン。別のリクエストがすでに取り直していれば、もう一度更新を送らない
+ */
+export async function getAccessToken(forceRefresh = false, staleToken?: string): Promise<string> {
+  const replaced = staleToken !== undefined && tokenState?.accessToken !== staleToken;
+  if ((!forceRefresh || replaced) && tokenState && Date.now() < tokenState.expiresAt) {
     return tokenState.accessToken;
   }
   // 401 を受けた後の取り直し（forceRefresh）も、進行中の更新があればそれを待つだけでよい
