@@ -422,8 +422,7 @@ function renderLiveScript(
 
   function schedule() {
     if (timer !== null) clearTimeout(timer);
-    var delay = Math.max(Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS), waitAtLeastMs);
-    waitAtLeastMs = 0;
+    var delay = Math.max(Math.min(interval * Math.pow(2, failures), MAX_DELAY_MS), notBeforeMs - Date.now());
     timer = setTimeout(tick, delay);
   }
 
@@ -433,7 +432,8 @@ function renderLiveScript(
     return value && /^\\d+$/.test(value) ? Number(value) * 1000 : 0;
   }
 
-  var waitAtLeastMs = 0;
+  // Retry-After が明けるまで取得しない時刻（表示に戻ったときの取り直しもこれを守る）
+  var notBeforeMs = 0;
 
   function load() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -441,7 +441,7 @@ function renderLiveScript(
     return fetch(endpoint, { headers: { Accept: 'application/json' }, signal: controller ? controller.signal : undefined })
       .then(function (res) {
         if (!res.ok) {
-          if (res.status === 429 || res.status === 503) waitAtLeastMs = retryAfterMs(res);
+          if (res.status === 429 || res.status === 503) notBeforeMs = Date.now() + retryAfterMs(res);
           throw new Error('HTTP ' + res.status);
         }
         return res.json();
@@ -472,7 +472,10 @@ function renderLiveScript(
   }
 
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) tick();
+    if (document.hidden) return;
+    // Retry-After の間は取り直さない。待機中のタイマーがあればそのまま、非表示の間に切れていれば待ち直す
+    if (Date.now() < notBeforeMs) { if (timer === null) schedule(); }
+    else tick();
   });
   schedule();
 })();

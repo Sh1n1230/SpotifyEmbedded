@@ -552,6 +552,32 @@ describe('ライブ更新の周期と再試行（3つのスクリプトで同じ
     expect(nowPlayingCalls().length).toBe(afterLimited + 1);
   });
 
+  it.each(Object.entries(runners))('%s: Retry-After の間にタブを隠して戻しても取得せず、明けたら1回だけ取得する', async (_name, run) => {
+    let attempt = 0;
+    respondWith((url) => {
+      if (!url.includes('/api/now-playing')) return null;
+      attempt += 1;
+      return attempt === 1
+        ? new Response('{}', { status: 429, headers: { 'Retry-After': '60' } })
+        : jsonOk(aNowPlaying('A', 'ムード'));
+    });
+    run();
+    await settle();
+    if (nowPlayingCalls().length === 0) await vi.advanceTimersByTimeAsync(30_000);
+    const afterLimited = nowPlayingCalls().length;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    setHidden(true);
+    setHidden(false);
+    await settle();
+    expect(nowPlayingCalls().length).toBe(afterLimited);
+
+    await vi.advanceTimersByTimeAsync(49_000);
+    expect(nowPlayingCalls().length).toBe(afterLimited);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(nowPlayingCalls().length).toBe(afterLimited + 1);
+  });
+
   describe('embed.js', () => {
     it('<head> に置かれ、data-target の要素がまだ無くても、本文を読み終えてからその要素の中に描く', async () => {
       givenLiveResponses(aNowPlaying('A', 'ムード'));
