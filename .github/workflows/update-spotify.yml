@@ -90,14 +90,19 @@ jobs:
         if: steps.secrets.outputs.configured == 'true'
         env:
           REFRESH_RANKING_MOOD: ${{ inputs.refresh_ranking_mood }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p out
-          if git fetch --depth=1 origin spotify-data 2>/dev/null; then
+          # 非公開のフォークでも読めるよう、push と同じくヘルパーでトークンを渡す（値は .git/config に残らない）
+          # shellcheck disable=SC2016
+          if git -c credential.helper= \
+            -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' \
+            fetch --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" spotify-data 2>/dev/null; then
             git show FETCH_HEAD:snapshot.json > out/snapshot.json 2>/dev/null \
               && echo "前回のスナップショットを復元しました" \
               || echo "スナップショットがないので新規作成します"
           else
-            echo "spotify-data ブランチがまだありません"
+            echo "spotify-data ブランチを取得できませんでした（初回はまだありません）"
           fi
           if [ "$REFRESH_RANKING_MOOD" = "true" ] && [ -f out/snapshot.json ]; then
             node -e 'const f="out/snapshot.json",fs=require("fs"),s=JSON.parse(fs.readFileSync(f));s.ranking_mood=null;fs.writeFileSync(f,JSON.stringify(s))'

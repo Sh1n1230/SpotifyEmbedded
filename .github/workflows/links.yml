@@ -1,0 +1,33 @@
+name: Check links
+
+# 外部サイトの一時的な失敗で PR を止めないよう、週に1回だけ検査する
+on:
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          # 例として書いているだけの URL は調べない
+          args: >-
+            --no-progress
+            --exclude '<username>'
+            --exclude 'your-api\.example\.com'
+            --exclude '(a|b)\.example'
+            --exclude '127\.0\.0\.1'
+            --exclude 'localhost'
+            --exclude 'spotify-embedded\.<subdomain>'
+            README.md CONTRIBUTING.md SECURITY.md docs/dependencies.md
+          fail: true
