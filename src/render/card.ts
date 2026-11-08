@@ -67,7 +67,7 @@ export function renderNowPlayingCard(input: CardInput): string {
     ? renderIdleBody(theme.muted, idleText)
     : renderTrackBody(track, mood, theme);
 
-  const ariaLabel = unavailable ? idleText : buildAriaLabel(shownState, track, mood);
+  const ariaLabel = unavailable ? idleText : buildAriaLabel(shownState, track, mood, input.since);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
@@ -216,10 +216,13 @@ function renderIdleBody(muted: string, text: string): string {
 function buildAriaLabel(
   state: PlaybackState,
   track: TrackSummary | null,
-  mood: MoodResult | null
+  mood: MoodResult | null,
+  since: string | undefined
 ): string {
   if (!track) return IDLE_TEXT;
-  const prefix = state === 'playing' ? '再生中' : '最後に再生';
+  const date = state === 'recent' && since ? new Date(since) : null;
+  const when = date && !Number.isNaN(date.getTime()) ? `（${formatDateTimeJa(date)}）` : '';
+  const prefix = state === 'playing' ? '再生中' : `最後に再生${when}`;
   const moodText = mood?.text ? `${mood.text} — ` : '';
   return `${prefix}: ${moodText}${track.name} / ${track.artist}`;
 }
