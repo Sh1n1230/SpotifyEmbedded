@@ -116,7 +116,7 @@ function renderRow(
   const artY = top + 6;
 
   const art = artDataUri
-    ? `<g transform="translate(${PAD + 26}, ${artY})"><image width="${ART_SIZE}" height="${ART_SIZE}" href="${artDataUri}" clip-path="url(#rank-art-${idSuffix})" preserveAspectRatio="xMidYMid slice"/></g>`
+    ? `<g transform="translate(${PAD + 26}, ${artY})"><image width="${ART_SIZE}" height="${ART_SIZE}" href="${escapeXml(artDataUri)}" clip-path="url(#rank-art-${idSuffix})" preserveAspectRatio="xMidYMid slice"/></g>`
     : `<rect x="${PAD + 26}" y="${artY}" width="${ART_SIZE}" height="${ART_SIZE}" rx="5" fill="${theme.placeholder}"/>`;
 
   return `${art}

@@ -120,7 +120,8 @@ export async function setup(): Promise<void> {
     };
 
     saveStoredAuth(values);
-    console.log(`✓ ${authStorePath()} に保存しました (0600)`);
+    // Windows の chmod は読み取り専用の属性しか変えられないので、0600 とは書かない
+    console.log(`✓ ${authStorePath()} に保存しました${process.platform === 'win32' ? '' : ' (0600)'}`);
 
     const removed = upsertEnvFile(resolve('.env'), values);
     console.log('✓ .env を更新しました');
@@ -382,6 +383,13 @@ function questionOrFail(rl: Interface, query: string): Promise<string> {
   });
 }
 
+/** 結果ページの応答。認可コードを含む URL の応答をキャッシュさせず、スクリプトも読ませない（/auth/callback と同じ配慮）。 */
+const RESULT_PAGE_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+};
+
 // ── OAuth ────────────────────────────────────────────────────────────
 
 /**
@@ -402,7 +410,7 @@ export async function runOAuthFlow(app: OAuthApp, open: (url: string) => void = 
       }
 
       const finish = (status: number, message: string, error?: Error): void => {
-        res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(status, RESULT_PAGE_HEADERS);
         res.end(resultPage(message, !error));
         server.close();
         clearTimeout(timer);
@@ -411,7 +419,7 @@ export async function runOAuthFlow(app: OAuthApp, open: (url: string) => void = 
 
       // state の合わないリクエスト（古いタブ・別のブラウザなど）は断るだけにし、正しいコールバックを待ち続ける
       if (url.searchParams.get('state') !== state) {
-        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(400, RESULT_PAGE_HEADERS);
         res.end(resultPage('state が一致しません。ターミナルに表示された URL から開き直してください。', false));
         return;
       }
