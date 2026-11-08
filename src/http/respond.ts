@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { accepts } from 'hono/accepts';
 import { HTTPException } from 'hono/http-exception';
-import yaml from 'js-yaml';
+import { toYaml } from '../core/yaml.js';
 import {
   SpotifyApiError,
   SpotifyAuthError,
@@ -26,7 +26,7 @@ export function sendFormatted(c: Context, data: unknown): Response {
   // 同じ URL で Accept により形式が変わるので、共有キャッシュに混ぜさせない
   c.header('Vary', 'Accept');
   if (wantsYaml(c)) {
-    return c.body(yaml.dump(data, { lineWidth: 120 }), 200, {
+    return c.body(toYaml(data), 200, {
       'Content-Type': 'application/yaml; charset=utf-8',
     });
   }

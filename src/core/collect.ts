@@ -60,7 +60,7 @@ const MOOD_TTL_SECONDS = 86400;
  */
 async function readThrough<T>(cache: TtlCache, key: string, durableKey: string): Promise<T | null> {
   const hit = cache.get<T>(key);
-  if (hit) return hit;
+  if (hit !== undefined) return hit;
 
   const store = getDurableStore();
   if (!store) return null;
@@ -131,7 +131,7 @@ export async function collectNowPlaying(
   if (options.bypassCache) return fetchAndBuildNowPlaying(options);
 
   const cached = nowPlayingCache.get<NowPlayingResponse>('now-playing');
-  if (cached) return cached;
+  if (cached !== undefined) return cached;
 
   // skipMood の有無で結果が変わるので、共有するのは既定の呼び出しだけ。
   if (options.skipMood) return fetchAndBuildNowPlaying(options);
@@ -205,14 +205,14 @@ export async function collectRecentlyPlayed(
   if (!data) return null;
 
   const wantMood = !options.skipMood && hasLlmConfigured();
-  const previous = options.previous;
-  const sameTrack = previous?.trackId === data.track.id;
-  const newer = !previous || isLater(data.playedAt, previous.observedAt);
-  const moodMissing = sameTrack && !previous?.mood && wantMood;
+  const previous = options.previous ?? null;
+  const sameTrack = previous !== null && previous.trackId === data.track.id;
+  const newer = previous === null || isLater(data.playedAt, previous.observedAt);
+  const moodMissing = sameTrack && !previous.mood && wantMood;
   if (!newer && !moodMissing) return null;
 
   let mood: MoodResult | null = null;
-  if (sameTrack && previous?.mood) {
+  if (sameTrack && previous.mood) {
     mood = previous.mood;
   } else if (wantMood) {
     // 履歴からはジャンルを引かない（新しいアプリでは取れず、往復が増えるだけ）
@@ -220,7 +220,7 @@ export async function collectRecentlyPlayed(
   }
 
   // 同じ曲を作り直しただけなら、時刻は前回のまま（新しい方を採る）
-  const playedAt = newer || !previous ? data.playedAt : previous.observedAt;
+  const playedAt = newer ? data.playedAt : previous.observedAt;
   return { track: data.track, mood, played_at: playedAt };
 }
 

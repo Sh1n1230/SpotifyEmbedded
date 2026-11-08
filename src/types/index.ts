@@ -208,4 +208,3 @@ export interface TopTracksResponse {
   tracks: TopTrackEntry[];
 }
 
-export type ResponseFormat = 'json' | 'yaml';

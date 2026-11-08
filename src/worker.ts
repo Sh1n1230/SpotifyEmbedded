@@ -24,7 +24,7 @@ function kvStore(kv: KVNamespace): DurableStore {
   return {
     get: <T>(key: string) => kv.get<T>(key, 'json'),
     put: (key, value, ttlSeconds) =>
-      kv.put(key, JSON.stringify(value), ttlSeconds ? { expirationTtl: ttlSeconds } : undefined),
+      kv.put(key, JSON.stringify(value), ttlSeconds ? { expirationTtl: Math.max(ttlSeconds, 60) } : undefined),
   };
 }
 

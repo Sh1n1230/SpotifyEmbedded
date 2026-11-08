@@ -24,6 +24,7 @@ import {
 } from '../authStore.js';
 import { buildAuthorizeUrl, exchangeCodeForTokens, type OAuthApp } from '../spotify/oauth.js';
 import { config } from '../config.js';
+import { escapeXml } from '../render/text.js';
 import { PROVIDERS, DEFAULT_BASE_URL, providerLabelForBaseUrl } from '../llm/providers.js';
 import { chatCompletion } from '../llm/client.js';
 import { isLocalLlmEndpoint, llmBaseUrlProblem } from '../llm/endpoint.js';
@@ -432,7 +433,10 @@ export async function runOAuthFlow(app: OAuthApp, open: (url: string) => void = 
           finish(200, '認証が完了しました。ターミナルに戻ってください。');
           done(tokens.refresh_token);
         })
-        .catch((err: Error) => finish(500, err.message, err));
+        .catch((err: unknown) => {
+          const failure = err instanceof Error ? err : new Error(String(err));
+          finish(500, failure.message, failure);
+        });
     });
 
     const timer = setTimeout(() => {
@@ -496,9 +500,7 @@ function openBrowser(url: string): void {
 
 function resultPage(message: string, ok: boolean): string {
   // message は自前の固定文か Error.message のみ。リクエスト由来の値は入れない。
-  const safe = message.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c
-  );
+  const safe = escapeXml(message);
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>SpotifyEmbedded</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#0e1013;color:#f2f4f7">
 <div style="text-align:center"><p style="font-size:2rem;margin:0 0 1rem">${ok ? '✅' : '⚠️'}</p><p style="margin:0">${safe}</p></div>

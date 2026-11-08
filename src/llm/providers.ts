@@ -18,14 +18,18 @@ export interface ProviderPreset {
   note?: string;
 }
 
+/** プリセットが無い場合の既定。Gemini は無料枠があるため。 */
+export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+export const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
+
 export const PROVIDERS: ProviderPreset[] = [
   {
     id: 'gemini',
     // Gemini は OpenAI 互換の口を `/v1beta/openai` に持っている。
     // 素の `/v1beta` や `/v1beta/interactions` ではないので注意。
     label: 'Google Gemini（推奨）',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-3.1-flash-lite',
+    baseUrl: DEFAULT_BASE_URL,
+    defaultModel: DEFAULT_MODEL,
     signupUrl: 'https://aistudio.google.com/apikey',
     note: '無料枠あり',
   },
@@ -45,14 +49,6 @@ export const PROVIDERS: ProviderPreset[] = [
     signupUrl: '',
   },
 ];
-
-/** プリセットが無い場合の既定。Gemini は無料枠があるため。 */
-export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
-
-export function findProvider(id: string): ProviderPreset | undefined {
-  return PROVIDERS.find((provider) => provider.id === id);
-}
 
 /** baseUrl からプリセットを逆引きする（表示用）。 */
 export function providerLabelForBaseUrl(baseUrl: string): string {

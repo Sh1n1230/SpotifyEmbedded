@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import yaml from 'js-yaml';
+import { toYaml } from '../core/yaml.js';
 
 import {
   collectNowPlaying,
@@ -183,13 +183,13 @@ export async function generate(options: GenerateOptions): Promise<void> {
   // データ（ライブAPIと同一スキーマ）
   write(outDir, 'now-playing.json', JSON.stringify(nowPlaying, null, 2) + '\n');
   write(outDir, 'top-tracks.json', JSON.stringify(topTracks, null, 2) + '\n');
-  write(outDir, 'now-playing.yaml', yaml.dump(nowPlaying, { lineWidth: 120 }));
-  write(outDir, 'top-tracks.yaml', yaml.dump(topTracks, { lineWidth: 120 }));
+  write(outDir, 'now-playing.yaml', toYaml(nowPlaying));
+  write(outDir, 'top-tracks.yaml', toYaml(topTracks));
 
   // カードと同じ「最後に聴いた曲」（now-playing.json のスキーマは変えない）
   const lastPlayed = snapshotToLastPlayed(snapshot);
   write(outDir, 'last-played.json', JSON.stringify(lastPlayed, null, 2) + '\n');
-  write(outDir, 'last-played.yaml', yaml.dump(lastPlayed, { lineWidth: 120 }));
+  write(outDir, 'last-played.yaml', toYaml(lastPlayed));
 
   // iframe 用ページ（ホバー・Spotifyリンクが効く）。both のときはライトを -light に分ける
   // （SVG と同じ命名）。単独指定のときは今までどおり index.html だけ
