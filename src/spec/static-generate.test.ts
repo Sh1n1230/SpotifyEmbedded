@@ -211,6 +211,88 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       }
     });
 
+    it('--out の出力先が無ければ、ネストしたパスでも作る', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      const nested = join(outDir, 'a', 'b', 'c');
+
+      await generate({ outDir: nested, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: true });
+
+      expect(readFileSync(join(nested, 'ranking.svg'), 'utf8').length).toBeGreaterThan(0);
+    });
+
+    it('一部のジャケ写が取れなくても、ランキング SVG は完成し、その曲の行だけプレースホルダになる', async () => {
+      const artOf = (url: string) => ({ url, width: 640, height: 640 });
+      givenNowPlaying(null);
+      givenTopTracks([
+        aSpotifyTrack({ id: 'ok', album: { name: 'A', images: [artOf('https://i.scdn.co/image/ok')], release_date: '' } }),
+        aSpotifyTrack({ id: 'ng', album: { name: 'B', images: [artOf('https://i.scdn.co/image/broken')], release_date: '' } }),
+      ]);
+      respondWith((url) => (url.includes('/image/broken') ? new Response('gone', { status: 404 }) : null));
+
+      await runGenerate();
+
+      const svg = read('ranking.svg');
+      expect(XMLValidator.validate(svg)).toBe(true);
+      expect(svg.match(/<image /g)).toHaveLength(1);
+    });
+
+    it('--count より曲が少なければ、ランキングの行数と読み上げは実際の曲数になる', async () => {
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack({ id: 'a', name: '曲A' }), aSpotifyTrack({ id: 'b', name: '曲B' })]);
+
+      await runGenerate();
+
+      const svg = read('ranking.svg');
+      expect(svg).toContain('トップトラック2件');
+      expect(svg).toContain('2位 曲B');
+      expect(svg).not.toContain('3位');
+    });
+
+    it('--count が --limit を超えても失敗せず、最大 limit 件になることを警告する', async () => {
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+
+      await generate({ outDir, count: 30, range: 'short_term', limit: 10, theme: 'dark', skipMood: true });
+
+      expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain('--count 30 は --limit 10 を超えています');
+      expect(read('ranking.svg').length).toBeGreaterThan(0);
+    });
+
+    it.each(['yes', 'null', '123', '- dash', 'a: b'])('曲名が %j でも、YAML を読み戻した値は JSON と一致する', async (name) => {
+      givenNowPlaying(aSpotifyTrack({ name }));
+      givenTopTracks([aSpotifyTrack({ name })]);
+
+      await runGenerate();
+
+      for (const base of ['now-playing', 'top-tracks', 'last-played']) {
+        expect(yaml.load(read(`${base}.yaml`))).toEqual(JSON.parse(read(`${base}.json`)));
+      }
+    });
+
+    it('snapshot.json の ranking_mood だけが壊れていても、生成を続けてムード文を作り直す', async () => {
+      const options = { outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false } as const;
+      givenLlmConfigured();
+      givenLlmReplies('最初の文のようです');
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      await generate(options);
+      const snapshot = JSON.parse(read('snapshot.json')) as { ranking_mood: { track_ids: unknown } };
+      snapshot.ranking_mood.track_ids = 'broken';
+      writeFileSync(join(outDir, 'snapshot.json'), JSON.stringify(snapshot));
+
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      givenLlmReplies('作り直した文のようです');
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      await generate(options);
+
+      const after = JSON.parse(read('snapshot.json')) as { ranking_mood: { mood: { text: string } } };
+      expect(after.ranking_mood.mood.text).toBe('作り直した文のようです');
+    });
+
     it('iframe 用ページは、SVG と同じくダーク（index.html）とライト（index-light.html）の両方を書き出す', async () => {
       givenNowPlaying(aSpotifyTrack());
       givenTopTracks([aSpotifyTrack()]);

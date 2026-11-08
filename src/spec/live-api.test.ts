@@ -185,6 +185,8 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
       const cookie = res.headers.get('set-cookie') ?? '';
       expect(cookie).toMatch(/spotify_oauth_state=[0-9a-f]{32}/);
       expect(cookie).toContain('HttpOnly');
+      // Spotify からのトップレベルの遷移で戻るので、Strict だと Cookie が送られず必ず Invalid state になる
+      expect(cookie).toMatch(/SameSite=Lax/i);
       const state = /spotify_oauth_state=([0-9a-f]+)/.exec(cookie)![1];
       expect(res.headers.get('location')).toContain(`state=${state}`);
     });
@@ -349,6 +351,66 @@ describe('/embed の ?refresh= は数字だけを受け付ける', () => {
     const html = await (await createApp().request(`/embed?refresh=${refresh}`)).text();
 
     expect(html).toContain(`var interval = ${interval};`);
+  });
+});
+
+describe('/embed の ?refresh= の境界', () => {
+  it.each([
+    ['9', 10_000],
+    ['10', 10_000],
+    ['3600', 3_600_000],
+    ['3601', 3_600_000],
+    ['-1', 30_000],
+    ['', 30_000],
+  ])('refresh=%j → %d ミリ秒ごとに取得する', async (refresh, interval) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const html = await (await createApp().request(`/embed?refresh=${refresh}`)).text();
+
+    expect(html).toContain(`var interval = ${interval};`);
+  });
+});
+
+describe('/embed の ?transparent=', () => {
+  it('true なら背景を透過にする', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const html = await (await createApp().request('/embed?transparent=true')).text();
+
+    expect(html).toContain('--bg: transparent');
+  });
+
+  it.each(['1', 'TRUE', 'false', ''])('%j は透過にしない（true だけを受け付ける）', async (value) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const html = await (await createApp().request(`/embed?transparent=${value}`)).text();
+
+    expect(html).not.toContain('--bg: transparent');
+  });
+});
+
+describe('ライブAPIの応答の形', () => {
+  it.each([
+    ['/badge.svg', {}],
+    ['/embed', {}],
+    ['/api/now-playing?format=yaml', {}],
+  ])('%s の Content-Type には charset=utf-8 が付く（曲名は日本語のことが多い）', async (path) => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request(path);
+
+    expect(res.headers.get('content-type')?.toLowerCase()).toContain('charset=utf-8');
+  });
+
+  it.each([
+    ['再生中', aSpotifyTrack()],
+    ['停止中', null],
+  ])('%s でも /api/now-playing の最上位のキーは静的モードと同じ4つだけ', async (_label, track) => {
+    givenNowPlaying(track);
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(Object.keys((await res.json()) as object).sort()).toEqual(['fetched_at', 'is_playing', 'mood', 'track']);
   });
 });
 

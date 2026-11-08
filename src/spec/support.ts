@@ -117,6 +117,13 @@ export function bodyOf(call: RecordedCall): Record<string, unknown> {
   return JSON.parse(body) as Record<string, unknown>;
 }
 
+/** フォーム形式（URLSearchParams）の本文をオブジェクトにして返す（トークンの更新・認可コードの交換）。 */
+export function formBodyOf(call: RecordedCall): Record<string, string> {
+  const body = call.init?.body;
+  if (!(body instanceof URLSearchParams)) throw new TypeError('リクエストの本文が URLSearchParams ではありません');
+  return Object.fromEntries(body);
+}
+
 /** 毎テスト共通の土台となるハンドラ（テスト側は後から上書きできる）。 */
 export function installDefaultHandlers(): void {
   respondWith((url) =>

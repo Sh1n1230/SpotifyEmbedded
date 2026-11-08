@@ -54,6 +54,37 @@ describe('すべてのワークフロー', () => {
       }
     }
   });
+
+  it.each(WORKFLOWS)('%s の actions/checkout はすべて persist-credentials: false（トークンを .git/config に残さない）', (name) => {
+    for (const job of Object.values(loadWorkflow(name).jobs)) {
+      for (const step of job.steps) {
+        if (step.uses?.startsWith('actions/checkout@')) expect(step.with?.['persist-credentials']).toBe(false);
+      }
+    }
+  });
+
+  it.each(WORKFLOWS)('%s は最上位に permissions を持ち、write-all ではない', (name) => {
+    const { permissions } = loadWorkflow(name);
+    expect(permissions).toBeDefined();
+    expect(permissions as unknown).not.toBe('write-all');
+  });
+
+  it.each(WORKFLOWS)('%s の SHA で固定した uses には版のコメント（# vX.Y.Z）がある', (name) => {
+    const text = readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8');
+    for (const line of text.split('\n').filter((candidate) => /uses:\s*\S+@[0-9a-f]{40}/.test(candidate))) {
+      expect(line).toMatch(/# v\d/);
+    }
+  });
+
+  it.each(WORKFLOWS)('%s は pull_request_target を使わず、run の中で信頼できない入力を展開しない', (name) => {
+    const workflow = loadWorkflow(name) as unknown as { on: Record<string, unknown> };
+    expect(Object.keys(workflow.on)).not.toContain('pull_request_target');
+    for (const job of Object.values(loadWorkflow(name).jobs)) {
+      for (const step of job.steps) {
+        expect(step.run ?? '').not.toMatch(/\$\{\{\s*(github\.event\.|inputs\.)/);
+      }
+    }
+  });
 });
 
 describe('ワークフロー定義 (.github/workflows/deploy-workers.yml) の権限', () => {
