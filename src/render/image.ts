@@ -18,7 +18,7 @@ const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/g
  * 640px / 300px / 64px の3種が返るので、必要なサイズへ差し替える。
  * 未知の形式なら元のURLをそのまま使う。
  */
-const SIZE_PREFIX: Record<number, string> = {
+export const SIZE_PREFIX: Record<640 | 300 | 64, string> = {
   640: 'ab67616d0000b273',
   300: 'ab67616d00001e02',
   64: 'ab67616d00004851',
@@ -29,7 +29,6 @@ const KNOWN_PREFIXES = Object.values(SIZE_PREFIX);
 export function albumArtAtSize(url: string, size: 640 | 300 | 64): string {
   if (!url) return url;
   const target = SIZE_PREFIX[size];
-  if (!target) return url;
 
   for (const prefix of KNOWN_PREFIXES) {
     if (url.includes(prefix)) return url.replace(prefix, target);

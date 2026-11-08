@@ -19,7 +19,7 @@ import {
   setupRedirectUriProblem,
   type GhRunner,
 } from '../cli/setup.js';
-import { jsonOk, respondWith } from './support.js';
+import { TSX_LOADER, jsonOk, respondWith } from './support.js';
 
 interface RunOptions {
   /** 標準入力に流す内容。流し終えると EOF になる。 */
@@ -49,7 +49,7 @@ function runEntry(entry: string, args: string[], options: RunOptions, cwds: stri
     process.execPath,
     [
       '--import',
-      new URL('../../node_modules/tsx/dist/loader.mjs', import.meta.url).href,
+      TSX_LOADER,
       fileURLToPath(new URL(entry, import.meta.url)),
       ...args,
     ],
@@ -176,6 +176,8 @@ describe('npm run auth（/auth/* を有効にした Node のサーバー）', ()
     const run = runEntry('../index.ts', [], { env: { PORT: String(40_001 + (process.pid % 20_000)) }, timeout: 8_000 }, cwds);
 
     expect(run.status).toBe(1);
+    expect(run.stderr).toContain('Spotifyの設定が見つかりません');
+    expect(run.stderr).toContain('npm run setup');
     expect(run.stdout).not.toContain('Auth routes enabled');
   }, 30_000);
 

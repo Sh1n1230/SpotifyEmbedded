@@ -1,7 +1,6 @@
 /** ライブAPI（/api/now-playing・/badge.svg・/embed・/auth）の境界。方針は ./support.ts の冒頭を参照。 */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { XMLValidator } from 'fast-xml-parser';
 
 import { TtlCache } from '../cache/index.js';
 import { collectNowPlaying } from '../core/collect.js';
@@ -19,6 +18,7 @@ import {
   headerOf,
   aSpotifyTrack,
   givenNowPlaying,
+  expectValidXml,
 } from './support.js';
 
 describe('ライブAPIは公開エンドポイントとして余計なものを漏らさない', () => {
@@ -125,7 +125,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('image/svg+xml');
       expect(res.headers.get('x-spotify-embedded-error')).toBe('spotify_unavailable');
-      expect(XMLValidator.validate(svg)).toBe(true);
+      expectValidXml(svg);
       expect(svg).toContain('取得できませんでした');
       expect(svg).not.toContain('do-not-leak');
     });
@@ -368,6 +368,14 @@ describe('/embed の ?refresh= の境界', () => {
     const html = await (await createApp().request(`/embed?refresh=${refresh}`)).text();
 
     expect(html).toContain(`var interval = ${interval};`);
+  });
+});
+
+describe('/health', () => {
+  it.each(['GET', 'HEAD'])('%s に 200 で応える（監視の HEAD でも落ちていると見なされない）', async (method) => {
+    const res = await createApp().request('/health', { method });
+
+    expect(res.status).toBe(200);
   });
 });
 
@@ -642,7 +650,7 @@ describe('ライブAPIの境界: レート制限を超えたリクエストは�
     expect(res.headers.get('content-type')).toContain('image/svg+xml');
     expect(res.headers.get('x-spotify-embedded-error')).toBe('rate_limited');
     expect(res.headers.get('retry-after')).toBe('42');
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).toContain('取得できませんでした');
     expect(callsTo('api.spotify.com')).toHaveLength(0);
   });

@@ -1,5 +1,5 @@
 /** 実行環境ごとのエントリ（src/worker.ts・src/index.ts）。方針は ./support.ts の冒頭を参照。 */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { get as httpGet } from 'node:http';
 import { createServer } from 'node:net';
@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 
 import worker from '../worker.js';
 import {
+  TSX_LOADER,
+  callsTo,
   NOW_ISO,
   aSpotifyTrack,
   givenNowPlaying,
@@ -97,7 +99,7 @@ describe('Node のエントリは、作業ディレクトリに関係なく publ
       process.execPath,
       [
         '--import',
-        new URL('../../node_modules/tsx/dist/loader.mjs', import.meta.url).href,
+        TSX_LOADER,
         fileURLToPath(new URL('../index.ts', import.meta.url)),
       ],
       {
@@ -155,3 +157,80 @@ function freePort(): Promise<number> {
     });
   });
 }
+
+describe('Node のエントリの終了', () => {
+  it.skipIf(process.platform === 'win32')('SIGTERM を受けたら、終了コード 0 で終わる（docker stop を待たせない）', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'spotify-embedded-signal-'));
+    const port = await freePort();
+    const child = spawn(process.execPath, ['--import', TSX_LOADER, fileURLToPath(new URL('../index.ts', import.meta.url))], {
+      cwd,
+      env: {
+        PATH: process.env['PATH'] ?? '',
+        PORT: String(port),
+        SPOTIFY_CLIENT_ID: 'id',
+        SPOTIFY_CLIENT_SECRET: 'secret',
+        SPOTIFY_REFRESH_TOKEN: 'token',
+      },
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.stdout.on('data', (chunk: Buffer) => {
+          if (chunk.toString().includes('running on')) resolve();
+        });
+        child.once('exit', () => reject(new Error('server exited before starting')));
+      });
+      const exited = new Promise<number | null>((resolve) => child.once('exit', resolve));
+
+      child.kill('SIGTERM');
+
+      await expect(exited).resolves.toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe('Workers のエントリは、バインディングが無くても動く（フォークや一部だけの wrangler dev）', () => {
+  // app は最初のリクエストで一度だけ組み立てる（バインディングは isolate の中で変わらない前提）ので、読み直す
+  async function freshWorker() {
+    vi.resetModules();
+    return (await import('../worker.js')).default;
+  }
+  const env = {} as Parameters<typeof worker.fetch>[1];
+  const ctx = {} as Parameters<typeof worker.fetch>[2];
+  const request = () => new Request('https://spotify-embedded.example/api/now-playing');
+
+  it('MOODS も RATE_LIMITER も無くても、ムード文つきで 200 を返す', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await (await freshWorker()).fetch(request(), env, ctx);
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { mood: { text: string } }).mood.text).toBe('今チルな気分になっています');
+  });
+
+  it('MOODS が無くても、2回目の同じ曲では LLM を呼ばない（メモリのキャッシュ）', async () => {
+    givenLlmConfigured();
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack());
+    const fresh = await freshWorker();
+
+    await fresh.fetch(request(), env, ctx);
+    await fresh.fetch(request(), env, ctx);
+
+    expect(callsTo('/chat/completions')).toHaveLength(1);
+  });
+
+  it('RATE_LIMITER が無ければ 429 にせず、RateLimit-* も付けない', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const fresh = await freshWorker();
+
+    for (let index = 0; index < 120; index += 1) {
+      const res = await fresh.fetch(request(), env, ctx);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('RateLimit-Limit')).toBeNull();
+    }
+  });
+});

@@ -2,7 +2,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { XMLValidator } from 'fast-xml-parser';
 
 import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa } from '../render/theme.js';
 import { renderNowPlayingCard } from '../render/card.js';
@@ -10,9 +9,9 @@ import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { portInUseHelp } from '../http/portInUse.js';
 import { truncateToWidth, visualWidth, wrapToWidth } from '../render/text.js';
-import { fetchImageDataUri } from '../render/image.js';
+import { albumArtAtSize, fetchImageDataUri, SIZE_PREFIX } from '../render/image.js';
 import type { NowPlayingResponse } from '../types/index.js';
-import { NOW_ISO, ART_640, aTopTrackEntry, calls, callsTo, respondWith } from './support.js';
+import { NOW_ISO, ART_640, aTopTrackEntry, calls, callsTo, respondWith, expectValidXml } from './support.js';
 
 describe('カードの文字色は、どちらのテーマでも背景に対して WCAG AA（4.5:1）を満たす', () => {
   /** WCAG 2.2 の相対輝度とコントラスト比 */
@@ -276,7 +275,7 @@ describe('now-playing カードの再生中インジケータは、OS の「視�
   it('SMIL（<animate>）ではなく CSS アニメーションで動かし、prefers-reduced-motion: reduce で止める', () => {
     const svg = playing();
 
-    expect(XMLValidator.validate(svg)).toBe(true);
+    expectValidXml(svg);
     expect(svg).not.toContain('<animate');
     expect(svg).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ \.spotify-embedded-eq rect \{ animation: none;/);
     // 3本のバーがそれぞれの周期で動く（/embed の .eq span と同じ 0.9s / 1.25s / 0.75s）
@@ -571,6 +570,137 @@ describe('ランキング SVG の見出しは、ムード文の行数が変わ�
     expect(moodYs).toHaveLength(lines);
     expect(Math.max(0, ...moodYs)).toBeLessThan(lineY);
     expect(lineY).toBeLessThan(firstRowY);
+  });
+});
+
+describe('ジャケ写の URL のサイズの差し替え', () => {
+  const url = (size: 640 | 300 | 64) => `https://i.scdn.co/image/${SIZE_PREFIX[size]}abc`;
+
+  it.each([
+    [640, 300],
+    [300, 64],
+    [64, 640],
+  ] as const)('%d → %d', (from, to) => {
+    expect(albumArtAtSize(url(from), to)).toBe(url(to));
+  });
+
+  it.each(['https://example.com/unknown.jpg', ''])('知らない形式（%j）はそのまま', (value) => {
+    expect(albumArtAtSize(value, 300)).toBe(value);
+  });
+
+  it('embed.js のコピーは image.ts の定義と一致する', () => {
+    const embedJs = readFileSync(new URL('../../public/embed.js', import.meta.url), 'utf8');
+    for (const [size, prefix] of Object.entries(SIZE_PREFIX)) {
+      expect(embedJs).toContain(`${size}: '${prefix}'`);
+    }
+  });
+});
+
+describe('now-playing の SVG カードの組み方', () => {
+  const track = {
+    id: 't',
+    name: '短い曲',
+    artist: 'アーティスト',
+    album: 'アルバム',
+    album_art_url: '',
+    duration_ms: 1,
+    popularity: null,
+    spotify_url: 'https://open.spotify.com/track/t',
+    preview_url: null,
+  };
+  const yOf = (svg: string, text: string) => Number(new RegExp(`y="([\\d.]+)"[^>]*>${text}<`).exec(svg)?.[1]);
+  const LONG = 'とても長い文字列がカードの幅に収まらずに二行目まで折り返されていくことを確かめます';
+
+  it('ムード文が1行なら y=82、曲名とアーティストはその下の決まった位置', () => {
+    const svg = renderNowPlayingCard({ track, mood: { text: '静かな夜のようです', generated_at: NOW_ISO }, state: 'playing' });
+
+    expect(yOf(svg, '静かな夜のようです')).toBe(82);
+    expect(yOf(svg, '短い曲')).toBe(124);
+    expect(yOf(svg, 'アーティスト')).toBe(142);
+  });
+
+  it('ムード文が2行なら y=72 から2行', () => {
+    const svg = renderNowPlayingCard({ track, mood: { text: LONG, generated_at: NOW_ISO }, state: 'playing' });
+
+    expect(svg.match(/font-size="19"/g)).toHaveLength(2);
+    expect(svg).toMatch(/y="72"[^>]*font-size="19"/);
+    expect(svg).toMatch(/y="95"[^>]*font-size="19"/);
+  });
+
+  it('ムード文が無く曲名が1行なら、アーティストは曲名の直下', () => {
+    const svg = renderNowPlayingCard({ track, mood: null, state: 'playing' });
+
+    expect(yOf(svg, '短い曲')).toBe(84);
+    expect(yOf(svg, 'アーティスト')).toBe(108);
+  });
+
+  it('ムード文が無く曲名が2行なら、アーティストは2行目の直下に下がる', () => {
+    const svg = renderNowPlayingCard({ track: { ...track, name: LONG }, mood: null, state: 'playing' });
+
+    expect(svg).toMatch(/y="74"[^>]*font-size="17"/);
+    expect(yOf(svg, 'アーティスト')).toBe(74 + 21 + 24);
+  });
+
+  it('取得できなかったときは、ジャケ写も枠も描かず文言だけを出す', () => {
+    const svg = renderNowPlayingCard({ track, mood: null, state: 'playing', unavailable: true });
+
+    expect(svg).toContain('取得できませんでした');
+    expect(svg).not.toContain('<image');
+    expect(svg).not.toContain('no art');
+  });
+
+  it('背景は既定で透過、transparent: false なら theme の色で塗る', () => {
+    const fillOf = (svg: string) => /<rect x="0\.5"[^>]*fill="([^"]+)"/.exec(svg)?.[1];
+
+    expect(fillOf(renderNowPlayingCard({ track, mood: null, state: 'playing' }))).toBe('none');
+    expect(fillOf(renderNowPlayingCard({ track, mood: null, state: 'playing', transparent: false }))).toBe(THEMES.dark.bg);
+  });
+});
+
+describe('iframe 用ページのランキング', () => {
+  const entries = Array.from({ length: 60 }, (_, index) => aTopTrackEntry({ rank: index + 1, id: `t${index}`, name: `曲${index + 1}` }));
+  const page = (rankingCount: number | undefined, overrides: object = {}) =>
+    renderEmbedPage({
+      nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      state: 'idle',
+      rankingCount,
+      topTracks: { range: 'medium_term', tracks: entries, mood: null, fetched_at: '2026-09-21T15:00:00.000Z', ...overrides },
+    } as Parameters<typeof renderEmbedPage>[0]);
+  const rows = (html: string) => html.match(/<li>/g)?.length ?? 0;
+
+  it.each([
+    [0, 1],
+    [51, 50],
+    [3, 3],
+  ])('rankingCount=%d なら %d 件にする', (count, expected) => {
+    expect(rows(page(count))).toBe(expected);
+  });
+
+  it('見出しに期間と、日本時間の日付を出す', () => {
+    const html = page(1);
+
+    expect(html).toContain('TOP TRACKS · 6 MONTHS');
+    expect(html).toContain('2026-09-22 時点');
+  });
+
+  it('ムード文があるときだけ見出しに出す', () => {
+    const text = '夜に似合う曲ばかりのようです';
+
+    expect(page(1)).not.toContain('class="ranking-mood"');
+    expect(page(1, { mood: { text, generated_at: NOW_ISO } })).toContain(text);
+  });
+
+  it('spotify_url が https でない曲はリンクにしない', () => {
+    const html = page(1, { tracks: [aTopTrackEntry({ spotify_url: 'javascript:alert(1)' })] });
+
+    expect(html).not.toContain('javascript:alert(1)');
+  });
+
+  it('順位は track.rank を出す（SVG と同じ値）', () => {
+    const tracks = [aTopTrackEntry({ rank: 7 })];
+
+    expect(page(1, { tracks })).toContain('<span class="rank">7</span>');
+    expect(renderRankingCard({ tracks, fetchedAt: NOW_ISO })).toContain('7位');
   });
 });
 
