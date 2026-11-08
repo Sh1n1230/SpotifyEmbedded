@@ -43,12 +43,19 @@ export interface TopTracksOptions {
 }
 
 /** maxKeys 超過時に set が throw する。保存失敗は致命的ではない。 */
-function cacheSet(cache: TtlCache, key: string, value: unknown): void {
+function cacheSet<V>(cache: TtlCache<V>, key: string, value: V): void {
   try {
     cache.set(key, value);
   } catch {
     // キャッシュが満杯。次回は再取得になるだけなので無視する。
   }
+}
+
+/** 外部ストアから読んだ値がムード文の形か（古い版が書いた値をそのまま使わない）。 */
+function isMoodResult(value: unknown): value is MoodResult {
+  if (!value || typeof value !== 'object') return false;
+  const mood = value as Record<string, unknown>;
+  return typeof mood['text'] === 'string' && typeof mood['generated_at'] === 'string';
 }
 
 /** 曲ごとのムード文の保持期間。メモリの moodCache と揃える。 */
@@ -58,15 +65,21 @@ const MOOD_TTL_SECONDS = 86400;
  * メモリ → 外部ストアの順に引く。外部ストアで見つかればメモリにも載せる。
  * 外部ストアの障害は「見つからなかった」として扱う（生成し直すだけ）。
  */
-async function readThrough<T>(cache: TtlCache, key: string, durableKey: string): Promise<T | null> {
-  const hit = cache.get<T>(key);
+async function readThrough<T>(
+  cache: TtlCache<T>,
+  key: string,
+  durableKey: string,
+  isValid: (value: unknown) => value is T
+): Promise<T | null> {
+  const hit = cache.get(key);
   if (hit !== undefined) return hit;
 
   const store = getDurableStore();
   if (!store) return null;
   try {
-    const stored = await store.get<T>(durableKey);
-    if (stored) cacheSet(cache, key, stored);
+    const stored = await store.get(durableKey);
+    if (!isValid(stored)) return null;
+    cacheSet(cache, key, stored);
     return stored;
   } catch (err) {
     console.warn('[store] 読み込みに失敗しました:', err instanceof Error ? err.message : err);
@@ -74,11 +87,11 @@ async function readThrough<T>(cache: TtlCache, key: string, durableKey: string):
   }
 }
 
-async function writeThrough(
-  cache: TtlCache,
+async function writeThrough<V>(
+  cache: TtlCache<V>,
   key: string,
   durableKey: string,
-  value: unknown,
+  value: V,
   ttlSeconds?: number
 ): Promise<void> {
   cacheSet(cache, key, value);
@@ -97,7 +110,7 @@ async function moodFor(
   track: TrackSummary,
   genres: string[]
 ): Promise<MoodResult | null> {
-  const cached = await readThrough<MoodResult>(moodCache, trackId, `mood:${trackId}`);
+  const cached = await readThrough(moodCache, trackId, `mood:${trackId}`, isMoodResult);
   if (cached) return cached;
 
   try {
@@ -130,7 +143,7 @@ export async function collectNowPlaying(
 ): Promise<NowPlayingResponse> {
   if (options.bypassCache) return fetchAndBuildNowPlaying(options);
 
-  const cached = nowPlayingCache.get<NowPlayingResponse>('now-playing');
+  const cached = nowPlayingCache.get('now-playing');
   if (cached !== undefined) return cached;
 
   // skipMood の有無で結果が変わるので、共有するのは既定の呼び出しだけ。

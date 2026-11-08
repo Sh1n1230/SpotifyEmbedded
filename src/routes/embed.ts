@@ -61,7 +61,7 @@ function makeNonce(): string {
 /** 画像バイト列は使い回す。取得失敗は null のままキャッシュしない。 */
 async function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | null> {
   const target = albumArtAtSize(url, size);
-  const cached = artCache.get<string>(target);
+  const cached = artCache.get(target);
   if (cached !== undefined) return cached;
 
   const dataUri = await fetchImageDataUri(target);

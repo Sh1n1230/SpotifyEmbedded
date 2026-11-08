@@ -16,7 +16,7 @@ import {
 } from '../types/index.js';
 import { rangeLabelEn } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa, type ThemeName } from './theme.js';
-import { escapeXml } from './text.js';
+import { escapeXml, jsonForScript } from './text.js';
 import { albumArtAtSize, SIZE_PREFIX } from './image.js';
 import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, playbackLabel, type PlaybackState } from './card.js';
 
@@ -336,7 +336,7 @@ function renderLiveScript(
 
   return `<script${nonceAttr}>
 (function () {
-  var endpoint = ${JSON.stringify(endpoint)};
+  var endpoint = ${jsonForScript(endpoint)};
   var interval = ${interval};
   var TIMEOUT_MS = ${LIVE_REQUEST_TIMEOUT_MS};
   var MAX_DELAY_MS = Math.max(interval, ${LIVE_MAX_DELAY_MS});

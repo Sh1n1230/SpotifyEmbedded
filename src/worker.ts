@@ -22,7 +22,7 @@ interface Env {
 
 function kvStore(kv: KVNamespace): DurableStore {
   return {
-    get: <T>(key: string) => kv.get<T>(key, 'json'),
+    get: (key: string) => kv.get(key, 'json'),
     put: (key, value, ttlSeconds) =>
       kv.put(key, JSON.stringify(value), ttlSeconds ? { expirationTtl: Math.max(ttlSeconds, 60) } : undefined),
   };
