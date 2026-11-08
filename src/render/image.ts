@@ -134,7 +134,9 @@ async function readAtMost(res: Response, limit: number): Promise<Buffer | null> 
     if (done) break;
     total += value.byteLength;
     if (total > limit) {
-      await reader.cancel().catch(() => {});
+      await reader.cancel().catch(() => {
+        // キャンセルの失敗は接続の解放に影響しないので無視する
+      });
       return null;
     }
     chunks.push(value);

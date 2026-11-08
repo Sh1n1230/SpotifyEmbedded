@@ -54,14 +54,10 @@ export function authEnvNames(field: AuthField): readonly string[] {
 }
 
 /** 保存や表示に使う正規の環境変数名。 */
-export const AUTH_ENV: Record<AuthField, string> = {
-  spotifyClientId: 'SPOTIFY_CLIENT_ID',
-  spotifyClientSecret: 'SPOTIFY_CLIENT_SECRET',
-  spotifyRefreshToken: 'SPOTIFY_REFRESH_TOKEN',
-  llmApiKey: 'LLM_API_KEY',
-  llmBaseUrl: 'LLM_BASE_URL',
-  llmModel: 'LLM_MODEL',
-};
+/** 各フィールドの正規名（AUTH_ENV_NAMES の先頭）。 */
+export const AUTH_ENV = Object.fromEntries(
+  Object.entries(AUTH_ENV_NAMES).map(([field, names]) => [field, names[0]])
+) as Record<AuthField, string>;
 
 export const AUTH_FIELDS = Object.keys(AUTH_ENV) as AuthField[];
 

@@ -6,5 +6,7 @@
  * https://github.com/nodejs/undici#garbage-collection
  */
 export async function discardBody(res: Response): Promise<void> {
-  await res.body?.cancel().catch(() => {});
+  await res.body?.cancel().catch(() => {
+    // キャンセルの失敗は接続の解放に影響しないので無視する
+  });
 }

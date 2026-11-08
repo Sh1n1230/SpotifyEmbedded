@@ -20,25 +20,23 @@ export function isTopTracksLimit(value: unknown): value is TopTracksLimit {
 }
 
 /** SVG / HTML の見出し用（例: "TOP TRACKS · 4 WEEKS"）。 */
+const RANGE_LABELS_EN: Record<TopTracksRange, string> = {
+  short_term: '4 WEEKS',
+  medium_term: '6 MONTHS',
+  long_term: '1 YEAR',
+};
+
 export function rangeLabelEn(range: TopTracksRange): string {
-  switch (range) {
-    case 'medium_term':
-      return '6 MONTHS';
-    case 'long_term':
-      return '1 YEAR';
-    default:
-      return '4 WEEKS';
-  }
+  return RANGE_LABELS_EN[range];
 }
 
 /** 読み上げ・本文用（例: "直近4週間"）。 */
+const RANGE_LABELS_JA: Record<TopTracksRange, string> = {
+  short_term: '直近4週間',
+  medium_term: '直近6か月',
+  long_term: '直近1年',
+};
+
 export function rangeLabelJa(range: TopTracksRange): string {
-  switch (range) {
-    case 'medium_term':
-      return '直近6か月';
-    case 'long_term':
-      return '直近1年';
-    default:
-      return '直近4週間';
-  }
+  return RANGE_LABELS_JA[range];
 }

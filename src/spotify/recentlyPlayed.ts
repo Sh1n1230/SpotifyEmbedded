@@ -21,7 +21,8 @@ import type { SpotifyTrack, TrackSummary } from '../types/index.js';
 const HISTORY_LIMIT = 10;
 
 interface RecentlyPlayedResponse {
-  items: { track: SpotifyTrack; played_at: string }[];
+  // Spotify の応答は欠けることがある（下の守りと合わせている）
+  items?: ({ track: SpotifyTrack | null; played_at: string } | null)[];
 }
 
 export interface RecentlyPlayedData {

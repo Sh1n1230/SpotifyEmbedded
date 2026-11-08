@@ -10,7 +10,6 @@
  */
 import {
   DEFAULT_RANKING_COUNT,
-  DEFAULT_TOP_TRACKS_RANGE,
   MAX_RANKING_COUNT,
   type NowPlayingResponse,
   type TopTracksResponse,
@@ -275,7 +274,7 @@ function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): str
   const fetchedAt = new Date(topTracks.fetched_at);
   const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
   const count = Math.min(Math.max(rankingCount ?? DEFAULT_RANKING_COUNT, 1), MAX_RANKING_COUNT);
-  const rangeLabel = rangeLabelEn(topTracks.range ?? DEFAULT_TOP_TRACKS_RANGE);
+  const rangeLabel = rangeLabelEn(topTracks.range);
 
   const items = topTracks.tracks
     .slice(0, count)

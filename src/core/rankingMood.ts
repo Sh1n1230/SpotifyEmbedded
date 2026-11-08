@@ -59,7 +59,7 @@ export async function resolveRankingMood(
 ): Promise<RankingMoodRecord | null> {
   const trackIds = basisOf(tracks);
   if (trackIds.length === 0) return null;
-  if (previous && isRankingMoodFresh(previous, range, trackIds)) return previous;
+  if (isRankingMoodFresh(previous, range, trackIds)) return previous;
 
   try {
     const text = await generateRankingMood({

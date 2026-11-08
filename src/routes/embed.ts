@@ -62,7 +62,7 @@ function makeNonce(): string {
 async function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | null> {
   const target = albumArtAtSize(url, size);
   const cached = artCache.get<string>(target);
-  if (cached) return cached;
+  if (cached !== undefined) return cached;
 
   const dataUri = await fetchImageDataUri(target);
   if (dataUri) {

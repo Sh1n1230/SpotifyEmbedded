@@ -74,6 +74,7 @@ export const artCache = new TtlCache(86400, 100);
 export interface DurableStore {
   get<T>(key: string): Promise<T | null>;
   /** ttlSeconds を省略すると期限なし。 */
+  /** @param ttlSeconds Workers KV の expirationTtl は60秒未満を拒むので、Workers の実装では60秒に切り上げる */
   put(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
 }
 
