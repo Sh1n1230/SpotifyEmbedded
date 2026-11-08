@@ -134,7 +134,7 @@ function maskToken(token: string): string {
  */
 function renderTokenPage(refreshToken: string, nonce: string): string {
   return `<!DOCTYPE html>
-<html lang="ja"><head><meta charset="utf-8"><title>認証完了</title></head>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>認証完了</title></head>
 <body style="font-family:monospace;padding:2rem;max-width:48rem">
   <h2>✅ 認証完了</h2>
   <p><strong>この画面には秘密情報が含まれています。他人に見せず、設定を終えたら閉じてください。</strong></p>

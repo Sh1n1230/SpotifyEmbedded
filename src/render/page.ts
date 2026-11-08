@@ -15,7 +15,7 @@ import {
   type TopTracksResponse,
 } from '../types/index.js';
 import { rangeLabelEn } from '../core/topTracksParams.js';
-import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
+import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa, type ThemeName } from './theme.js';
 import { escapeXml } from './text.js';
 import { albumArtAtSize, SIZE_PREFIX } from './image.js';
 import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, playbackLabel, type PlaybackState } from './card.js';
@@ -79,7 +79,7 @@ export function renderEmbedPage(input: PageInput): string {
   // 透過のときは color-scheme を light dark にする。テーマ名だと埋め込み先と配色が違う場合に、iframe の中の
   // キャンバスが不透明になって背景が透けない（文字と枠の色は CSS 変数で明示しているので見た目は変わらない）
   return `<!DOCTYPE html>
-<html lang="ja" data-state="${escapeXml(state)}">
+<html lang="ja">
 <head>
 <meta charset="utf-8">${input.liveEndpoint ? '' : `\n<meta http-equiv="Content-Security-Policy" content="${STATIC_PAGE_CSP}">`}
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -213,7 +213,7 @@ export function renderEmbedPage(input: PageInput): string {
 </style>
 </head>
 <body>
-${renderCardMarkup(track, mood, state, label, idleText)}
+${renderCardMarkup(track, mood, state, label, idleText, input.since)}
 ${rankingSection}
 ${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, { hasTrack: track !== null, hasMood: Boolean(mood?.text), hasArt: Boolean(httpsUrl(track?.album_art_url)) }, input.scriptNonce) : ''}
 </body>
@@ -226,7 +226,8 @@ function renderCardMarkup(
   mood: NowPlayingResponse['mood'],
   state: PlaybackState,
   label: string,
-  idleText: string
+  idleText: string,
+  since: string | undefined
 ): string {
   // イコライザは常に描き、表示・非表示は #label の data-playing に任せる。
   // ライブ更新で再生が始まった/止まったときにDOMを作り直さずに済む。
@@ -235,7 +236,7 @@ function renderCardMarkup(
 
   if (!track) {
     return `<div class="card" id="card">
-  <div class="art-placeholder">no art</div>
+  <div class="art-placeholder" aria-hidden="true">no art</div>
   <div class="body">
     <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
     <p class="idle" id="mood">${escapeXml(idleText)}</p>
@@ -249,9 +250,10 @@ function renderCardMarkup(
   const artUrl = httpsUrl(track.album_art_url);
   const art = artUrl
     ? `<img class="art" id="art" src="${escapeXml(albumArtAtSize(artUrl, 300))}" alt="" decoding="async">`
-    : '<div class="art-placeholder" id="art">no art</div>';
+    : '<div class="art-placeholder" id="art" aria-hidden="true">no art</div>';
 
-  const ariaLabel = `${state === 'playing' ? '再生中' : '最後に再生'}: ${mood?.text ? `${mood.text} — ` : ''}${track.name} / ${track.artist}（Spotifyで開く）`;
+  const when = state === 'recent' ? sinceForSpeech(since) : '';
+  const ariaLabel = `${state === 'playing' ? '再生中' : `最後に再生${when}`}: ${mood?.text ? `${mood.text} — ` : ''}${track.name} / ${track.artist}（Spotifyで開く）`;
 
   // https でないリンクは張らない（カードは <div> にする）
   const href = httpsUrl(track.spotify_url);
@@ -282,7 +284,7 @@ function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): str
       // ジャケ写が無い（または https でない）曲は、src の空の <img> ではなく同じ大きさの枠を置く
       const artUrl = httpsUrl(track.album_art_url);
       const art = artUrl
-        ? `<img src="${escapeXml(albumArtAtSize(artUrl, 64))}" alt="" decoding="async">`
+        ? `<img src="${escapeXml(albumArtAtSize(artUrl, 64))}" alt="" width="40" height="40" loading="lazy" decoding="async">`
         : '<span class="rank-art-placeholder" aria-hidden="true"></span>';
       const href = httpsUrl(track.spotify_url);
       const row = `${art}
@@ -292,21 +294,21 @@ function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): str
         </span>`;
       return `    <li>
       <span class="rank">${track.rank}</span>
-      ${href ? `<a href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer" style="display:flex;gap:12px;align-items:center;min-width:0">` : '<span style="display:flex;gap:12px;align-items:center;min-width:0">'}
+      ${href ? `<a href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeXml(`${track.rank}位 ${track.name} / ${track.artist}（Spotifyで開く）`)}" style="display:flex;gap:12px;align-items:center;min-width:0">` : '<span style="display:flex;gap:12px;align-items:center;min-width:0">'}
         ${row}
       ${href ? '</a>' : '</span>'}
     </li>`;
     })
     .join('\n');
 
-  return `<section class="ranking">
+  return `<section class="ranking" aria-labelledby="ranking-title">
   <div class="ranking-head">
     <div class="ranking-head-row">
-      <span class="ranking-title">TOP TRACKS · ${escapeXml(rangeLabel)}</span>
+      <h2 class="ranking-title" id="ranking-title">TOP TRACKS · ${escapeXml(rangeLabel)}</h2>
       <span class="ranking-date">${escapeXml(dateLabel)}</span>
     </div>${topTracks.mood?.text ? `\n    <p class="ranking-mood">${escapeXml(topTracks.mood.text)}</p>` : ''}
   </div>
-  <ol>
+  <ol role="list">
 ${items}
   </ol>
 </section>`;
@@ -480,6 +482,13 @@ function renderLiveScript(
   schedule();
 })();
 </script>`;
+}
+
+/** 読み上げ用の「（10/16 21:04）」。読めない日時なら空にする（見出しの LAST PLAYED と同じ扱い）。 */
+function sinceForSpeech(since: string | undefined): string {
+  if (!since) return '';
+  const date = new Date(since);
+  return Number.isNaN(date.getTime()) ? '' : `（${formatDateTimeJa(date)}）`;
 }
 
 function buildTitle(state: PlaybackState, name?: string, artist?: string): string {

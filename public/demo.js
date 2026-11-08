@@ -31,6 +31,11 @@
   // Retry-After が明けるまで取得しない時刻（表示に戻ったときの取り直しもこれを守る）
   var notBeforeMs = 0;
 
+  // 30秒ごとの成功で同じ文を書き直して、ライブリージョンが読み上げを繰り返さないようにする
+  function setStatus(text) {
+    if ($('status-msg').textContent !== text) $('status-msg').textContent = text;
+  }
+
   function fetchNowPlaying() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var abort = setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
@@ -49,7 +54,7 @@
         },
         function (err) {
           clearTimeout(abort);
-          $('status-msg').textContent = '再生中の曲を取得できませんでした';
+          setStatus('再生中の曲を取得できませんでした');
           // まだ一度も描いていなければ、枠の「読み込み中...」を残さない（描いた曲があればそのまま残す）
           if (!rendered) $('album-art-placeholder').textContent = '取得できませんでした';
           throw err;
@@ -71,7 +76,7 @@
       $('track-name').textContent = '';
       $('artist-name').textContent = '';
       $('mood-text').textContent = '';
-      $('status-msg').textContent = '';
+      setStatus('');
       return;
     }
 
@@ -91,7 +96,7 @@
     $('track-name').textContent = t.name;
     $('artist-name').textContent = t.artist;
     $('mood-text').textContent = data.mood ? data.mood.text : '';
-    $('status-msg').textContent = '再生中';
+    setStatus('再生中');
   }
 
   var failures = 0;
