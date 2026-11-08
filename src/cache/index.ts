@@ -5,8 +5,9 @@
  * グローバルスコープでのタイマーを許さないため、期限切れは読み出し時に
  * 判定するだけの最小実装にしている。
  */
-export class TtlCache {
-  private readonly entries = new Map<string, { value: unknown; expiresAt: number }>();
+import type { MoodResult, NowPlayingResponse } from '../types/index.js';
+export class TtlCache<V = unknown> {
+  private readonly entries = new Map<string, { value: V; expiresAt: number }>();
 
   /**
    * @param ttlSeconds 0 なら期限なし
@@ -18,7 +19,7 @@ export class TtlCache {
     private readonly maxKeys = Infinity
   ) {}
 
-  get<T>(key: string): T | undefined {
+  get(key: string): V | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
     if (entry.expiresAt <= Date.now()) {
@@ -28,10 +29,10 @@ export class TtlCache {
     // Map は挿入順を保つので、読むたびに入れ直すと、先頭が最も長く読まれていないものになる
     this.entries.delete(key);
     this.entries.set(key, entry);
-    return entry.value as T;
+    return entry.value;
   }
 
-  set(key: string, value: unknown): void {
+  set(key: string, value: V): void {
     if (!this.entries.has(key) && this.entries.size >= this.maxKeys) {
       this.evictExpired();
       if (this.entries.size >= this.maxKeys) {
@@ -57,12 +58,14 @@ export class TtlCache {
   }
 }
 
-export const nowPlayingCache = new TtlCache(30);
+export const nowPlayingCache = new TtlCache<NowPlayingResponse>(30);
 // Keyed by trackId. 満杯なら最も長く読まれていない曲のものを捨てて入れる。
-export const moodCache = new TtlCache(86400, 200);
+export const moodCache = new TtlCache<MoodResult>(86400, 200);
 // Keyed by image URL. ライブSVGはリクエストのたびにジャケ写を data URI 化
 // するため、画像バイト列を使い回す。
-export const artCache = new TtlCache(86400, 100);
+// 1件は最大 512KB の画像の base64（約 700KB）なので、最悪でも 20 × 700KB ≒ 14MB（Workers の上限 128MB に対して十分小さい）。
+// 同時に表示するのは1曲なので、20件あれば足りる。
+export const artCache = new TtlCache<string>(86400, 20);
 
 /**
  * LLM の生成結果を isolate の寿命より長く持つための外部ストア。
@@ -72,7 +75,8 @@ export const artCache = new TtlCache(86400, 100);
  * 何も設定しない（メモリだけで足りる）。
  */
 export interface DurableStore {
-  get<T>(key: string): Promise<T | null>;
+  /** 外部ストアの中身は古い版が書いたものかもしれないので、形は呼び出し側が確かめる。 */
+  get(key: string): Promise<unknown>;
   /** ttlSeconds を省略すると期限なし。 */
   /** @param ttlSeconds Workers KV の expirationTtl は60秒未満を拒むので、Workers の実装では60秒に切り上げる */
   put(key: string, value: unknown, ttlSeconds?: number): Promise<void>;

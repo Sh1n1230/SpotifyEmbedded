@@ -955,6 +955,23 @@ describe('ランキングのムード文の作り直しの条件は、文書と�
   });
 });
 
+describe('外部ストアの古い形のムード文', () => {
+  it('ムード文の形でなければ使わず、作り直す', async () => {
+    const store: DurableStore = {
+      get: () => Promise.resolve({ legacy: true }),
+      put: () => Promise.resolve(),
+    };
+    setDurableStore(store);
+    givenLlmConfigured();
+    givenLlmReplies('静かな夜のようです');
+    givenNowPlaying(aSpotifyTrack());
+
+    const result = await collectNowPlaying();
+
+    expect(result.mood?.text).toBe('静かな夜のようです');
+  });
+});
+
 describe('ムード文のプロンプトのアルバムの行', () => {
   const promptOf = () => JSON.stringify(bodyOf(callsTo('/chat/completions')[0]!)['messages']);
   const track = (album: string) => aSpotifyTrack({ name: 'Sunflower', album: { name: album, images: [], release_date: '' } });

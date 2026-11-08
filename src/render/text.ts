@@ -222,3 +222,13 @@ function wrapUnbounded(text: string, maxWidthEm: number): string[] {
   if (current.trimEnd() !== '') lines.push(current.trimEnd());
   return lines;
 }
+
+/**
+ * <script> の中に埋め込む JSON。JSON.stringify は < をエスケープしないので、値に </script> が含まれると
+ * そこでスクリプトが閉じてしまう。U+2028・U+2029 は JavaScript の文字列では扱いが古い環境と異なるので一緒に逃がす。
+ */
+export function jsonForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/[<\u2028\u2029]/g, (character) =>
+    `\\u${(character.codePointAt(0) ?? 0).toString(16).padStart(4, '0')}`
+  );
+}

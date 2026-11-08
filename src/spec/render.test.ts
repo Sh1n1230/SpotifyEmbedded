@@ -8,7 +8,7 @@ import { renderNowPlayingCard } from '../render/card.js';
 import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { portInUseHelp } from '../http/portInUse.js';
-import { truncateToWidth, visualWidth, wrapToWidth } from '../render/text.js';
+import { truncateToWidth, visualWidth, wrapToWidth, jsonForScript } from '../render/text.js';
 import { albumArtAtSize, fetchImageDataUri, SIZE_PREFIX } from '../render/image.js';
 import type { NowPlayingResponse } from '../types/index.js';
 import { NOW_ISO, ART_640, aTopTrackEntry, calls, callsTo, respondWith, expectValidXml } from './support.js';
@@ -759,5 +759,14 @@ describe('ページの読み上げ', () => {
 
     expect(html).toContain('aria-label="最後に再生（10/16 21:04）: 曲 / 人（Spotifyで開く）"');
     expect(renderNowPlayingCard({ track, mood: null, state: 'recent', since })).toContain('aria-label="最後に再生（10/16 21:04）: 曲 / 人"');
+  });
+});
+
+describe('<script> に埋め込む値', () => {
+  it('</script> で閉じられない形にする', () => {
+    const json = jsonForScript('</script><img src=x>');
+
+    expect(json).not.toContain('<');
+    expect(JSON.parse(json)).toBe('</script><img src=x>');
   });
 });
