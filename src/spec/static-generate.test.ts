@@ -277,6 +277,16 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(vi.mocked(console.log).mock.calls.flat().join('\n').includes('貼り方:')).toBe(shown);
     });
 
+    it('各段階の所要時間をログに出す', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+
+      await runGenerate();
+
+      const logs = vi.mocked(console.log).mock.calls.flat().join('\n');
+      for (const label of ['再生状況', 'ランキング', 'ジャケ写']) expect(logs).toMatch(new RegExp(`${label}: \\d+ms`));
+    });
+
     it('--out の出力先が無ければ、ネストしたパスでも作る', async () => {
       givenNowPlaying(aSpotifyTrack());
       givenTopTracks([aSpotifyTrack()]);

@@ -163,7 +163,7 @@ jobs:
           npm init -y >/dev/null
           npm install --ignore-scripts "$RUNNER_TEMP"/pkg/*.tgz
           npx --no-install spotify-embedded help | tee help.txt
-          grep -q 'npm run setup' help.txt
+          grep -q 'spotify-embedded setup' help.txt
 
       # 静的ファイルの場所は作業ディレクトリではなく dist/index.js の位置から決まる（別の場所から起動しても 404 にならない）
       - name: 別の作業ディレクトリから起動しても /embed.js を返す

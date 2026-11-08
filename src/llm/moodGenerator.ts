@@ -1,4 +1,4 @@
-import { resolveLlm } from './settings.js';
+import { resolveLlm, type LlmSettings } from './settings.js';
 import { chatCompletion } from './client.js';
 import type { TopTrackEntry } from '../types/index.js';
 
@@ -77,15 +77,19 @@ export function isAcceptableMood(text: string): boolean {
   return /[\u3041-\u309f\u30a1-\u30fa]/.test(text);
 }
 
-export async function generateMood(params: {
-  trackName: string;
-  artistName: string;
-  albumName: string;
-  /** 取得できない環境では空配列。 */
-  genres: string[];
-  /** 取得できない環境では null。 */
-  popularity: number | null;
-}): Promise<string> {
+export async function generateMood(
+  params: {
+    trackName: string;
+    artistName: string;
+    albumName: string;
+    /** 取得できない環境では空配列。 */
+    genres: string[];
+    /** 取得できない環境では null。 */
+    popularity: number | null;
+  },
+  /** 保存前の設定で試すとき（npm run setup）に渡す。省略すると保存された設定を使う */
+  settings?: LlmSettings
+): Promise<string> {
   // 各フィールドを制限してプロンプトインジェクションを軽減。
   // 取得できなかった項目は「不明」と書くのではなく行そのものを省く。
   // 存在しない手がかりをモデルに示すと、そこに引きずられた文が出る。
@@ -103,7 +107,7 @@ export async function generateMood(params: {
   if (typeof params.popularity === 'number') {
     lines.push(`人気度: ${params.popularity}/100`);
   }
-  return requestMood(SYSTEM_INSTRUCTION, wrapData(lines));
+  return requestMood(SYSTEM_INSTRUCTION, wrapData(lines), settings);
 }
 
 const RANKING_SYSTEM_INSTRUCTION = `あなたは個人のポートフォリオサイト向けの音楽ムード描写AIです。
@@ -169,8 +173,11 @@ function stripOuterQuotes(text: string): string {
   return text;
 }
 
-async function requestMood(system: string, prompt: string): Promise<string> {
-  const llm = resolveLlm();
+/** LLM には届いたが、出力がムード文の形式に合わなかった。 */
+export class UnacceptableMoodError extends Error {}
+
+async function requestMood(system: string, prompt: string, settings?: LlmSettings): Promise<string> {
+  const llm = settings ? ({ kind: 'ready', settings } as const) : resolveLlm();
   if (llm.kind !== 'ready') {
     throw new Error(llm.kind === 'invalid' ? llm.problem : 'LLM が設定されていません');
   }
@@ -199,7 +206,7 @@ async function requestMood(system: string, prompt: string): Promise<string> {
 
   if (!isAcceptableMood(mood)) {
     // 中身はログに出さない: 攻撃者が用意した文字列かもしれない。
-    throw new Error(`ムード文として採れない出力でした（${mood.length}文字）`);
+    throw new UnacceptableMoodError(`ムード文として採れない出力でした（${mood.length}文字）`);
   }
   return mood;
 }
