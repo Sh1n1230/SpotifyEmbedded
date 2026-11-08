@@ -45,6 +45,8 @@ jobs:
       - name: カバレッジの要約
         if: always()
         run: |
+          # node -e の中の ${...} は JavaScript のテンプレートリテラルで、シェルには展開させない
+          # shellcheck disable=SC2016
           node -e '
             const fs = require("fs");
             const file = "coverage/coverage-summary.json";
