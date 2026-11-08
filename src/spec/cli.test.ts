@@ -292,6 +292,8 @@ describe('setup の部品', () => {
       new Promise<number>((done, fail) => {
         get(`${redirectUri}?${query}`, (res) => {
           res.resume();
+          expect(res.headers['cache-control']).toBe('no-store');
+          expect(res.headers['content-security-policy']).toContain("default-src 'none'");
           done(res.statusCode ?? 0);
         }).on('error', fail);
       });

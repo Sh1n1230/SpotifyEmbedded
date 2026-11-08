@@ -144,6 +144,7 @@ export function memoryRateLimiter(options: MemoryRateLimiterOptions): RateLimite
   const windowMs = (options.windowSeconds ?? RATE_LIMIT.windowSeconds) * 1000;
   const now = options.now ?? Date.now;
   const windows = options.windows ?? new Map<string, { count: number; resetAt: number }>();
+  let nextSweepAt = 0;
 
   // RateLimiter は Workers 版と同じ Promise を返す型なので、await が無くても async にしておく
   // eslint-disable-next-line @typescript-eslint/require-await -- 型を揃えるため
@@ -152,9 +153,12 @@ export function memoryRateLimiter(options: MemoryRateLimiterOptions): RateLimite
     const at = now();
     let window = windows.get(key);
     if (!window || window.resetAt <= at) {
-      // 新しい枠を作るときに期限切れの枠を掃除する（Map が際限なく伸びないように）。
-      // 枠が増えるのはこの時だけなので、ここで掃除すれば足りる。
-      for (const [k, w] of windows) if (w.resetAt <= at) windows.delete(k);
+      // 新しい枠を作るときに期限切れの枠を掃除する（Map が際限なく伸びないように）。枠が増えるのはこの時だけ。
+      // 全件の走査は1周期に1回に抑える（接続元が多いと、1件ごとに走査すると全体で O(n²) になる）
+      if (at >= nextSweepAt) {
+        for (const [k, w] of windows) if (w.resetAt <= at) windows.delete(k);
+        nextSweepAt = at + windowMs;
+      }
       window = { count: 0, resetAt: at + windowMs };
       windows.set(key, window);
     }

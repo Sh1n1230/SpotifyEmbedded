@@ -344,7 +344,4 @@ afterEach(() => {
     expect(logged, '想定外の [error] ログが出ました').toEqual([]);
   }
   vi.useRealTimers();
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
 });

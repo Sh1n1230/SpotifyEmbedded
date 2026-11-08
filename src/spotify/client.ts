@@ -45,7 +45,7 @@ export async function spotifyFetch(path: string): Promise<Response | null> {
 
   if (res.status === 401) {
     await discardBody(res);
-    token = await getAccessToken(true);
+    token = await getAccessToken(true, token);
     res = await spotifyFetchOnce(path, token);
     if (res.status === 401) {
       await discardBody(res);

@@ -526,6 +526,15 @@ describe('透過の /embed の配色', () => {
   });
 });
 
+describe('ランキングの「◯◯時点」の日付の出どころ', () => {
+  it('現在時刻ではなく fetched_at から作る', () => {
+    const svg = renderRankingCard({ tracks: [aTopTrackEntry()], fetchedAt: '2026-01-02T00:00:00.000Z' });
+
+    expect(svg).toContain('2026-01-02 時点');
+    expect(svg).not.toContain('2026-09-21 時点');
+  });
+});
+
 describe('日付の表示は日本時間の境界で切り替わる', () => {
   it.each([
     ['2026-09-21T14:59:00.000Z', '2026-09-21', '9/21 23:59'],
@@ -692,5 +701,14 @@ describe('iframe 用ページのランキング', () => {
 
     expect(page(1, { tracks })).toContain('<span class="rank">7</span>');
     expect(renderRankingCard({ tracks, fetchedAt: NOW_ISO })).toContain('7位');
+  });
+});
+
+describe('SVG のジャケ写の data URI', () => {
+  it('属性としてエスケープする（呼び出し側の約束だけに頼らない）', () => {
+    const svg = renderRankingCard({ tracks: [aTopTrackEntry()], fetchedAt: NOW_ISO, artDataUris: ['data:image/png;base64,"><x'] });
+
+    expect(svg).toContain('&quot;&gt;&lt;x');
+    expect(svg).not.toContain('"><x');
   });
 });
