@@ -318,6 +318,57 @@ describe('setup の部品', () => {
     }
   );
 
+  /** 一時サーバーを立て、コールバックを1回送って、結果のページと Promise の結末を返す。 */
+  async function callbackOnce(offset: number, query: (state: string) => string) {
+    const port = 41_100 + offset + (process.pid % 20_000);
+    const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
+    let authorizeUrl = '';
+    const flow = runOAuthFlow({ clientId: 'id', clientSecret: 'secret', redirectUri }, (url) => {
+      authorizeUrl = url;
+    }).then(
+      () => 'resolved',
+      (err: unknown) => (err instanceof Error ? err.message : String(err))
+    );
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(''));
+    const state = new URL(authorizeUrl).searchParams.get('state') ?? '';
+    const page = await new Promise<{ status: number; body: string }>((done, fail) => {
+      get(`${redirectUri}?${query(state)}`, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => (body += chunk));
+        res.on('end', () => done({ status: res.statusCode ?? 0, body }));
+      }).on('error', fail);
+    });
+    return { page, outcome: await flow };
+  }
+
+  it('Spotify が error を返したら、結果のページで知らせて失敗する', async () => {
+    const { page, outcome } = await callbackOnce(1, (state) => `error=access_denied&state=${state}`);
+
+    expect(page.status).toBe(400);
+    expect(page.body).toContain('承認がキャンセルされました');
+    expect(outcome).toBe('access_denied');
+  });
+
+  it('code が無いコールバックは失敗する', async () => {
+    const { page, outcome } = await callbackOnce(2, (state) => `state=${state}`);
+
+    expect(page.status).toBe(400);
+    expect(page.body).toContain('認可コードが取得できませんでした');
+    expect(outcome).toBe('missing code');
+  });
+
+  it('認可コードの交換に失敗したら、理由を結果のページに出して失敗する', async () => {
+    respondWith((url) =>
+      url.includes('accounts.spotify.com/api/token') ? new Response('{"error":"invalid_grant"}', { status: 400 }) : null
+    );
+
+    const { page, outcome } = await callbackOnce(3, (state) => `code=c&state=${state}`);
+
+    expect(page.status).toBe(500);
+    expect(outcome).toContain('トークンの交換に失敗しました');
+  });
+
   it('一時サーバーは、state の合わないリクエストを断るだけで待ち続け、その後の正しいコールバックで成功する', async () => {
     // 認可コードの交換（fetch）は spec の共通のモックが応答する。一時サーバーへは本物の HTTP で送る
     respondWith((url) =>

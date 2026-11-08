@@ -22,6 +22,7 @@ import {
   aSpotifyTrack,
   givenNowPlaying,
   givenLlmReplies,
+  must,
 } from './support.js';
 
 describe('設定は「環境変数 → data/auth.json」の順に解決し、.env だけで動いている構成を変えない', () => {
@@ -160,7 +161,7 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
 
         await collectNowPlaying();
 
-        expect(bodyOf(callsTo('/chat/completions')[0]!)['model']).toBe('gpt-4o-mini');
+        expect(bodyOf(must(callsTo('/chat/completions')[0], 'リクエスト'))['model']).toBe('gpt-4o-mini');
       });
 
       it('プリセットに無い送り先で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async () => {

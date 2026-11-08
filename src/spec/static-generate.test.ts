@@ -27,6 +27,7 @@ import {
   givenLlmConfigured,
   givenLlmReplies,
   expectValidXml,
+  must,
 } from './support.js';
 
 describe('要件3: ランキングの静的な画像を得られる', () => {
@@ -770,7 +771,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
     const workflow = yaml.load(
       readFileSync(new URL('../../.github/workflows/update-spotify.yml', import.meta.url), 'utf8')
     ) as Workflow;
-    const steps = workflow.jobs['update']!.steps;
+    const steps = must(workflow.jobs['update'], 'ジョブ update').steps;
     const allRunScripts = steps.map((step) => step.run ?? '').join('\n');
 
     it('定期実行のスケジュールが設定されている', () => {
@@ -807,7 +808,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(allRunScripts).toContain('spotify-data');
       expect(allRunScripts).toMatch(/git [\s\S]*\bpush -q --force /);
       // 書き込み権限は push するジョブにだけ渡し、ワークフロー全体は読み取りのまま
-      expect(workflow.jobs['update']!.permissions?.['contents']).toBe('write');
+      expect(must(workflow.jobs['update'], 'ジョブ update').permissions?.['contents']).toBe('write');
       expect(workflow.permissions['contents']).toBe('read');
     });
 
@@ -820,8 +821,8 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
     });
 
     it('止まったジョブが後続の更新を何時間も塞がないよう、timeout-minutes を付ける', () => {
-      expect(workflow.jobs['update']!['timeout-minutes']).toBeGreaterThan(0);
-      expect(workflow.jobs['update']!['timeout-minutes']).toBeLessThanOrEqual(10);
+      expect(must(workflow.jobs['update'], 'ジョブ update')['timeout-minutes']).toBeGreaterThan(0);
+      expect(must(workflow.jobs['update'], 'ジョブ update')['timeout-minutes']).toBeLessThanOrEqual(10);
     });
 
     it('実行中のジョブを途中で中断しない', () => {
