@@ -27,8 +27,8 @@ on:
         options: [short_term, medium_term, long_term]
       count:
         description: 'ランキングの表示件数（1〜50）'
-        type: string
-        default: '5'
+        type: number
+        default: 5
       refresh_ranking_mood:
         description: 'ランキングのムード文を、顔ぶれの変化に関係なく作り直す'
         type: boolean
@@ -63,6 +63,7 @@ jobs:
           cache: npm
 
       - run: npm ci --ignore-scripts
+      # tsx でも動くが、配布するものと同じ成果物（dist）で生成して、ビルドの壊れを定期実行でも見つける
       - run: npm run build
 
       # 停止中は「最後に聴いた曲」を前回の観測から引き継ぐ。
@@ -96,12 +97,8 @@ jobs:
           RANGE: ${{ inputs.range || 'short_term' }}
           COUNT: ${{ inputs.count || '5' }}
         run: |
-          if [ -n "$LLM_API_KEY" ]; then
-            node dist/cli/index.js generate --out out --range "$RANGE" --count "$COUNT" --theme both
-          else
-            echo "LLM_API_KEY が未設定のため、ムード文なしで生成します"
-            node dist/cli/index.js generate --out out --range "$RANGE" --count "$COUNT" --theme both --no-mood
-          fi
+          # LLM の有無は generate が判定する（ここで分岐すると、設定の読み方が増えたときにずれる）
+          node dist/cli/index.js generate --out out --range "$RANGE" --count "$COUNT" --theme both
 
       # 毎回1コミットに潰して force push する。
       # 30分おきの更新で履歴が肥大化するのを防ぐため。前のスナップショットへ戻す手段は持たない:

@@ -21,7 +21,8 @@ permissions:
 
 concurrency:
   group: cloudflare-deploy
-  cancel-in-progress: true
+  # wrangler deploy の途中で止めない（初回の KV の自動作成の途中だと状態が食い違いうる）
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -78,3 +79,18 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+
+      # バンドルは通るが起動して壊れている状態（nodejs_compat まわりの実行時エラーなど）を、ここで見つける。
+      # /badge.svg は Spotify の失敗でも 200 のカードを返す設計なので、認証情報の状態に左右されない
+      - name: デプロイ後の確認
+        if: steps.secrets.outputs.configured == 'true' && steps.deploy.outputs.deployment-url != ''
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          base="${DEPLOY_URL%/}"
+          for _ in $(seq 1 10); do
+            if curl -fsS "$base/health"; then ready=1; break; fi
+            sleep 3
+          done
+          test "${ready:-}" = 1
+          curl -fsS -o /dev/null -w '%{content_type}' "$base/badge.svg" | grep -q 'image/svg+xml'

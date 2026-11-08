@@ -1,0 +1,6 @@
+# Windows で clone しても LF で取り出す（spec はファイルの中身を文字列で比べ、シェルスクリプトは CRLF だと動かない）
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

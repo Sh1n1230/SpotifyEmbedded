@@ -82,15 +82,40 @@ jobs:
 
       - name: 起動して /health を確かめる
         run: |
-          docker run -d --name app -p 3000:3000 \
+          docker run -d --name app -p 3000:3000 --health-interval=1s \
             -e SPOTIFY_CLIENT_ID=dummy -e SPOTIFY_CLIENT_SECRET=dummy -e SPOTIFY_REFRESH_TOKEN=dummy \
             spotify-embedded:ci
           for _ in $(seq 1 20); do
-            if curl -fsS http://localhost:3000/health; then exit 0; fi
+            if curl -fsS http://localhost:3000/health; then ready=1; break; fi
             sleep 1
           done
-          docker logs app
-          exit 1
+          if [ "${ready:-}" != 1 ]; then
+            docker logs app
+            exit 1
+          fi
+
+      # HEALTHCHECK のコマンドは壊れていてもビルドが通り、本番で unhealthy になって初めて分かる
+      - name: HEALTHCHECK と実行ユーザーとラベルを確かめる
+        run: |
+          for _ in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' app)
+            if [ "$status" = healthy ]; then break; fi
+            sleep 1
+          done
+          test "$status" = healthy
+          test "$(docker exec app id -u)" != 0
+          docker inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' app | grep -q 'github.com/Sh1n1230/SpotifyEmbedded'
+          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}' app)" = MIT
+
+      # PID 1 の Node が SIGTERM を処理しないと、docker stop は猶予時間（10秒）いっぱい待たされる
+      - name: docker stop がすぐ終わることを確かめる
+        run: |
+          start=$(date +%s)
+          docker stop app
+          elapsed=$(( $(date +%s) - start ))
+          echo "docker stop: $elapsed 秒"
+          test "$elapsed" -lt 8
+          test "$(docker inspect --format '{{.State.ExitCode}}' app)" = 0
 
   # npm pack の成果物を、リポジトリの外の空のフォルダに入れて CLI が起動するかを確かめる。
   # package.json の files の漏れや、shebang・実行権限の問題は配布して初めて表に出るため。
@@ -161,7 +186,7 @@ jobs:
           ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
           archive="$RUNNER_TEMP/actionlint.tar.gz"
-          curl -fsSL -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "$ACTIONLINT_SHA256  $archive" | sha256sum --check
           tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
 
