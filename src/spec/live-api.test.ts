@@ -19,6 +19,7 @@ import {
   aSpotifyTrack,
   givenNowPlaying,
   expectValidXml,
+  must,
 } from './support.js';
 
 describe('ライブAPIは公開エンドポイントとして余計なものを漏らさない', () => {
@@ -228,7 +229,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
 
         await callback((state) => `code=the-code&state=${state}`);
 
-        const call = callsTo('accounts.spotify.com/api/token')[0]!;
+        const call = must(callsTo('accounts.spotify.com/api/token')[0], 'リクエスト');
         expect(call.url).toBe('https://accounts.spotify.com/api/token');
         expect(call.init?.method).toBe('POST');
         expect(headerOf(call, 'Content-Type')).toBe('application/x-www-form-urlencoded');

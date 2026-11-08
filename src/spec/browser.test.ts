@@ -13,7 +13,7 @@ import { createApp } from '../app.js';
 import { renderEmbedPage } from '../render/page.js';
 import { THEMES } from '../render/theme.js';
 import type { NowPlayingResponse } from '../types/index.js';
-import { NOW, NOW_ISO, ART_640, respondWith, jsonOk, callsTo, aSpotifyTrack, givenNowPlaying } from './support.js';
+import { NOW, NOW_ISO, ART_640, respondWith, jsonOk, callsTo, aSpotifyTrack, givenNowPlaying, must } from './support.js';
 
 /** jsdom の環境では URL が jsdom のものになり readFileSync に渡せないので、文字列のパスにする。 */
 function readRepoFile(path: string): string {
@@ -243,7 +243,7 @@ describe('embed.js（ワンタグ埋め込み）', () => {
     document.body.appendChild(script);
     Object.defineProperty(document, 'currentScript', { configurable: true, get: () => script });
     runScript(source);
-    const host = document.querySelector('.spotify-embedded')!;
+    const host = must(document.querySelector('.spotify-embedded'), '要素');
     return {
       script,
       host,
@@ -692,7 +692,7 @@ describe('ライブ更新の周期と再試行（3つのスクリプトで同じ
       await settle();
       const before = nowPlayingCalls().length;
 
-      document.querySelector('.spotify-embedded')!.remove();
+      must(document.querySelector('.spotify-embedded'), '要素').remove();
       await vi.advanceTimersByTimeAsync(60_000);
       setHidden(true);
       setHidden(false);

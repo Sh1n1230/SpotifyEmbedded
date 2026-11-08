@@ -45,6 +45,7 @@ import {
   givenLlmConfigured,
   givenLlmReplies,
   expectValidXml,
+  must,
 } from './support.js';
 
 describe('要件1: Spotify API を叩いて、直近3種類のランキングを取得できる', () => {
@@ -55,7 +56,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
 
       const result = await collectTopTracks({ range });
 
-      const call = callsTo('/me/top/tracks')[0]!;
+      const call = must(callsTo('/me/top/tracks')[0], 'リクエスト');
       expect(call).toBeDefined();
       expect(call.url).toContain(`time_range=${range}`);
       expect(headerOf(call, 'Authorization')).toMatch(/^Bearer .+/);
@@ -74,7 +75,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
 
     for (const range of TOP_TRACKS_RANGES) {
       const result = await collectTopTracks({ range });
-      expect(result.tracks[0]!.name).toBe(range);
+      expect(must(result.tracks[0], '1位の曲').name).toBe(range);
     }
     expect(callsTo('/me/top/tracks')).toHaveLength(3);
   });
@@ -98,7 +99,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
 
     const result = await collectTopTracks({ range: 'long_term', limit: 10 });
 
-    expect(callsTo('/me/top/tracks')[0]!.url).toContain('limit=10');
+    expect(must(callsTo('/me/top/tracks')[0], 'リクエスト').url).toContain('limit=10');
     expect(result.limit).toBe(10);
   });
 
@@ -108,7 +109,7 @@ describe('要件1: Spotify API を叩いて、直近3種類のランキングを
     const result = await collectTopTracks();
 
     expect(result.tracks.map((t) => t.rank)).toEqual([1, 2]);
-    expect(Object.keys(result.tracks[0]!).sort()).toEqual(TOP_TRACK_ENTRY_KEYS);
+    expect(Object.keys(must(result.tracks[0], '1位の曲')).sort()).toEqual(TOP_TRACK_ENTRY_KEYS);
   });
 });
 
@@ -124,7 +125,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
     expect(result.track?.artist).toBe('Neon District');
     expect(result.fetched_at).toBe(NOW_ISO);
     expect(Object.keys(result)).toEqual(['is_playing', 'track', 'mood', 'fetched_at']);
-    expect(Object.keys(result.track!).sort()).toEqual(TRACK_SUMMARY_KEYS);
+    expect(Object.keys(must(result.track, '曲')).sort()).toEqual(TRACK_SUMMARY_KEYS);
   });
 
   it('停止中・デバイスなし（204）なら、再生していないことを返す', async () => {
@@ -214,7 +215,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
       const recent = await collectRecentlyPlayed({ previous: null });
 
-      expect(callsTo('/me/player/recently-played')[0]!.url).toContain('limit=10');
+      expect(must(callsTo('/me/player/recently-played')[0], 'リクエスト').url).toContain('limit=10');
       expect(recent?.track.name).toBe('Catalog Song');
       expect(recent?.played_at).toBe(earlier);
     });
@@ -273,8 +274,8 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
     const result = await collectTopTracks();
 
-    expect(callsTo('/artists?ids=')[0]!.url).toMatch(/ids=artist-1$/);
-    expect(result.tracks[0]!.genres).toEqual(['city pop']);
+    expect(must(callsTo('/artists?ids=')[0], 'リクエスト').url).toMatch(/ids=artist-1$/);
+    expect(must(result.tracks[0], '1位の曲').genres).toEqual(['city pop']);
   });
 
   it('ジャケ写は300px以上の最大サイズを選ぶ', async () => {
@@ -303,8 +304,8 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       const result = await collectTopTracks();
 
       expect(callsTo('/artists?ids=')).toHaveLength(1);
-      expect(result.tracks[0]!.genres).toEqual([]);
-      expect(result.tracks[0]!.name).toBe('Midnight Drive');
+      expect(must(result.tracks[0], '1位の曲').genres).toEqual([]);
+      expect(must(result.tracks[0], '1位の曲').name).toBe('Midnight Drive');
     });
 
     it.each([
@@ -320,14 +321,14 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       respondWith((url) => (url.includes('/artists?ids=') ? fail() : null));
 
       const first = await collectTopTracks();
-      expect(first.tracks[0]!.name).toBe('Midnight Drive');
+      expect(must(first.tracks[0], '1位の曲').name).toBe('Midnight Drive');
       expect(artistGenresAvailable()).toBe(true);
 
       givenArtistGenres({ 'artist-1': ['city pop'] });
       const second = await collectTopTracks();
 
       expect(callsTo('/artists?ids=')).toHaveLength(2);
-      expect(second.tracks[0]!.genres).toEqual(['city pop']);
+      expect(must(second.tracks[0], '1位の曲').genres).toEqual(['city pop']);
     });
 
     it('/artists が 403 なら、以降そのプロセスでは呼ばない', async () => {
@@ -346,7 +347,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
       const result = await collectTopTracks();
 
-      expect(result.tracks[0]!.genres).toEqual(['city pop', 'synthwave']);
+      expect(must(result.tracks[0], '1位の曲').genres).toEqual(['city pop', 'synthwave']);
     });
   });
 
@@ -451,7 +452,7 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
     expect(res).not.toBeNull();
     expect(attempt).toBe(2);
     // 再試行は取り直した新しいトークンで行う
-    const retry = callsTo('/me/top/tracks')[1]!;
+    const retry = must(callsTo('/me/top/tracks')[1], 'リクエスト');
     expect(headerOf(retry, 'Authorization')).toBe(`Bearer refreshed-token-${issued}`);
   });
 
@@ -937,7 +938,7 @@ describe('Spotify に送るリクエストの中身', () => {
 
     await collectNowPlaying();
 
-    const url = new URL(callsTo('/me/player/currently-playing')[0]!.url);
+    const url = new URL(must(callsTo('/me/player/currently-playing')[0], 'リクエスト').url);
     expect(url.searchParams.get('additional_types')).toBe('track');
   });
 
@@ -946,7 +947,7 @@ describe('Spotify に送るリクエストの中身', () => {
 
     await collectRecentlyPlayed();
 
-    const url = new URL(callsTo('/me/player/recently-played')[0]!.url);
+    const url = new URL(must(callsTo('/me/player/recently-played')[0], 'リクエスト').url);
     expect(url.searchParams.get('limit')).toBe('10');
   });
 
@@ -989,7 +990,7 @@ describe('複数アーティストのジャンルは重複を除く', () => {
 
     await collectNowPlaying();
 
-    const prompt = JSON.stringify(JSON.parse(callsTo('/chat/completions')[0]!.init!.body as string));
+    const prompt = JSON.stringify(JSON.parse(must(callsTo('/chat/completions')[0], 'リクエスト').init!.body as string));
     expect(prompt.match(/rock/g)).toHaveLength(1);
   });
 });
@@ -1013,7 +1014,7 @@ describe('トークンの更新と認可コードの交換で送るフォーム'
   it('トークンの更新は grant_type=refresh_token と refresh_token を送る', async () => {
     await getAccessToken();
 
-    const form = formBodyOf(callsTo('accounts.spotify.com/api/token')[0]!);
+    const form = formBodyOf(must(callsTo('accounts.spotify.com/api/token')[0], 'リクエスト'));
     expect(form['grant_type']).toBe('refresh_token');
     expect(form['refresh_token']).toBe('spec-refresh-token');
   });
@@ -1028,7 +1029,7 @@ describe('トークンの更新と認可コードの交換で送るフォーム'
 
     await exchangeCodeForTokens({ clientId: 'id', clientSecret: 'secret', redirectUri }, 'the-code');
 
-    const form = formBodyOf(callsTo('accounts.spotify.com/api/token')[0]!);
+    const form = formBodyOf(must(callsTo('accounts.spotify.com/api/token')[0], 'リクエスト'));
     expect(form['grant_type']).toBe('authorization_code');
     expect(form['code']).toBe('the-code');
     expect(form['redirect_uri']).toBe(redirectUri);

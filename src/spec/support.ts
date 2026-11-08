@@ -227,6 +227,13 @@ export function aTopTrackEntry(overrides: Partial<TopTrackEntry> = {}): TopTrack
   };
 }
 
+/** 値があることを確かめて絞る。無ければ TypeError ではなく「何が無いか」で失敗する。 */
+export function must<T>(value: T | null | undefined, what: string): T {
+  expect(value, `${what} がありません`).not.toBeNull();
+  expect(value, `${what} がありません`).toBeDefined();
+  return value as T;
+}
+
 // ── モックの組み立て ─────────────────────────────────────────────────────────
 
 export function givenNowPlaying(track: SpotifyTrack | null): void {
