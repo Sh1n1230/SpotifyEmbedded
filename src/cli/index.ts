@@ -55,6 +55,10 @@ async function main(): Promise<void> {
       return;
 
     case 'generate':
+      if (args.includes('--help') || args.includes('-h')) {
+        console.log(USAGE);
+        return;
+      }
       await generate(parseGenerateArgs(args));
       return;
 
