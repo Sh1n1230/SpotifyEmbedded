@@ -16,6 +16,7 @@ import { renderEmbedPage } from '../render/page.js';
 import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
+import { liveMoodOptions } from '../http/background.js';
 import { SpotifyAuthError } from '../spotify/client.js';
 import type { NowPlayingResponse } from '../types/index.js';
 
@@ -87,7 +88,7 @@ const ERROR_HEADER = 'X-Spotify-Embedded-Error';
 
 async function nowPlayingOrNull(c: Context): Promise<NowPlayingResponse | null> {
   try {
-    return await collectNowPlaying();
+    return await collectNowPlaying(liveMoodOptions(c));
   } catch (err) {
     // 覚えていた認証の失敗を返しただけのとき（Spotify は呼んでいない）は、表示のたびに同じ案内を出さない
     if (!(err instanceof SpotifyAuthError && err.repeated)) {

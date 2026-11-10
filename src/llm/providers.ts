@@ -41,6 +41,23 @@ export const PROVIDERS: ProviderPreset[] = [
     signupUrl: 'https://platform.openai.com/api-keys',
     note: '従量課金',
   },
+  // 既定のモデルは持たない: どちらも提供するモデルの入れ替わりが早く、古い名前を既定にすると 404 になる
+  {
+    id: 'groq',
+    label: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: '',
+    signupUrl: 'https://console.groq.com/keys',
+    note: '無料枠あり。モデル名は https://console.groq.com/docs/models から選ぶ',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: '',
+    signupUrl: 'https://openrouter.ai/keys',
+    note: 'モデル名は https://openrouter.ai/models から選ぶ（例: 提供元/モデル名）',
+  },
   {
     id: 'custom',
     label: 'その他（OpenAI互換のエンドポイントURLを直接入力）',

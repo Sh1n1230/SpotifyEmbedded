@@ -19,7 +19,7 @@ import {
   type RecentlyPlayed,
 } from '../core/collect.js';
 import { resolveRankingMood, type RankingMoodRecord } from '../core/rankingMood.js';
-import { hasLlmConfigured } from '../llm/settings.js';
+import { hasLlmConfigured, llmKeyNotice, resolveLlm } from '../llm/settings.js';
 import { missingAuthValues } from '../authStore.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderRankingCard } from '../render/ranking.js';
@@ -109,16 +109,30 @@ export async function generate(options: GenerateOptions): Promise<void> {
     );
   }
 
-  if (!options.skipMood && !hasLlmConfigured()) console.log('LLM が未設定のため、ムード文なしで生成します');
+  if (!options.skipMood) {
+    const llm = resolveLlm();
+    if (llm.kind === 'unconfigured') console.log('LLM が未設定のため、ムード文なしで生成します');
+    if (llm.kind === 'invalid') console.warn(`LLM の設定に誤りがあるため、ムード文なしで生成します: ${llm.problem}`);
+    const notice = llmKeyNotice();
+    if (notice) console.log(notice);
+  }
+
+  const previous = readSnapshot(outDir);
 
   console.log('Spotify からデータを取得しています...');
   const [nowPlaying, topTracks] = await Promise.all([
-    timed('再生状況', () => collectNowPlaying({ bypassCache: true, skipMood: options.skipMood })),
+    timed('再生状況', () =>
+      collectNowPlaying({
+        bypassCache: true,
+        skipMood: options.skipMood,
+        // 前回と同じ曲を再生中なら、前回のムード文を使う（LLM を呼ばず、文も実行ごとに変わらない）
+        knownMood: previous?.track && previous.mood ? { trackId: previous.track.id, mood: previous.mood } : null,
+      })
+    ),
     // ランキングのムード文は snapshot.json を根拠に下で決める
     timed('ランキング', () => collectTopTracks({ range: options.range, limit: options.limit })),
   ]);
 
-  const previous = readSnapshot(outDir);
   // 停止中は、前回の観測より後に聴き終えた曲がないかを履歴で確かめる
   const recent = nowPlaying.is_playing
     ? null

@@ -664,6 +664,51 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(snapshot.mood.text).toBe('前回の文');
     });
 
+    it('前回と同じ曲を再生中なら、LLM を呼ばずに前回のムード文を使う', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('前回の文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      // 次の実行（新しいプロセスなのでメモリのキャッシュは空）
+      vi.setSystemTime(new Date(NOW.getTime() + 30 * 60 * 1000));
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      moodCache.flushAll();
+      givenLlmReplies('作り直された文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      const snapshot = JSON.parse(read('snapshot.json')) as { state: string; mood: { text: string } };
+      expect(snapshot.state).toBe('playing');
+      expect(snapshot.mood.text).toBe('前回の文');
+      expect((JSON.parse(read('now-playing.json')) as { mood: { text: string } }).mood.text).toBe('前回の文');
+      // ランキングのムード文も顔ぶれが同じなので呼ばない
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+    });
+
+    it('再生中の曲が前回と違えば、今までどおり生成する', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('前回の文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      moodCache.flushAll();
+      givenLlmReplies('別の曲の文');
+      givenNowPlaying(aSpotifyTrack({ id: 'track-2', name: 'Another Song' }));
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      expect((JSON.parse(read('snapshot.json')) as { mood: { text: string } }).mood.text).toBe('別の曲の文');
+    });
+
     it('前回 LLM が失敗してムード文が無ければ、同じ曲でも作り直す', async () => {
       // 使い回すと、別の曲を聴くまでムード文が空のまま固まる
       givenLlmConfigured();

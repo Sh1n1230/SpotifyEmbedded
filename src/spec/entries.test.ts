@@ -52,7 +52,8 @@ describe('Workers のエントリ（src/worker.ts）は、バインディング�
     expect(ok.status).toBe(200);
     expect(puts).toEqual([
       {
-        key: 'mood:track-1',
+        // キーにはプロンプトの版とモデル名が入る（変えたら保存済みの文を使い回さない）
+        key: 'mood:v2:spec-model:track-1',
         value: JSON.stringify({ text: '今チルな気分になっています', generated_at: NOW_ISO }),
         // KV の無料枠は書き込みが 1,000回/日。期限なしで溜め込まない
         options: { expirationTtl: 86400 },

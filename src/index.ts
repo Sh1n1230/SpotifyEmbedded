@@ -10,7 +10,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { missingAuthValues } from './authStore.js';
-import { resolveLlm } from './llm/settings.js';
+import { llmKeyNotice, resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
 import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
@@ -45,6 +45,8 @@ if (llm.kind === 'unconfigured') {
   console.warn(`⚠️  ${llm.problem}`);
   console.warn('   設定を直すまで、AIのムード文なしで動作します。\n');
 }
+const llmNotice = llmKeyNotice();
+if (llmNotice) console.warn(`ℹ️  ${llmNotice}\n`);
 
 // ローカル開発では * のままでよいので、本番相当（NODE_ENV=production、Docker の既定）でだけ警告する
 const corsWarning = process.env['NODE_ENV'] === 'production' ? openCorsWarning(config.server.corsOrigins) : null;

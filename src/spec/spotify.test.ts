@@ -1020,6 +1020,39 @@ describe('認可コードの交換（setup・/auth/callback）', () => {
 
     await expect(exchangeCodeForTokens(app, 'code')).resolves.toMatchObject({ refresh_token: 'r' });
   });
+
+  describe('失敗の error（RFC 6749 §5.2）ごとに、直す場所を案内する', () => {
+    function givenTokenError(status: number, body: string): void {
+      respondWith((url) => (url.includes('accounts.spotify.com/api/token') ? new Response(body, { status }) : null));
+    }
+
+    it.each([
+      [401, 'invalid_client', /Client ID \/ Client Secret が正しくありません/],
+      [400, 'invalid_grant', /認可コードが期限切れ・使用済みか、Redirect URI/],
+      [400, 'unauthorized_client', /Authorization Code フローが許可されていません/],
+    ])('%d %s', async (status, error, expected) => {
+      givenTokenError(status, JSON.stringify({ error, error_description: 'do-not-leak <script>' }));
+
+      const err = (await exchangeCodeForTokens(app, 'code').catch((e: unknown) => e)) as Error;
+
+      expect(err.message).toMatch(expected);
+      expect(err.message).toContain(`(${status} ${error})`);
+      expect(err.message).not.toContain('do-not-leak');
+    });
+
+    it('一覧に無い error や JSON でない本文は案内に使わず、今までどおりの案内にする', async () => {
+      givenTokenError(400, JSON.stringify({ error: '<img src=x onerror=alert(1)>' }));
+      const unknown = (await exchangeCodeForTokens(app, 'code').catch((e: unknown) => e)) as Error;
+      givenTokenError(400, '<html>Bad Request</html>');
+      const notJson = (await exchangeCodeForTokens(app, 'code').catch((e: unknown) => e)) as Error;
+
+      for (const err of [unknown, notJson]) {
+        expect(err.message).toBe(
+          'トークンの交換に失敗しました (400)。Client ID / Client Secret、または Redirect URI の登録内容を確認してください。'
+        );
+      }
+    });
+  });
 });
 
 describe('Spotify に送るリクエストの中身', () => {

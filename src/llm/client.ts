@@ -5,6 +5,7 @@
  * 同じコードで扱うため。必要なのは `POST {baseUrl}/chat/completions` ひとつ。
  */
 import { discardBody } from '../http/body.js';
+import { USER_AGENT } from '../http/userAgent.js';
 import { llmBaseUrlProblem } from './endpoint.js';
 
 export interface ChatMessage {
@@ -121,6 +122,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
         headers: {
           ...(params.apiKey ? { Authorization: `Bearer ${params.apiKey}` } : {}),
           'Content-Type': 'application/json',
+          'User-Agent': USER_AGENT,
         },
         body: JSON.stringify({
           model: params.model,

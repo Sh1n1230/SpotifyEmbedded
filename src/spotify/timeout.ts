@@ -9,6 +9,8 @@
  * LLM のタイムアウトは src/llm/client.ts が持つ（再試行の判断と一体のため）。
  */
 
+import { withUserAgent } from '../http/userAgent.js';
+
 /** Spotify Web API とトークン更新。 */
 export const SPOTIFY_TIMEOUT_MS = 10_000;
 
@@ -78,7 +80,11 @@ export async function fetchWithTimeout(
   target: string
 ): Promise<Response> {
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    return await fetch(url, {
+      ...init,
+      headers: withUserAgent(init.headers),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch (err) {
     throw toSpotifyError(err, target, timeoutMs);
   }

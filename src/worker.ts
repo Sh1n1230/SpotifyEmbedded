@@ -15,6 +15,7 @@ import { config } from './config.js';
 import { setDurableStore, type DurableStore } from './cache/index.js';
 import { MissingConfigError, missingAuthValues } from './authStore.js';
 import { setShareInFlightWork } from './runtime.js';
+import { llmKeyNotice, resolveLlm } from './llm/settings.js';
 
 interface Env {
   /** ムード文の保存先。isolate が入れ替わっても LLM を呼び直さないため。 */
@@ -43,6 +44,11 @@ export default {
       // リクエストは止めない: /health と失敗時のカードは Secrets が無くても返せる
       const missing = missingAuthValues();
       if (missing.length > 0) console.error('[config]', new MissingConfigError(missing).message);
+      // LLM の設定の誤り（送れない送り先など）と、GOOGLE_API_KEY を LLM のキーとして使うことも、ここで一度だけ知らせる
+      const llm = resolveLlm();
+      if (llm.kind === 'invalid') console.warn('[llm]', `${llm.problem} 設定を直すまで、ムード文なしで動作します。`);
+      const llmNotice = llmKeyNotice();
+      if (llmNotice) console.warn('[llm]', llmNotice);
       // Workers は本番として扱う。isolate ごとに一度だけ出る
       const corsWarning = openCorsWarning(config.server.corsOrigins);
       if (corsWarning) console.warn(corsWarning);

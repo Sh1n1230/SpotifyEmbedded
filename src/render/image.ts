@@ -5,6 +5,7 @@
  * 描画しない。README に貼れる SVG にするには、画像そのものを base64 で
  * 焼き込む必要がある。
  */
+import { withUserAgent } from '../http/userAgent.js';
 import { IMAGE_TIMEOUT_MS } from '../spotify/timeout.js';
 import { discardBody } from '../http/body.js';
 
@@ -109,7 +110,7 @@ async function fetchAllowedImage(url: string, signal: AbortSignal): Promise<Resp
       return null;
     }
 
-    const res = await fetch(parsed.href, { signal, redirect: 'manual' });
+    const res = await fetch(parsed.href, { signal, redirect: 'manual', headers: withUserAgent() });
     if (res.status < 300 || res.status >= 400) return res;
 
     const location = res.headers.get('location');
