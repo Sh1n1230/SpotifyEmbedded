@@ -24,7 +24,7 @@ export interface ChatCompletionParams {
 }
 
 interface ChatCompletionResponse {
-  choices?: { message?: { content?: unknown } }[];
+  choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
   error?: { message?: string };
 }
 
@@ -177,6 +177,18 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
     throw new Error(
       `LLMの応答が空でした（モデル: ${params.model}）。` +
         '推論モデルの場合、出力上限を推論で使い切っている可能性があります。'
+    );
+  }
+
+  // 途中で打ち切られた文（length）や、フィルタで止められた出力（content_filter など）は採らない。
+  // finish_reason を返さない互換サーバーもあるので、無いときは今までどおり採る
+  const finishReason = data.choices?.[0]?.finish_reason;
+  if (finishReason === 'length') {
+    throw new Error(`LLMの応答が出力上限で途中で切れました（モデル: ${params.model}）。`);
+  }
+  if (typeof finishReason === 'string' && finishReason !== '' && finishReason !== 'stop') {
+    throw new Error(
+      `LLMの応答が完了しませんでした（finish_reason: ${finishReason.slice(0, 40)}、モデル: ${params.model}）。`
     );
   }
 

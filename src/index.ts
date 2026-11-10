@@ -14,7 +14,7 @@ import { resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
 import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
-import { DEMO_PAGE_CSP } from './http/securityHeaders.js';
+import { DEMO_PAGE_CSP, EMBED_SCRIPT_CACHE_CONTROL } from './http/securityHeaders.js';
 
 // PORT の誤り（abc・3000abc・0 など）は、スタックトレースではなく直し方を出して終える
 let port: number;
@@ -67,6 +67,7 @@ const app = createApp({
     root: fileURLToPath(new URL('../public', import.meta.url)),
     onFound: (path, c) => {
       if (path.endsWith('.html')) c.header('Content-Security-Policy', DEMO_PAGE_CSP);
+      if (path.endsWith('/embed.js')) c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
     },
   }),
 });

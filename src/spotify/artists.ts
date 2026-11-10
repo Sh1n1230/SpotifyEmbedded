@@ -1,19 +1,28 @@
 /**
  * アーティストのジャンルタグ取得。
  *
- * 2024年11月以降に作成されたSpotifyアプリでは、`/artists?ids=` のバッチ
- * 取得が 403 を返し、単体の `/artists/{id}` も `genres` / `popularity` を
- * 含まなくなった（audio-features の廃止と同じ流れの制限）。
+ * 多くの環境ではジャンルは取得できない:
+ * - 2024年11月以降に作成された Spotify アプリでは、`/artists?ids=` のバッチ取得が 403 を返し、
+ *   単体の `/artists/{id}` も `genres` / `popularity` を含まない（audio-features の廃止と同じ流れの制限）
+ * - 2026年2月の Web API の変更で、Development Mode のアプリから `GET /artists`（バッチ取得）そのものが
+ *   削除された（2026年2月11日以降に作られたアプリは最初から、既存のアプリは 2026年3月9日から）
+ *   https://developer.spotify.com/documentation/web-api/references/changes/february-2026
  *
- * つまり多くの環境ではジャンルは取得できない。しかし extended quota mode の
- * アプリでは今も返るため、機能自体は残しつつ「一度 403 を見たらそのプロセス
- * では二度と呼ばない」ようにしている。毎リクエストごとに失敗する呼び出しを
+ * extended quota mode のアプリでは今も返るため、機能自体は残しつつ「この環境では取れないと分かったら、
+ * そのプロセスでは二度と呼ばない」ようにしている。毎リクエストごとに失敗する呼び出しを
  * 投げ続けると、ムード文にも使えないまま往復が増えるだけになる。
  */
 import { readSpotifyJson, spotifyFetch, SpotifyApiError } from './client.js';
 import type { SpotifyArtist } from '../types/index.js';
 
-/** 403 を一度見たら以降スキップする。プロセス単位で持てば十分。 */
+/**
+ * 「この環境では使えない」ことを示すステータス。403（制限されたアプリ）に加えて、エンドポイントの削除を示す
+ * 404・410 も含める（削除後に Spotify がどれを返すかは実機で確かめられていないため、恒久的な失敗を表すものを並べる）。
+ * 429・5xx・タイムアウトは一時的な失敗なので含めない。
+ */
+const UNAVAILABLE_STATUSES: readonly number[] = [403, 404, 410];
+
+/** 使えないと分かったら以降スキップする。プロセス単位で持てば十分。 */
 let unavailable = false;
 
 /** テスト・CLIの単発実行向け。状態を戻す。 */
@@ -21,7 +30,7 @@ export function resetArtistGenreAvailability(): void {
   unavailable = false;
 }
 
-/** ジャンルが取得できる環境か（一度 403 を見たら false）。 */
+/** ジャンルが取得できる環境か（使えないと分かったら false）。 */
 export function artistGenresAvailable(): boolean {
   return !unavailable;
 }
@@ -50,9 +59,9 @@ export async function fetchArtistGenres(artistIds: string[]): Promise<Map<string
       data = await readSpotifyJson<{ artists?: (SpotifyArtist | null)[] }>(res, path);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      // 「この環境では取れない」と言えるのは 403 だけ。タイムアウト・429・5xx は一時的な
+      // 「この環境では取れない」と言えるのは UNAVAILABLE_STATUSES だけ。タイムアウト・429・5xx は一時的な
       // 失敗なので、今回はジャンル無しで続け、次の呼び出しでまた試す。
-      if (err instanceof SpotifyApiError && err.status === 403) markUnavailable(reason);
+      if (err instanceof SpotifyApiError && UNAVAILABLE_STATUSES.includes(err.status)) markUnavailable(reason);
       else console.warn(`[spotify] ジャンルタグを取得できませんでした（次回また試します）: ${reason}`);
       return genreMap;
     }
@@ -81,6 +90,6 @@ function markUnavailable(reason: string): void {
   unavailable = true;
   console.warn(
     `[spotify] ジャンルタグを取得できないため、以降は省略します: ${reason}\n` +
-      '          （2024年11月以降に作成されたアプリでは Spotify 側の制限で取得できません）'
+      '          （2024年11月以降に作成されたアプリと、2026年2月以降の Development Mode のアプリでは、Spotify 側の制限で取得できません）'
   );
 }

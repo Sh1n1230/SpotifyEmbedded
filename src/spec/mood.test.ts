@@ -337,6 +337,52 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     });
   });
 
+  describe('途中で打ち切られた応答（finish_reason）は採らない', () => {
+    function givenLlmFinishes(finishReason: string | undefined): void {
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? jsonOk({
+              choices: [
+                {
+                  message: { content: '今センチメンタルな夜を過ごして' },
+                  ...(finishReason === undefined ? {} : { finish_reason: finishReason }),
+                },
+              ],
+            })
+          : null
+      );
+    }
+
+    it.each(['length', 'content_filter'])('finish_reason: %s なら、本文があってもムード文にしない', async (reason) => {
+      givenLlmConfigured();
+      givenNowPlaying(aSpotifyTrack());
+      givenLlmFinishes(reason);
+
+      const result = await collectNowPlaying();
+
+      expect(result.mood).toBeNull();
+      expect(result.track).not.toBeNull();
+    });
+
+    it('finish_reason: length は「出力上限で途中で切れた」と分かるメッセージになる', async () => {
+      givenLlmFinishes('length');
+
+      await expect(
+        chatCompletion({ baseUrl: 'https://llm.example/v1', apiKey: 'k', model: 'spec-model', messages: [] })
+      ).rejects.toThrow(/出力上限で途中で切れました（モデル: spec-model）/);
+    });
+
+    it.each(['stop', undefined])('finish_reason: %s は今までどおり採る', async (reason) => {
+      givenLlmConfigured();
+      givenNowPlaying(aSpotifyTrack());
+      givenLlmFinishes(reason);
+
+      const result = await collectNowPlaying();
+
+      expect(result.mood?.text).toBe('今センチメンタルな夜を過ごして');
+    });
+  });
+
   describe('失敗の原因が分かるメッセージになる', () => {
     function callLlm(baseUrl = 'https://api.groq.com/openai/v1'): Promise<string> {
       return chatCompletion({

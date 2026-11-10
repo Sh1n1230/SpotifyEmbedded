@@ -5,17 +5,18 @@
  * グローバルスコープでのタイマーを許さないため、期限切れは読み出し時に
  * 判定するだけの最小実装にしている。
  */
+import { config } from '../config.js';
 import type { MoodResult, NowPlayingResponse } from '../types/index.js';
 export class TtlCache<V = unknown> {
   private readonly entries = new Map<string, { value: V; expiresAt: number }>();
 
   /**
-   * @param ttlSeconds 0 なら期限なし
+   * @param ttlSeconds 0 なら期限なし。関数なら set のたびに読む（Workers では環境変数がリクエスト時に解決されるため）
    * @param maxKeys 満杯のときの set は、期限切れを掃除しても空かなければ、最も長く読まれていないものを捨てて入れる（LRU）。
    *   新しい値を捨てて古い値を残すと、満杯の後に聴き始めた曲のムード文が保存されず、毎回 LLM で作り直すことになるため
    */
   constructor(
-    private readonly ttlSeconds: number,
+    private readonly ttlSeconds: number | (() => number),
     private readonly maxKeys = Infinity
   ) {}
 
@@ -40,7 +41,8 @@ export class TtlCache<V = unknown> {
         if (leastRecentlyUsed !== undefined) this.entries.delete(leastRecentlyUsed);
       }
     }
-    const expiresAt = this.ttlSeconds > 0 ? Date.now() + this.ttlSeconds * 1000 : Infinity;
+    const ttlSeconds = typeof this.ttlSeconds === 'function' ? this.ttlSeconds() : this.ttlSeconds;
+    const expiresAt = ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : Infinity;
     // 上書きのときも最後に回す（最も新しく使ったものにする）
     this.entries.delete(key);
     this.entries.set(key, { value, expiresAt });
@@ -58,7 +60,8 @@ export class TtlCache<V = unknown> {
   }
 }
 
-export const nowPlayingCache = new TtlCache<NowPlayingResponse>(30);
+// 既定は 30 秒。NOW_PLAYING_CACHE_SECONDS で変えられる（src/config.ts）
+export const nowPlayingCache = new TtlCache<NowPlayingResponse>(() => config.server.nowPlayingCacheSeconds);
 // Keyed by trackId. 満杯なら最も長く読まれていない曲のものを捨てて入れる。
 export const moodCache = new TtlCache<MoodResult>(86400, 200);
 // Keyed by image URL. ライブSVGはリクエストのたびにジャケ写を data URI 化

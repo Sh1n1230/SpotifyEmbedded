@@ -223,6 +223,35 @@ describe('Workers のエントリは、バインディングが無くても動�
     expect(callsTo('/chat/completions')).toHaveLength(1);
   });
 
+  it('あるリクエストが作った Promise を別のリクエストに待たせない（進行中の取得を共有せず、値のキャッシュだけを共有する）', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const fresh = await freshWorker();
+
+    const responses = await Promise.all([fresh.fetch(request(), env, ctx), fresh.fetch(request(), env, ctx)]);
+
+    expect(responses.map((res) => res.status)).toEqual([200, 200]);
+    // 同時の2本はそれぞれ自分で取得する（Node 版は1回にまとめる。src/runtime.ts）
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(2);
+
+    // 終わった後は、値のキャッシュから返す
+    await fresh.fetch(request(), env, ctx);
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(2);
+  });
+
+  it('Secrets の入れ忘れは、最初のリクエストでログに名前と直し方を出し、503 を返す（/health は返せる）', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', '');
+    const fresh = await freshWorker();
+
+    const health = await fresh.fetch(new Request('https://spotify-embedded.example/health'), env, ctx);
+    const res = await fresh.fetch(request(), env, ctx);
+
+    expect(health.status).toBe(200);
+    expect(res.status).toBe(503);
+    const logged = vi.mocked(console.error).mock.calls.map((args) => args.join(' '));
+    expect(logged[0]).toContain('SPOTIFY_CLIENT_SECRET');
+    expect(logged[0]).toContain('wrangler secret put');
+  });
+
   it('RATE_LIMITER が無ければ 429 にせず、RateLimit-* も付けない', async () => {
     givenNowPlaying(aSpotifyTrack());
     const fresh = await freshWorker();

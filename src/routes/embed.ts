@@ -16,6 +16,7 @@ import { renderEmbedPage } from '../render/page.js';
 import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
+import { SpotifyAuthError } from '../spotify/client.js';
 import type { NowPlayingResponse } from '../types/index.js';
 
 const router = new Hono();
@@ -88,7 +89,10 @@ async function nowPlayingOrNull(c: Context): Promise<NowPlayingResponse | null> 
   try {
     return await collectNowPlaying();
   } catch (err) {
-    console.error('[embed] 再生状況を取得できませんでした:', err instanceof Error ? err.message : err);
+    // 覚えていた認証の失敗を返しただけのとき（Spotify は呼んでいない）は、表示のたびに同じ案内を出さない
+    if (!(err instanceof SpotifyAuthError && err.repeated)) {
+      console.error('[embed] 再生状況を取得できませんでした:', err instanceof Error ? err.message : err);
+    }
     c.header(ERROR_HEADER, 'spotify_unavailable');
     return null;
   }

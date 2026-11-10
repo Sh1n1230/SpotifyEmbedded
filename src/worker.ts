@@ -13,6 +13,8 @@ import { bindingRateLimiter } from './http/rateLimit.js';
 import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { config } from './config.js';
 import { setDurableStore, type DurableStore } from './cache/index.js';
+import { MissingConfigError, missingAuthValues } from './authStore.js';
+import { setShareInFlightWork } from './runtime.js';
 
 interface Env {
   /** ムード文の保存先。isolate が入れ替わっても LLM を呼び直さないため。 */
@@ -35,6 +37,12 @@ export default {
     // バインディングは isolate 内で不変なので、最初のリクエストで一度だけ組み立てる
     if (!app) {
       setDurableStore(env.MOODS ? kvStore(env.MOODS) : null);
+      // あるリクエストが作った Promise を別のリクエストに待たせない（理由は src/runtime.ts）
+      setShareInFlightWork(false);
+      // Secrets の入れ忘れは、最初のリクエストで分かるようにする（Node 版の起動時の確認にあたる）。
+      // リクエストは止めない: /health と失敗時のカードは Secrets が無くても返せる
+      const missing = missingAuthValues();
+      if (missing.length > 0) console.error('[config]', new MissingConfigError(missing).message);
       // Workers は本番として扱う。isolate ごとに一度だけ出る
       const corsWarning = openCorsWarning(config.server.corsOrigins);
       if (corsWarning) console.warn(corsWarning);

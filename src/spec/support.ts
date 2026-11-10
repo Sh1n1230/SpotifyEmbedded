@@ -31,6 +31,8 @@ import { loadStoredAuth } from '../authStore.js';
 import { artCache, moodCache, nowPlayingCache, setDurableStore } from '../cache/index.js';
 import { resetArtistGenreAvailability } from '../spotify/artists.js';
 import { resetAccessToken } from '../spotify/auth.js';
+import { resetSpotifyRateLimit } from '../spotify/client.js';
+import { setShareInFlightWork } from '../runtime.js';
 import type { SpotifyTrack, TopTrackEntry } from '../types/index.js';
 
 /** 子プロセスに `--import` で渡す tsx の入口（package.json の exports にある公開の入口）。 */
@@ -313,6 +315,9 @@ beforeEach(() => {
   // /artists の 403 latch とアクセストークンはプロセス単位の状態。
   resetArtistGenreAvailability();
   resetAccessToken();
+  // Spotify の 429 の後の「この時刻までは呼ばない」と、Workers 向けの切り替えもプロセス単位の状態
+  resetSpotifyRateLimit();
+  setShareInFlightWork(true);
 
   handlers = [];
   calls = [];

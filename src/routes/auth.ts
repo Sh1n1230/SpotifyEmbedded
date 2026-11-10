@@ -38,10 +38,10 @@ function sameState(a: string, b: string): boolean {
 
 router.get('/login', (c) => {
   // Client ID / Secret が無いと Spotify の認可の URL を作れない。原因の分からない 500 ではなく直し方を返す
-  if (!process.env['SPOTIFY_CLIENT_ID'] && !resolveAuthValue('spotifyClientId')) {
+  if (!resolveAuthValue('spotifyClientId')) {
     return c.text(missingClientMessage('SPOTIFY_CLIENT_ID'), 400);
   }
-  if (!process.env['SPOTIFY_CLIENT_SECRET'] && !resolveAuthValue('spotifyClientSecret')) {
+  if (!resolveAuthValue('spotifyClientSecret')) {
     return c.text(missingClientMessage('SPOTIFY_CLIENT_SECRET'), 400);
   }
 

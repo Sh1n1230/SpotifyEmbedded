@@ -11,6 +11,7 @@ import { fetchTopTracks } from '../spotify/topTracks.js';
 import { fetchRecentlyPlayed } from '../spotify/recentlyPlayed.js';
 import { generateMood } from '../llm/moodGenerator.js';
 import { hasLlmConfigured } from '../llm/settings.js';
+import { sharesInFlightWork } from '../runtime.js';
 import {
   nowPlayingCache,
   moodCache,
@@ -148,6 +149,8 @@ export async function collectNowPlaying(
 
   // skipMood の有無で結果が変わるので、共有するのは既定の呼び出しだけ。
   if (options.skipMood) return fetchAndBuildNowPlaying(options);
+  // Workers では、別のリクエストが作った Promise を待たない（src/runtime.ts）。値のキャッシュだけを共有する
+  if (!sharesInFlightWork()) return fetchAndBuildNowPlaying(options);
   nowPlayingInFlight ??= fetchAndBuildNowPlaying(options).finally(() => {
     nowPlayingInFlight = null;
   });
