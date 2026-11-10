@@ -142,8 +142,8 @@ export const TOP_TRACKS_RANGES = ['short_term', 'medium_term', 'long_term'] as c
 export type TopTracksRange = (typeof TOP_TRACKS_RANGES)[number];
 
 /**
- * 取得件数。Spotify 側は 1〜50 の任意値を許すが、キャッシュのキーが
- * 無限に増えるのを避けるため3段階に固定する。
+ * 取得件数。Spotify 側は 1〜50 の任意値を許すが、3段階に固定している
+ * （任意の件数を受け付けるかは #515）。
  */
 export const TOP_TRACKS_LIMITS = [10, 30, 50] as const;
 export type TopTracksLimit = (typeof TOP_TRACKS_LIMITS)[number];

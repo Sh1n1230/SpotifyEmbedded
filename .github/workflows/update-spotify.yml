@@ -98,9 +98,14 @@ jobs:
           if git -c credential.helper= \
             -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' \
             fetch --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" spotify-data 2>/dev/null; then
-            git show FETCH_HEAD:snapshot.json > out/snapshot.json 2>/dev/null \
-              && echo "前回のスナップショットを復元しました" \
-              || echo "スナップショットがないので新規作成します"
+            # 直接 out/ へ書くと、ブランチに snapshot.json が無いときに空のファイルが残る
+            # （次のステップが読めないと警告し、下の作り直しの node -e は落ちる）。取れたときだけ置く
+            if git show FETCH_HEAD:snapshot.json > "$RUNNER_TEMP/snapshot.json" 2>/dev/null; then
+              mv "$RUNNER_TEMP/snapshot.json" out/snapshot.json
+              echo "前回のスナップショットを復元しました"
+            else
+              echo "スナップショットがないので新規作成します"
+            fi
           else
             echo "spotify-data ブランチを取得できませんでした（初回はまだありません）"
           fi
