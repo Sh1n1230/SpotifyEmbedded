@@ -608,7 +608,9 @@ describe('now-playing の SVG カードの組み方', () => {
     spotify_url: 'https://open.spotify.com/track/t',
     preview_url: null,
   };
-  const yOf = (svg: string, text: string) => Number(new RegExp(`y="([\\d.]+)"[^>]*>${text}<`).exec(svg)?.[1]);
+  /** その文字列を中身に持つ要素の y。text から正規表現を組み立てず、決まった形で要素を取り出して中身を比べる。 */
+  const yOf = (svg: string, text: string) =>
+    Number([...svg.matchAll(/y="([\d.]+)"[^>]*>([^<]*)</g)].find((match) => match[2] === text)?.[1]);
   const LONG = 'とても長い文字列がカードの幅に収まらずに二行目まで折り返されていくことを確かめます';
 
   it('ムード文が1行なら y=82、曲名とアーティストはその下の決まった位置', () => {

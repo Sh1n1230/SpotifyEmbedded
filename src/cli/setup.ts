@@ -589,7 +589,8 @@ export function upsertEnvFile(path: string, values: StoredAuth): string[] {
 
 /** dotenv の文法で、その行が name を定義しているか（`export NAME=` や `NAME = value` も含む）。 */
 function definesEnv(line: string, name: string): boolean {
-  return new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(line);
+  // name から正規表現を組み立てない（名前に記号が入っても意味が変わらないよう、決まった形で名前を取り出して比べる）
+  return /^\s*(?:export\s+)?([^\s=]+)\s*=/.exec(line)?.[1] === name;
 }
 
 /**
