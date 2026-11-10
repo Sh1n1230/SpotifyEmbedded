@@ -105,7 +105,10 @@ export function loadStoredAuth(forceReload = false): StoredAuth {
     }
     cached = next;
   } catch (err) {
-    console.warn('[auth] %s を読み込めませんでした。無視します:', path, err);
+    // JSON.parse のエラー文は本文の一部を引用する（`Unexpected token 'A', "AQD…" is not valid JSON`）。
+    // このファイルの中身は秘密情報なので、JSON として読めないときは理由の種類だけを出す
+    const reason = err instanceof SyntaxError ? 'JSON として読めません' : err instanceof Error ? err.message : String(err);
+    console.warn('[auth] %s を読み込めませんでした。無視します: %s', path, reason);
     cached = {};
   }
   return cached;

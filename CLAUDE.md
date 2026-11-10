@@ -35,7 +35,8 @@ The same core powers both. This split is the product's core idea — don't colla
 - `src/spotify/` — API client (native fetch), token auto-refresh (concurrent callers share one
   refresh; a rotated refresh_token is used in-process and written back only to `data/auth.json`),
   nowPlaying, topTracks, recentlyPlayed, oauth, `track.ts` (the single raw→`TrackSummary`
-  mapping) and `artists.ts` (the single genre-lookup path; latches off only on 403)
+  mapping) and `artists.ts` (the single genre-lookup path; latches off on 403 or a response
+  without genres, never on transient failures)
 - `src/llm/` — OpenAI-compatible chat client (`client.ts`), provider presets (`providers.ts`),
   and the Japanese mood prompt (`moodGenerator.ts`). Any OpenAI-format endpoint works;
   the presets are input helpers, not an integration list. No provider SDK.
@@ -45,7 +46,7 @@ The same core powers both. This split is the product's core idea — don't colla
   Only static mode uses it: `generate` carries the record in `snapshot.json` as `ranking_mood`.
   On LLM failure the previous record is kept, basis unchanged.
 - `src/cache/index.ts` — in-memory `TtlCache` instances for the live API: nowPlaying (30s), mood
-  (24h, 200 keys), art (24h, 100 keys). Not node-cache: it starts a timer at construction, which
+  (24h, 200 keys), art (24h, 20 keys). Not node-cache: it starts a timer at construction, which
   Workers forbids in global scope. Also an optional `DurableStore` (Workers KV binding `MOODS`)
   that `collect.ts` reads/writes through for per-track moods, because Workers isolates drop
   memory often (KV free tier: 1,000 writes/day).
@@ -58,7 +59,7 @@ The same core powers both. This split is the product's core idea — don't colla
   returns 403, single-artist responses omit `genres`, and `popularity` / `preview_url` are
   absent from both `/me/player/currently-playing` and `/me/top/tracks`. `src/spotify/artists.ts`
   keeps the genre lookup for extended-quota apps but latches "unavailable" after the first 403
-  so it stops retrying. `TrackSummary.popularity` is `number | null`; the key always exists.
+  (or a response with no genres) so it stops retrying. `TrackSummary.popularity` is `number | null`; the key always exists.
 - Mood inference therefore usually has only track/artist/album names. `moodGenerator` drops
   absent signals from the prompt rather than writing "不明" — a stated-but-empty hint skews output.
 - `spotifyFetch` throws `SpotifyApiError` on any non-2xx other than the handled 401/429/204.

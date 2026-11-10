@@ -91,6 +91,17 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
     expect(refreshTokenSent()).toBe('spec-refresh-token');
   });
 
+  // JSON.parse のエラー文は本文の先頭を引用する。中身は秘密情報なので、ログに載せない
+  it('壊れた data/auth.json の中身を、読み込みの失敗のログに出さない', () => {
+    writeFileSync(storePath, 'AQDsecret-refresh-token');
+
+    loadStoredAuth(true);
+
+    const logged = vi.mocked(console.warn).mock.calls.flat().join(' ');
+    expect(logged).toContain('読み込めませんでした');
+    expect(logged).not.toContain('AQDsecret');
+  });
+
   it('起動の後に data/auth.json が書かれても、必要になったときに読み直して使う（再起動は要らない）', () => {
     givenAuthFile({});
     // spec の共通の準備は SPOTIFY_* を環境変数に置くので、環境変数に無い項目で確かめる

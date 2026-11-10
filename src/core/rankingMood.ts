@@ -12,8 +12,8 @@
  * - 順位の入れ替わりは無視する（集合として比べる）。好みの傾向は変わらない。
  * - 比較対象は「前回見た顔ぶれ」ではなく「生成時点の顔ぶれ」。少しずつの変化も
  *   積み重なればいずれ閾値を超え、再生成される。
- * - 保存先は呼び出し側が選ぶ。ライブAPIはメモリ、静的モードは snapshot.json。
- *   判定はどちらも同じこの関数で行う。
+ * - 使うのは静的モードだけ（ライブAPIはランキングを扱わない）。記録は呼び出し側の
+ *   generate が snapshot.json に持ち越す。
  */
 import { generateRankingMood } from '../llm/moodGenerator.js';
 import { rangeLabelJa } from './topTracksParams.js';

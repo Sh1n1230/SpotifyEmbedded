@@ -167,6 +167,12 @@ describe('ワークフローの細かな約束', () => {
     expect(workflow.on.push.paths).toContain('package-lock.json');
   });
 
+  // リダイレクトは git show が失敗しても空のファイルを作る。空の snapshot.json は generate が読めず、
+  // refresh_ranking_mood の作り直し（JSON.parse）はステップごと落ちる
+  it('update-spotify.yml は、復元できなかったときに空の snapshot.json を残さない', () => {
+    expect(read('update-spotify.yml')).not.toMatch(/git show[^\n]*>\s*out\/snapshot\.json/);
+  });
+
   it('update-spotify.yml の定期実行は、混みやすい毎時0分・30分を避ける', () => {
     const workflow = yaml.load(read('update-spotify.yml')) as { on: { schedule: { cron: string }[] } };
 

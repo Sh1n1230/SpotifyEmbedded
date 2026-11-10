@@ -38,6 +38,8 @@
 
 ### 修正
 
+- `update-spotify.yml` は、`spotify-data` ブランチに `snapshot.json` が無いときに空のファイルを残していた（読み込みの警告が出て、`refresh_ranking_mood` を付けた手動実行は失敗していた）
+- 壊れた `data/auth.json` の読み込みの失敗で、ファイルの中身の一部（秘密情報の断片）がログに出ることがあった
 - `npm run setup` の接続確認を本番と同じプロンプトと検査にする（形式で捨てられるモデルを、接続の失敗と分けて知らせる）。LLM の番号の入力は `1abc` などを聞き直す
 - `generate` は足りない設定をまとめて知らせる。`DEBUG=spotify-embedded` でスタックトレースを出す
 - `setup --help` で対話が始まっていた。知らないオプションは終了コード 1 で知らせる
