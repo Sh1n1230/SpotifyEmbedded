@@ -76,7 +76,8 @@ const app = createApp({
     root: fileURLToPath(new URL('../public', import.meta.url)),
     onFound: (path, c) => {
       if (path.endsWith('.html')) c.header('Content-Security-Policy', DEMO_PAGE_CSP);
-      if (path.endsWith('/embed.js')) c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
+      // path はファイルシステムのパス（Windows では区切りが \\）なので、リクエストのパスで判定する
+      if (c.req.path === '/embed.js') c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
     },
   }),
 });

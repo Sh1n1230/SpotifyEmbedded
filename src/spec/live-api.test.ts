@@ -581,8 +581,8 @@ describe('ライブAPIの境界: 埋め込まれるパスは COEP を有効に�
     const app = createApp({
       staticFiles: serveStatic({
         root: fileURLToPath(new URL('../../public', import.meta.url)),
-        onFound: (path, c) => {
-          if (path.endsWith('/embed.js')) c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
+        onFound: (_path, c) => {
+          if (c.req.path === '/embed.js') c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
         },
       }),
     });
@@ -595,7 +595,8 @@ describe('ライブAPIの境界: 埋め込まれるパスは COEP を有効に�
     expect(section).toContain(`  Cache-Control: ${EMBED_SCRIPT_CACHE_CONTROL}\n`);
     expect(section).toContain(`  Cross-Origin-Resource-Policy: ${CROSS_ORIGIN_RESOURCE_POLICY}\n`);
     expect(readFileSync(new URL('../index.ts', import.meta.url), 'utf8')).toContain(
-      "if (path.endsWith('/embed.js')) c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);"
+      // ファイルシステムのパス（Windows では区切りが \\）ではなく、リクエストのパスで判定する
+      "if (c.req.path === '/embed.js') c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);"
     );
   });
 });

@@ -70,6 +70,7 @@ function runEntry(entry: string, args: string[], options: RunOptions, cwds: stri
 
 import { buildAuthorizeUrl } from '../spotify/oauth.js';
 import { loadStoredAuth } from '../authStore.js';
+import { createServer } from 'node:net';
 describe('CLI（spotify-embedded）', () => {
   const cwds: string[] = [];
   afterEach(() => {
@@ -395,9 +396,22 @@ describe('setup の部品', () => {
     }
   );
 
+  /** いま空いているループバックのポート。 */
+  function freePort(): Promise<number> {
+    return new Promise((done, fail) => {
+      const probe = createServer();
+      probe.on('error', fail);
+      probe.listen(0, '127.0.0.1', () => {
+        const address = probe.address();
+        probe.close(() => done(typeof address === 'object' && address ? address.port : 0));
+      });
+    });
+  }
+
   /** 一時サーバーを立て、コールバックを1回送って、結果のページと Promise の結末を返す。 */
-  async function callbackOnce(offset: number, query: (state: string) => string) {
-    const port = 41_100 + offset + (process.pid % 20_000);
+  async function callbackOnce(_offset: number, query: (state: string) => string) {
+    // 空いているポートを OS に選ばせる。決め打ちの番号は、Windows の予約済みの範囲に当たると待ち受けられない
+    const port = await freePort();
     const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
     let authorizeUrl = '';
     const flow = runOAuthFlow({ clientId: 'id', clientSecret: 'secret', redirectUri }, (url) => {
@@ -406,7 +420,7 @@ describe('setup の部品', () => {
       () => 'resolved',
       (err: unknown) => (err instanceof Error ? err.message : String(err))
     );
-    await vi.waitFor(() => expect(authorizeUrl).not.toBe(''));
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(''), { timeout: 5_000 });
     const state = new URL(authorizeUrl).searchParams.get('state') ?? '';
     const page = await new Promise<{ status: number; body: string }>((done, fail) => {
       get(`${redirectUri}?${query(state)}`, (res) => {
