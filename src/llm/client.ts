@@ -26,6 +26,7 @@ export interface ChatCompletionParams {
 
 interface ChatCompletionResponse {
   choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
+  usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
   error?: { message?: string };
 }
 
@@ -112,6 +113,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   if (problem) throw new Error(problem);
 
   const url = chatCompletionsUrl(params.baseUrl);
+  const startedAt = Date.now();
   // 推論モデルなど、temperature を受け付けないモデルがある。400 で拒まれたら、外して一度だけ送り直す
   let includeTemperature = true;
 
@@ -172,6 +174,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   }
 
   const data = (await res.json()) as ChatCompletionResponse;
+  logUsage(params.model, Date.now() - startedAt, data.usage);
   const content = data.choices?.[0]?.message?.content;
   const text = extractContentText(content);
   if (!text.trim()) {
@@ -195,6 +198,21 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<stri
   }
 
   return text;
+}
+
+/**
+ * 呼び出しごとに、モデル・所要時間（再試行を含む）・トークン数を1行で残す。費用が想定より多いとき・応答が遅いときの
+ * 手がかりにする。応答の中身（ムード文）は出さない。usage を返さない互換サーバーでは、トークン数を省く。
+ */
+function logUsage(model: string, durationMs: number, usage: ChatCompletionResponse['usage']): void {
+  const tokens = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? String(value) : null);
+  const prompt = tokens(usage?.prompt_tokens);
+  const completion = tokens(usage?.completion_tokens);
+  console.log(
+    `[llm] model=${model} duration_ms=${durationMs}` +
+      (prompt !== null ? ` prompt_tokens=${prompt}` : '') +
+      (completion !== null ? ` completion_tokens=${completion}` : '')
+  );
 }
 
 /** よくある失敗は、次に何を直せばいいかまで書く。 */

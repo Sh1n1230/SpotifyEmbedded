@@ -18,6 +18,13 @@ export interface OAuthApp {
   redirectUri: string;
 }
 
+/**
+ * 認可の URL。show_dialog=true を付け、承認済みのアプリでも毎回 Spotify の承認画面を出す。
+ * 付けないと、やり直してもブラウザでログイン中のアカウントのまま即座に戻り、別のアカウントに切り替えられない
+ * （承認画面には、今のアカウントの表示と切り替えのリンクがある）。この URL を使うのは setup と /auth/login の
+ * 「取り直す」操作だけなので、常に付ける。
+ * https://developer.spotify.com/documentation/web-api/tutorials/code-flow
+ */
 export function buildAuthorizeUrl(app: OAuthApp, state: string): string {
   const params = new URLSearchParams({
     response_type: 'code',
@@ -25,6 +32,7 @@ export function buildAuthorizeUrl(app: OAuthApp, state: string): string {
     scope: SCOPES.join(' '),
     redirect_uri: app.redirectUri,
     state,
+    show_dialog: 'true',
   });
   return `https://accounts.spotify.com/authorize?${params}`;
 }
@@ -43,7 +51,8 @@ export interface TokenResponse {
  * （`error_description` や一覧に無い値は使わない）。
  */
 const TOKEN_ERROR_HELP: Record<string, string> = {
-  invalid_client: 'Client ID / Client Secret が正しくありません。設定値を確認してください。',
+  invalid_client:
+    'Client ID / Client Secret が正しくありません。設定値を確認してください（`npm run setup` をやり直すと入れ替えられます）。',
   invalid_grant:
     '認可コードが期限切れ・使用済みか、Redirect URI が Spotify の Dashboard の登録値と一致していません。' +
     'Redirect URI を確かめて、認可からやり直してください。',

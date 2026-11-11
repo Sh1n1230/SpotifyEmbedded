@@ -1,5 +1,5 @@
 /** CLI（spotify-embedded）の起動と引数の検証。方針は ./support.ts の冒頭を参照。 */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { get } from 'node:http';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -20,6 +20,8 @@ import {
   setGitHubSecret,
   setupRedirectUriProblem,
   type GhRunner,
+  askSpotifyApp,
+  workersSecretsReminder,
 } from '../cli/setup.js';
 import { TSX_LOADER, callsTo, jsonOk, respondWith } from './support.js';
 
@@ -66,6 +68,8 @@ function runEntry(entry: string, args: string[], options: RunOptions, cwds: stri
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, cwd };
 }
 
+import { buildAuthorizeUrl } from '../spotify/oauth.js';
+import { loadStoredAuth } from '../authStore.js';
 describe('CLI（spotify-embedded）', () => {
   const cwds: string[] = [];
   afterEach(() => {
@@ -257,6 +261,62 @@ describe('npm run auth（/auth/* を有効にした Node のサーバー）', ()
     expect(run.stderr).toContain(`PORT は 1〜65535 の整数で指定してください（今の値: ${port}）`);
     expect(run.stderr).not.toMatch(/\n\s+at /);
   }, 30_000);
+});
+
+describe('npm run setup の Spotify の Client ID / Secret', () => {
+  /** 決まった答えを順に返す。聞かれた質問も記録する。 */
+  function scripted(...replies: string[]) {
+    const asked: string[] = [];
+    const prompt = (query: string) => {
+      asked.push(query);
+      return Promise.resolve(replies.shift() ?? '');
+    };
+    return { prompt, asked };
+  }
+  const redirectUri = 'http://127.0.0.1:3000/auth/callback';
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubEnv('AUTH_STORE_PATH', join(tmpdir(), 'spotify-embedded-setup-nonexistent.json'));
+    loadStoredAuth(true);
+  });
+
+  it('設定済みなら入れ替えるかを聞き、既定（Enter）では今の値をそのまま使う', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_ID', 'old-id');
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', 'old-secret');
+    const { prompt, asked } = scripted('');
+
+    await expect(askSpotifyApp(prompt, redirectUri)).resolves.toEqual({ clientId: 'old-id', clientSecret: 'old-secret' });
+    expect(asked).toEqual(['  入れ替えますか？（Client Secret を再発行した場合） (y/N): ']);
+  });
+
+  it('y と答えたら、設定済みでも両方を入力し直す（Client Secret を再発行した後にここで直せる）', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_ID', 'old-id');
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', 'old-secret');
+    const { prompt } = scripted('y', 'new-id', 'new-secret');
+
+    await expect(askSpotifyApp(prompt, redirectUri)).resolves.toEqual({ clientId: 'new-id', clientSecret: 'new-secret' });
+  });
+
+  it('まだ設定が無ければ、入れ替えは聞かずに入力を求める', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_ID', '');
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', '');
+    const { prompt, asked } = scripted('first-id', 'first-secret');
+
+    await expect(askSpotifyApp(prompt, redirectUri)).resolves.toEqual({ clientId: 'first-id', clientSecret: 'first-secret' });
+    expect(asked.join('')).not.toContain('入れ替えますか');
+  });
+
+  it('やり直しでも Spotify の承認画面を出す（show_dialog=true。別のアカウントに切り替えられる）', () => {
+    const url = new URL(buildAuthorizeUrl({ clientId: 'id', clientSecret: 'secret', redirectUri }, 'state'));
+
+    expect(url.searchParams.get('show_dialog')).toBe('true');
+  });
+
+  it('wrangler.jsonc のある作業ディレクトリでは、完了時に Workers の Secrets の更新を案内する', () => {
+    expect(workersSecretsReminder(true).join('\n')).toContain('npx wrangler secret bulk');
+    expect(workersSecretsReminder(false)).toEqual([]);
+  });
 });
 
 describe('npm run setup の LLM エンドポイントの入力（API キーの送り先）', () => {

@@ -1256,3 +1256,31 @@ describe('ムード文のプロンプトのアルバムの行', () => {
     expect(promptOf()).toContain('アルバム: Hollywood');
   });
 });
+
+describe('LLM の呼び出しごとに、モデル・所要時間・トークン数をログに残す', () => {
+  const llmLogs = () =>
+    vi.mocked(console.log).mock.calls.map((args) => String(args[0])).filter((line) => line.startsWith('[llm]'));
+
+  it('usage があればトークン数も出し、応答の中身（ムード文）は出さない', async () => {
+    respondWith((url) =>
+      url.includes('/chat/completions')
+        ? jsonOk({
+            choices: [{ message: { content: '今チルな気分になっています' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 321, completion_tokens: 17, total_tokens: 338 },
+          })
+        : null
+    );
+
+    await chatCompletion({ baseUrl: 'https://llm.example/v1', apiKey: 'k', model: 'spec-model', messages: [] });
+
+    expect(llmLogs()).toEqual(['[llm] model=spec-model duration_ms=0 prompt_tokens=321 completion_tokens=17']);
+  });
+
+  it('usage を返さない互換サーバーでは、モデルと所要時間だけを出す', async () => {
+    givenLlmReplies('今チルな気分になっています');
+
+    await chatCompletion({ baseUrl: 'https://llm.example/v1', apiKey: 'k', model: 'spec-model', messages: [] });
+
+    expect(llmLogs()).toEqual(['[llm] model=spec-model duration_ms=0']);
+  });
+});

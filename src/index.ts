@@ -54,6 +54,11 @@ if (corsWarning) console.warn(`⚠️  ${corsWarning}\n`);
 for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) console.warn(`⚠️  ${problem}\n`);
 
 const app = createApp({
+  // アクセスログ（Node 版だけ。Workers は Workers Logs が持つ）。どのパスがどれだけ叩かれているか・429 の頻度が分かる。
+  // 接続元の IP アドレスとクエリは出さない（個人を識別できる情報をログに残さない）
+  onResponse: ({ method, path, status, durationMs }) => {
+    console.log(`[access] ${method} ${path} ${status} ${durationMs}ms`);
+  },
   rateLimiter: memoryRateLimiter({
     key: (c) => {
       const key = clientKey(c, config.server.trustedProxyHeader, (ctx) => getConnInfo(ctx).remote.address);
@@ -120,3 +125,17 @@ function shutdown(signal: NodeJS.Signals): void {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+/**
+ * リクエストの処理の外（裏の処理・後処理）で起きた、拾われなかった例外と Promise の拒否。
+ * 続けると壊れた状態のまま応答し続けるおそれがあるので、原因を1行で出して終了し、再起動は実行環境
+ * （Docker の restart ポリシー・Fly.io など）に任せる。リクエストの処理中の例外は app.onError が拾うので、ここには来ない。
+ */
+function crash(kind: string, reason: unknown): void {
+  const detail = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+  console.error(`[fatal] ${kind}: ${detail.replace(/\s*\n\s*/g, ' | ')}`);
+  process.exit(1);
+}
+
+process.on('unhandledRejection', (reason) => crash('unhandledRejection', reason));
+process.on('uncaughtException', (err) => crash('uncaughtException', err));

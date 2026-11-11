@@ -264,3 +264,77 @@ describe('Workers のエントリは、バインディングが無くても動�
     }
   });
 });
+
+describe('Node のエントリ（src/index.ts）の運用まわり', () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+  it('アクセスログは、メソッド・パス・ステータス・所要時間だけを渡す（クエリと接続元は渡さない）', async () => {
+    const { createApp } = await import('../app.js');
+    const seen: unknown[] = [];
+    const app = createApp({ onResponse: (info) => seen.push(info) });
+
+    await app.request('/health?token=do-not-log', { headers: { 'x-forwarded-for': '203.0.113.7' } });
+    await app.request('/no-such-path');
+
+    expect(seen).toEqual([
+      { method: 'GET', path: '/health', status: 200, durationMs: 0 },
+      { method: 'GET', path: '/no-such-path', status: 404, durationMs: 0 },
+    ]);
+    expect(JSON.stringify(seen)).not.toContain('do-not-log');
+    expect(read('../index.ts')).toContain('console.log(`[access] ${method} ${path} ${status} ${durationMs}ms`)');
+  });
+
+  it('アクセスログの失敗で応答を落とさない', async () => {
+    const { createApp } = await import('../app.js');
+    const app = createApp({
+      onResponse: () => {
+        throw new Error('log sink is down');
+      },
+    });
+
+    expect((await app.request('/health')).status).toBe(200);
+  });
+
+  it('拾われなかった例外と Promise の拒否は、原因を1行で出して終了する（再起動は実行環境に任せる）', () => {
+    const source = read('../index.ts');
+
+    expect(source).toContain("process.on('unhandledRejection', (reason) => crash('unhandledRejection', reason));");
+    expect(source).toContain("process.on('uncaughtException', (err) => crash('uncaughtException', err));");
+    expect(source).toMatch(/function crash[\s\S]*console\.error\(`\[fatal\][\s\S]*process\.exit\(1\);/);
+  });
+});
+
+describe('配布物', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+    main?: string;
+    exports: Record<string, string>;
+    files: string[];
+    bin: Record<string, string>;
+    version: string;
+  };
+
+  it('ライブラリとしての入口を持たない（import してもサーバーの起動処理が走らない）', () => {
+    expect(pkg.main).toBeUndefined();
+    expect(pkg.exports).toEqual({ './package.json': './package.json' });
+    expect(pkg.bin).toEqual({ 'spotify-embedded': 'dist/cli/index.js' });
+  });
+
+  it('npm では使い道の無い Workers のエントリと _headers を含めない', () => {
+    expect(pkg.files).toEqual(expect.arrayContaining(['!dist/worker.js', '!public/_headers']));
+  });
+
+  it('src/version.ts は package.json の version と一致する', async () => {
+    const { VERSION } = await import('../version.js');
+
+    expect(VERSION).toBe(pkg.version);
+  });
+
+  it('Docker の HEALTHCHECK は Node を起動せず、npm のキャッシュをイメージに入れない', () => {
+    const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
+    const healthcheck = dockerfile.slice(dockerfile.indexOf('HEALTHCHECK'));
+
+    expect(healthcheck).toContain('wget -q -O /dev/null "http://127.0.0.1:${PORT:-3000}/health"');
+    expect(healthcheck.split('\nCMD [')[0]).not.toContain('node ');
+    expect(dockerfile.match(/RUN --mount=type=cache,target=\/root\/\.npm npm ci/g)).toHaveLength(2);
+  });
+});

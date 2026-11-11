@@ -49,9 +49,10 @@ export default {
       if (llm.kind === 'invalid') console.warn('[llm]', `${llm.problem} 設定を直すまで、ムード文なしで動作します。`);
       const llmNotice = llmKeyNotice();
       if (llmNotice) console.warn('[llm]', llmNotice);
-      // Workers は本番として扱う。isolate ごとに一度だけ出る
+      // Workers は本番として扱う。isolate は頻繁に作り直され、そのたびにここを通るので、設定を変えない限り
+      // 繰り返し出る。警告（warn）で Workers Logs を埋めないよう、情報（info）として出す（README にも書いている）
       const corsWarning = openCorsWarning(config.server.corsOrigins);
-      if (corsWarning) console.warn(corsWarning);
+      if (corsWarning) console.info('[cors]', corsWarning);
       for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) console.warn(problem);
       app = createApp(env.RATE_LIMITER ? { rateLimiter: bindingRateLimiter(env.RATE_LIMITER) } : {});
     }

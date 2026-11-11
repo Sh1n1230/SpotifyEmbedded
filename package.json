@@ -3,7 +3,9 @@
   "version": "1.7.0",
   "description": "Spotifyの再生状況を、AIが生成した日本語のムード文つきでポートフォリオやREADMEに埋め込む。サーバー不要の静的生成にも対応。",
   "type": "module",
-  "main": "dist/index.js",
+  "exports": {
+    "./package.json": "./package.json"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Sh1n1230/SpotifyEmbedded.git"
@@ -17,7 +19,11 @@
   },
   "files": [
     "dist",
+    "!dist/worker.js",
+    "!dist/worker.js.map",
+    "!dist/worker.d.ts",
     "public",
+    "!public/_headers",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

@@ -88,17 +88,7 @@ export async function setup(): Promise<void> {
   try {
     console.log('\n🎵 SpotifyEmbedded セットアップ\n');
 
-    const clientId = await ensureValue(rl, 'spotifyClientId', {
-      label: 'Spotify Client ID',
-      hint:
-        'https://developer.spotify.com/dashboard でアプリを作成し、\n' +
-        `  Redirect URIs に ${redirectUri} を登録しておいてください。`,
-      secret: false,
-    });
-    const clientSecret = await ensureValue(rl, 'spotifyClientSecret', {
-      label: 'Spotify Client Secret',
-      secret: true,
-    });
+    const { clientId, clientSecret } = await askSpotifyApp(prompter(rl), redirectUri);
 
     const llm = await askLlm(rl);
 
@@ -128,6 +118,7 @@ export async function setup(): Promise<void> {
     if (removed.length > 0) console.log(`  （削除した行: ${removed.join(', ')}）`);
 
     await offerGitHubSecrets(rl, values);
+    for (const line of workersSecretsReminder(existsSync(resolve('wrangler.jsonc')))) console.log(line);
 
     console.log('\n完了しました。次のいずれかで使えます:\n');
     console.log('  npm run dev        # ライブAPIサーバーを起動');
@@ -152,14 +143,61 @@ interface AskOptions {
   optional?: boolean;
 }
 
-/** 既に設定済みならそれを使い、無ければ対話で聞く。 */
+/**
+ * Spotify の Client ID / Secret。設定済みならそれを使うが、両方が設定済みのときは入れ替えるかを聞く。
+ * Client Secret を再発行した後は、ここでしか直せない（黙って古い値を使うと、認可コードの交換が
+ * invalid_client で失敗し、設定ファイルを手で直すしかなくなる）。LLM の設定（askLlm）と同じ聞き方。
+ */
+export async function askSpotifyApp(
+  prompt: Prompt,
+  redirectUri: string
+): Promise<{ clientId: string; clientSecret: string }> {
+  let replace = false;
+  if (resolveAuthValue('spotifyClientId') && resolveAuthValue('spotifyClientSecret')) {
+    console.log(`✓ Spotify の Client ID / Client Secret は設定済みです (${AUTH_ENV.spotifyClientId}, ${AUTH_ENV.spotifyClientSecret})`);
+    const again = (await prompt('  入れ替えますか？（Client Secret を再発行した場合） (y/N): ', false)).trim().toLowerCase();
+    replace = again === 'y' || again === 'yes';
+    if (replace) console.log('  → 新しい値を入力してください。');
+  }
+
+  const clientId = await ensureValue(prompt, 'spotifyClientId', {
+    label: 'Spotify Client ID',
+    hint:
+      'https://developer.spotify.com/dashboard でアプリを作成し、\n' +
+      `  Redirect URIs に ${redirectUri} を登録しておいてください。`,
+    secret: false,
+    replace,
+  });
+  const clientSecret = await ensureValue(prompt, 'spotifyClientSecret', {
+    label: 'Spotify Client Secret',
+    secret: true,
+    replace,
+  });
+  return { clientId, clientSecret };
+}
+
+/**
+ * Workers にデプロイしている人への案内。setup が登録するのは data/auth.json・設定ファイル・GitHub Secrets までで、
+ * Workers の Secrets は別に持たれる。refresh_token を取り直した後に更新を忘れると、ライブAPIだけが古い値で失敗し続ける。
+ * @param hasWranglerConfig 作業ディレクトリに wrangler.jsonc があるか（このリポジトリを clone して使っているか）
+ */
+export function workersSecretsReminder(hasWranglerConfig: boolean): string[] {
+  if (!hasWranglerConfig) return [];
+  return [
+    '',
+    'ℹ️  Cloudflare Workers にデプロイしている場合は、Workers の Secrets も更新してください（別に保存されています）:',
+    '     npx wrangler secret bulk .env',
+  ];
+}
+
+/** 既に設定済みならそれを使い、無ければ（または replace なら）対話で聞く。 */
 async function ensureValue(
-  rl: Interface,
+  prompt: Prompt,
   field: AuthField,
-  options: AskOptions
+  options: AskOptions & { replace?: boolean }
 ): Promise<string> {
   const existing = resolveAuthValue(field);
-  if (existing) {
+  if (existing && !options.replace) {
     console.log(`✓ ${options.label} は設定済みです (${AUTH_ENV[field]})`);
     return existing;
   }
@@ -168,7 +206,7 @@ async function ensureValue(
   else console.log(`\n${options.label}`);
 
   for (;;) {
-    const answer = await askValue(prompter(rl), `  ${options.label}: `, options.secret ? 'token' : 'text');
+    const answer = await askValue(prompt, `  ${options.label}: `, options.secret ? 'token' : 'text');
     if (answer) return answer;
     if (options.optional) return '';
     console.log('  値を入力してください。');

@@ -28,6 +28,11 @@ export interface AppOptions {
   rateLimiter?: RateLimiter;
   /** Node では静的ファイル（public/）をここで配る。Workers は Static Assets が先に応答する。 */
   staticFiles?: Parameters<Hono['use']>[1];
+  /**
+   * 応答のたびに呼ぶ（アクセスログ用。Node のエントリが渡す）。クエリと接続元は渡さない。
+   * ここで投げた例外は応答に影響させない。
+   */
+  onResponse?: (info: { method: string; path: string; status: number; durationMs: number }) => void;
 }
 
 /** 他オリジンの JavaScript から読めるようにするレスポンスヘッダー（Access-Control-Expose-Headers）。 */
@@ -43,6 +48,19 @@ const EXPOSED_HEADERS = [
 
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
+
+  if (options.onResponse) {
+    const onResponse = options.onResponse;
+    app.use(async (c, next) => {
+      const startedAt = Date.now();
+      await next();
+      try {
+        onResponse({ method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - startedAt });
+      } catch {
+        // ログの失敗で応答を落とさない
+      }
+    });
+  }
 
   // セキュリティヘッダー（一覧は src/http/securityHeaders.ts）
   app.use(async (c, next) => {
