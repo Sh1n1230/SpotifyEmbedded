@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 
 import { moodCache } from '../cache/index.js';
 import { collectNowPlaying, collectTopTracks } from '../core/collect.js';
@@ -1188,5 +1189,65 @@ describe('静的モードとライブAPIは同一のJSONスキーマを出す', 
     const asYaml = yaml.load(readFileSync(join(outDir, 'top-tracks.yaml'), 'utf8'));
 
     expect(asYaml).toEqual(asJson);
+  });
+});
+
+describe('公開スキーマの JSON Schema（schema/*.schema.json）', () => {
+  let outDir: string;
+  const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
+  const validatorOf = (name: string) =>
+    ajv.compile(JSON.parse(readFileSync(new URL(`../../schema/${name}.schema.json`, import.meta.url), 'utf8')) as object);
+  const validators = {
+    'now-playing': validatorOf('now-playing'),
+    'top-tracks': validatorOf('top-tracks'),
+    'last-played': validatorOf('last-played'),
+  };
+
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), 'spotify-embedded-schema-'));
+  });
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  function expectValid(name: keyof typeof validators, data: unknown): void {
+    const validate = validators[name];
+    expect(validate(data), JSON.stringify(validate.errors)).toBe(true);
+  }
+
+  it.each([
+    ['再生中・ムード文あり', true, true],
+    ['再生中・ムード文なし', true, false],
+    ['停止中（曲なし）', false, false],
+  ])('静的モードの出力（%s）は、JSON も YAML もスキーマに合う', async (_label, playing, withMood) => {
+    if (withMood) {
+      givenLlmConfigured();
+      givenLlmReplies('今チルな気分になっています');
+    }
+    givenNowPlaying(playing ? aSpotifyTrack() : null);
+    givenTopTracks([aSpotifyTrack(), aSpotifyTrack({ id: 'track-2', popularity: 55, preview_url: 'https://p.scdn.co/x' })]);
+
+    await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: !withMood });
+
+    for (const name of ['now-playing', 'top-tracks', 'last-played'] as const) {
+      expectValid(name, JSON.parse(readFileSync(join(outDir, `${name}.json`), 'utf8')));
+      expectValid(name, yaml.load(readFileSync(join(outDir, `${name}.yaml`), 'utf8')));
+    }
+  });
+
+  it('ライブAPIの /api/now-playing の応答も同じスキーマに合う', async () => {
+    const { createApp } = await import('../app.js');
+    givenNowPlaying(aSpotifyTrack());
+
+    expectValid('now-playing', await (await createApp().request('/api/now-playing')).json());
+  });
+
+  it('スキーマに無いキーや、型の違う値は弾く（スキーマが何でも通すものになっていない）', () => {
+    const valid = { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO };
+
+    expect(validators['now-playing'](valid)).toBe(true);
+    expect(validators['now-playing']({ ...valid, extra: 1 })).toBe(false);
+    expect(validators['now-playing']({ ...valid, is_playing: 'yes' })).toBe(false);
+    expect(validators['now-playing']({ ...valid, track: { id: 't' } })).toBe(false);
   });
 });

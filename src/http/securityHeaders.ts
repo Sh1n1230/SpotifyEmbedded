@@ -17,6 +17,18 @@
 
 import { IMAGE_CSP_SOURCES } from '../render/image.js';
 
+/**
+ * 参照元（Referer）はどこにも送らない。意図した方針:
+ * - /embed は他人のサイトの iframe の中で開かれる。曲のリンクから Spotify へ移るときに参照元を送ると、
+ *   埋め込み先のページでも利用者のものでもない、このサーバーの URL（?theme= などのクエリつき）が渡るだけで、誰の役にも立たない
+ * - ジャケ写（*.scdn.co）の取得でも、どのサイトにカードが貼られているかを CDN に知らせない
+ *
+ * ヘッダーが正で、ページの中のすべての遷移と取得に効く。リンクの rel="noopener noreferrer" は重ねて付けている:
+ * noopener は別の目的（開いた先から window.opener を触らせない）で必要で、noreferrer は、ヘッダーを付けられない
+ * 配り方（静的モードの GitHub Pages・embed.js を貼った先のページ）でも同じ方針にするため。
+ */
+export const REFERRER_POLICY = 'no-referrer';
+
 /** カメラ・位置情報などは一切使わないので閉じる。 */
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()';
 

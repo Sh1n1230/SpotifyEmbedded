@@ -16,6 +16,7 @@ import {
   EMBEDDABLE_PATHS,
   HSTS,
   PERMISSIONS_POLICY,
+  REFERRER_POLICY,
 } from './http/securityHeaders.js';
 import { VERSION } from './version.js';
 import nowPlayingRouter from './routes/nowPlaying.js';
@@ -69,7 +70,7 @@ export function createApp(options: AppOptions = {}): Hono {
     // /embed は他サイトの iframe に埋め込んでもらうためのページなので、
     // ここだけフレーム禁止を外す。API・デモ画面は DENY のまま。
     if (c.req.path !== '/embed') c.header('X-Frame-Options', 'DENY');
-    c.header('Referrer-Policy', 'no-referrer');
+    c.header('Referrer-Policy', REFERRER_POLICY);
     c.header('Permissions-Policy', PERMISSIONS_POLICY);
     if (EMBEDDABLE_PATHS.includes(c.req.path)) {
       c.header('Cross-Origin-Resource-Policy', CROSS_ORIGIN_RESOURCE_POLICY);

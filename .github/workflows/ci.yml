@@ -38,10 +38,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm run lint
-      # カバレッジはレポートを残すだけで、ゲートにはしない（#119）
+      # 全体のカバレッジが下限（vitest.config.ts の thresholds）を下回ると失敗する。
+      # 下限は「大きく下がる変更を止める」ための値で、網羅率を上げるためのものではない
       - run: npm run test:coverage
 
-      # 目安として見るだけで、ゲートにはしない
       - name: カバレッジの要約
         if: always()
         run: |
@@ -83,6 +83,36 @@ jobs:
 
       - run: npm ci --ignore-scripts
       - run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker-bundle"
+
+  # Windows 固有の分岐（ブラウザを開くコマンド・ポート使用中の案内・npm scripts が cmd.exe で動くか）を実機で確かめる。
+  # Node の版ごとの差は validate が見るので、ここは .nvmrc と同じ 24 だけ。必須のチェックには入れていない
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run build
+
+      - name: npm pack した成果物を空のフォルダに入れて spotify-embedded help を実行する
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkg" "$RUNNER_TEMP/app"
+          npm pack --pack-destination "$RUNNER_TEMP/pkg"
+          cd "$RUNNER_TEMP/app"
+          npm init -y >/dev/null
+          npm install --ignore-scripts "$RUNNER_TEMP"/pkg/*.tgz
+          npx --no-install spotify-embedded help | tee help.txt
+          grep -q 'spotify-embedded setup' help.txt
 
   # README で案内している Docker の配布形態。ビルドして起動し、/health を確かめる（push はしない）。
   # /health は Spotify を呼ばないのでダミーの値で足りる（必須の設定が無いと起動時に終了するため渡す）。

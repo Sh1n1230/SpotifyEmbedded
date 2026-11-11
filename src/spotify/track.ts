@@ -10,7 +10,13 @@ import type { SpotifyImage, SpotifyTrack, TrackSummary } from '../types/index.js
 /** Spotify のカタログにある曲。`id` が必ず文字列になる。 */
 export type CatalogTrack = SpotifyTrack & { id: string };
 
-/** 300px 以上の最大サイズ。無ければ先頭、画像が無ければ空文字。 */
+/**
+ * 公開スキーマの album_art_url。300px 以上の最大サイズ（通常は 640px 版）。無ければ先頭、画像が無ければ空文字。
+ *
+ * このプロジェクトの描画はどこも 640px を使わず、albumArtAtSize() で 300px・64px に差し替えている（大きい画像は表示が遅れる）。
+ * それでも公開スキーマには最大のものを入れる: JSON の利用側が何 px で描くかはこちらでは分からず、大きい版から小さい版は
+ * URL の差し替えで作れるが（README の「ジャケ写のサイズ」）、逆は情報が足りない。v1 からの値を変えない意味もある。
+ */
 export function pickAlbumArt(images: SpotifyImage[]): string {
   const large = images
     .filter((img) => img.width !== null && img.width >= 300)

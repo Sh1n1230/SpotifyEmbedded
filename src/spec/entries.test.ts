@@ -281,7 +281,8 @@ describe('Node のエントリ（src/index.ts）の運用まわり', () => {
       { method: 'GET', path: '/no-such-path', status: 404, durationMs: 0 },
     ]);
     expect(JSON.stringify(seen)).not.toContain('do-not-log');
-    expect(read('../index.ts')).toContain('console.log(`[access] ${method} ${path} ${status} ${durationMs}ms`)');
+    // リクエスト由来の値は、改行・制御文字を落としてから出す（偽のログの行を差し込ませない）
+    expect(read('../index.ts')).toContain('console.log(`[access] ${forLog(method)} ${forLog(path)} ${status} ${durationMs}ms`)');
   });
 
   it('アクセスログの失敗で応答を落とさない', async () => {

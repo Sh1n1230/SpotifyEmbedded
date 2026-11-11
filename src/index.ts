@@ -14,6 +14,7 @@ import { llmKeyNotice, resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
 import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
+import { forLog } from './http/log.js';
 import { DEMO_PAGE_CSP, EMBED_SCRIPT_CACHE_CONTROL } from './http/securityHeaders.js';
 
 // PORT の誤り（abc・3000abc・0 など）は、スタックトレースではなく直し方を出して終える
@@ -56,8 +57,9 @@ for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) c
 const app = createApp({
   // アクセスログ（Node 版だけ。Workers は Workers Logs が持つ）。どのパスがどれだけ叩かれているか・429 の頻度が分かる。
   // 接続元の IP アドレスとクエリは出さない（個人を識別できる情報をログに残さない）
+  // パスとメソッドはリクエスト由来なので、改行・制御文字を落として1行に収める（偽のログの行を差し込ませない）
   onResponse: ({ method, path, status, durationMs }) => {
-    console.log(`[access] ${method} ${path} ${status} ${durationMs}ms`);
+    console.log(`[access] ${forLog(method)} ${forLog(path)} ${status} ${durationMs}ms`);
   },
   rateLimiter: memoryRateLimiter({
     key: (c) => {
