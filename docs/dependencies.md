@@ -5,10 +5,11 @@
 
 いずれも devDependencies 経由で、Workers のバンドルと Docker イメージには入らない。
 
-最終確認: 2026-11-09（`npm ls source-map-js undici` で、下の表の経由と版を確かめた）
+最終確認: 2026-11-11（`npm ls minimatch source-map-js undici` で、下の表の経由と版を確かめた）
 
 | 対象 | 固定する版 | 理由 | 経由する依存 | 外せる条件 |
 |---|---|---|---|---|
+| `minimatch` | 11.0.5 | GHSA（globparts の増幅による DoS、7.0.0 以上 11.0.1 未満）。Dependabot alert #6 | `eslint`・`@eslint/config-array`・`@typescript-eslint/typescript-estree` が `^10` を要求 | 経由するすべての依存の要求範囲が `^11.0.1` 以上になったとき |
 | `source-map-js` | 1.2.2 | GHSA-68fv-2mgg-jv7q（1.2.1 以前）。#24 / #26 で導入 | `css-tree`（jsdom）・`magicast`（@vitest/coverage-v8）が `^1.2.1` を要求。`postcss`（vite）は `^1.2.2` | 経由するすべての依存の要求範囲が `^1.2.2` 以上になったとき |
 
 ## 外したもの

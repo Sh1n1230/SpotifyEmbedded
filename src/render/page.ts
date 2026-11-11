@@ -15,10 +15,20 @@ import {
   type TopTracksResponse,
 } from '../types/index.js';
 import { rangeLabelEn } from '../core/topTracksParams.js';
-import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa, type ThemeName } from './theme.js';
+import { THEMES, FONT_STACK, formatDateJa, type PageThemeName, type Theme, type ThemeName } from './theme.js';
+import { STALE_AFTER_FAILURES, STRINGS } from './strings.js';
 import { escapeXml, jsonForScript } from './text.js';
-import { albumArtAtSize, SIZE_PREFIX } from './image.js';
-import { UNAVAILABLE_LABEL, UNAVAILABLE_TEXT, playbackLabel, type PlaybackState } from './card.js';
+import { IMAGE_CSP_SOURCES, albumArtAtSize, SIZE_PREFIX } from './image.js';
+import {
+  UNAVAILABLE_LABEL,
+  UNAVAILABLE_TEXT,
+  eqBarCss,
+  playbackLabel,
+  playbackSpeechPrefix,
+  trackCredit,
+  type LabelOptions,
+  type PlaybackState,
+} from './card.js';
 
 export interface PageInput {
   nowPlaying: NowPlayingResponse;
@@ -26,7 +36,13 @@ export interface PageInput {
   state: PlaybackState;
   /** state が 'recent' のときの、その曲を確認した時刻 */
   since?: string | undefined;
-  theme?: ThemeName | undefined;
+  /** auto は閲覧者の OS のダーク・ライトに合わせる（prefers-color-scheme） */
+  theme?: PageThemeName | undefined;
+  /**
+   * カードの最大幅（px）。'full' なら親の幅いっぱいに広げる。既定は 460。
+   * HTML は折り返しをブラウザに任せられるので、広いカラムに合わせて広げられる。
+   */
+  maxWidth?: number | 'full' | undefined;
   /** 背景を透過する。ホスト側の背景に馴染ませたい場合に使う。 */
   transparent?: boolean | undefined;
   /** 指定すると、このURLを定期的に取得してカードを更新する。 */
@@ -39,6 +55,12 @@ export interface PageInput {
   rankingCount?: number | undefined;
   /** Spotify から取得できなかった（ライブAPIの /embed）。曲なしのカードに理由を出す。 */
   unavailable?: boolean | undefined;
+  /** 再生中でも、観測した時刻を見出しに出す（静的モード。理由は card.ts の CardInput.observedTime） */
+  observedTime?: boolean | undefined;
+  /** 生成した時刻（ISO 8601）。since の年がこれと違うときだけ年を出す */
+  now?: string | undefined;
+  /** 検索エンジンに載せない（<meta name="robots" content="noindex">）。静的モードの既定 */
+  noindex?: boolean | undefined;
 }
 
 /**
@@ -47,8 +69,23 @@ export interface PageInput {
  * を使い、meta は出さない（二重に付くと両方の積になり、nonce の付け方次第で壊れるため）。
  * frame-ancestors は meta では効かないが、iframe に入るためのページなので不要。
  */
-export const STATIC_PAGE_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'";
+export const STATIC_PAGE_CSP = `default-src 'none'; style-src 'unsafe-inline'; img-src ${IMAGE_CSP_SOURCES}; base-uri 'none'; form-action 'none'`;
+
+/** ページの説明。GitHub Pages の URL を直接開いた人や、ブックマークで何のページか分かるようにする。 */
+export const PAGE_DESCRIPTION = 'Spotify の再生状況とムード文を表示する埋め込みカード（SpotifyEmbedded）';
+
+/**
+ * ファビコン（緑の丸に3本のバー）。SVG を data URI で入れるので外部への取得が無く、CSP の img-src data: で足りる。
+ * 無いと、ブラウザが /favicon.ico を取りに行って 404 になる。
+ */
+export const FAVICON_DATA_URI =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#1db954"/>' +
+      '<rect x="8.5" y="13" width="3.5" height="10" rx="1.75" fill="#fff"/>' +
+      '<rect x="14.25" y="8" width="3.5" height="15" rx="1.75" fill="#fff"/>' +
+      '<rect x="20" y="15" width="3.5" height="8" rx="1.75" fill="#fff"/></svg>'
+  );
 
 /**
  * href / src に入れてよい URL（https のみ）。それ以外は null。
@@ -59,18 +96,45 @@ function httpsUrl(url: string | null | undefined): string | null {
   return typeof url === 'string' && /^https:\/\//i.test(url) ? url : null;
 }
 
+/** カードの最大幅の既定値と、?max_width= で受け付ける範囲（px） */
+export const CARD_MAX_WIDTH = { default: 460, min: 240, max: 1920 } as const;
+
+/** ?max_width= / data-max-width の値。数字だけの値を範囲に丸め、full はそのまま、それ以外は既定（embed.js と同じ規則）。 */
+export function parseMaxWidth(raw: string | undefined | null): number | 'full' {
+  if (raw === 'full') return 'full';
+  if (!raw || !/^\d+$/.test(raw)) return CARD_MAX_WIDTH.default;
+  return Math.min(Math.max(Number(raw), CARD_MAX_WIDTH.min), CARD_MAX_WIDTH.max);
+}
+
+/** :root に置く色の変数。透過のときは背景だけ transparent にする。 */
+function themeVariables(theme: Theme, transparent: boolean | undefined): string {
+  return [
+    `--bg: ${transparent ? 'transparent' : theme.bg};`,
+    `--fg: ${theme.fg};`,
+    `--sub: ${theme.sub};`,
+    `--muted: ${theme.muted};`,
+    `--accent: ${theme.accent};`,
+    `--border: ${theme.border};`,
+    `--placeholder: ${theme.placeholder};`,
+  ].join('\n    ');
+}
+
 export function renderEmbedPage(input: PageInput): string {
-  const themeName: ThemeName = input.theme ?? 'dark';
+  const pageTheme: PageThemeName = input.theme ?? 'dark';
+  // auto は、ダークを既定にして、閲覧者がライトを選んでいるときだけ差し替える
+  const themeName: ThemeName = pageTheme === 'auto' ? 'dark' : pageTheme;
   const theme = THEMES[themeName];
+  const maxWidth = input.maxWidth === 'full' ? '100%' : `${input.maxWidth ?? CARD_MAX_WIDTH.default}px`;
   const { nowPlaying, topTracks, state } = input;
   const track = nowPlaying.track;
   const mood = nowPlaying.mood;
 
   const unavailable = input.unavailable === true && !track;
+  const labelOptions: LabelOptions = { observedTime: input.observedTime, now: input.now };
   const label = unavailable
     ? UNAVAILABLE_LABEL
-    : playbackLabel(state, input.since);
-  const idleText = unavailable ? UNAVAILABLE_TEXT : '再生していません';
+    : playbackLabel(state, input.since, labelOptions);
+  const idleText = unavailable ? UNAVAILABLE_TEXT : STRINGS.idle;
 
   const rankingSection = topTracks && topTracks.tracks.length > 0
     ? renderRanking(topTracks, input.rankingCount)
@@ -83,21 +147,18 @@ export function renderEmbedPage(input: PageInput): string {
 <head>
 <meta charset="utf-8">${input.liveEndpoint ? '' : `\n<meta http-equiv="Content-Security-Policy" content="${STATIC_PAGE_CSP}">`}
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="${input.transparent ? 'light dark' : themeName}">
-<title>${escapeXml(unavailable ? idleText : buildTitle(state, track?.name, track?.artist))}</title>
+<meta name="color-scheme" content="${input.transparent || pageTheme === 'auto' ? 'light dark' : themeName}">
+<meta name="description" content="${escapeXml(PAGE_DESCRIPTION)}">${input.noindex ? '\n<meta name="robots" content="noindex">' : ''}
+<link rel="icon" href="${escapeXml(FAVICON_DATA_URI)}">
+<title>${escapeXml(unavailable ? idleText : buildTitle(state, track))}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: ${input.transparent ? 'transparent' : theme.bg};
-    --fg: ${theme.fg};
-    --sub: ${theme.sub};
-    --muted: ${theme.muted};
-    --accent: ${theme.accent};
-    --border: ${theme.border};
-    --placeholder: ${theme.placeholder};
+    ${themeVariables(theme, input.transparent)}
+    --max-width: ${maxWidth};
   }
-
+${pageTheme === 'auto' ? `\n  @media (prefers-color-scheme: light) {\n    :root {\n    ${themeVariables(THEMES.light, input.transparent)}\n    }\n  }\n` : ''}
   body {
     font-family: ${FONT_STACK};
     background: var(--bg);
@@ -110,7 +171,7 @@ export function renderEmbedPage(input: PageInput): string {
     display: flex;
     gap: 16px;
     align-items: flex-start;
-    max-width: 460px;
+    max-width: var(--max-width);
     text-decoration: none;
     color: inherit;
     padding: 14px;
@@ -157,21 +218,19 @@ export function renderEmbedPage(input: PageInput): string {
      ライブ更新のスクリプトが属性を付け外しするだけで済むようにしている。 */
   .label[data-playing] { color: var(--accent); }
 
-  /* 再生中インジケータ */
-  .eq { display: none; align-items: flex-end; gap: 2px; height: 12px; }
+  /* 再生中インジケータ。SVG カード（card.ts の EQ_BARS）と同じ動き。高さは固定し、transform で伸び縮みさせる */
+  .eq { display: none; align-items: flex-end; gap: 2px; height: 13px; }
   .label[data-playing] .eq { display: flex; }
   .eq span {
     width: 3px;
     border-radius: 1.5px;
     background: var(--accent);
-    animation: eq 0.9s ease-in-out infinite;
+    transform-origin: 50% 100%;
   }
-  .eq span:nth-child(2) { animation-duration: 1.25s; }
-  .eq span:nth-child(3) { animation-duration: 0.75s; }
-  @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 12px; } }
+  ${eqBarCss('.eq span')}
 
   @media (prefers-reduced-motion: reduce) {
-    .eq span { animation: none; height: 8px; }
+    .eq span:nth-child(n) { animation: none; transform: scaleY(0.667); }
     a.card:hover { transform: none; }
   }
 
@@ -193,7 +252,7 @@ export function renderEmbedPage(input: PageInput): string {
 
   .idle { font-size: 17px; font-weight: 700; color: var(--muted); }
 
-  .ranking { max-width: 460px; margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+  .ranking { max-width: var(--max-width); margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
   .ranking-head { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
   .ranking-head-row { display: flex; justify-content: space-between; align-items: baseline; }
   .ranking-mood { font-size: 15px; font-weight: 700; line-height: 1.4; margin-top: 8px; overflow-wrap: anywhere; }
@@ -213,7 +272,7 @@ export function renderEmbedPage(input: PageInput): string {
 </style>
 </head>
 <body>
-${renderCardMarkup(track, mood, state, label, idleText, input.since)}
+${renderCardMarkup(track, mood, state, label, idleText, input.since, labelOptions)}
 ${rankingSection}
 ${input.liveEndpoint ? renderLiveScript(input.liveEndpoint, input.refreshSeconds ?? 30, { hasTrack: track !== null, hasMood: Boolean(mood?.text), hasArt: Boolean(httpsUrl(track?.album_art_url)) }, input.scriptNonce) : ''}
 </body>
@@ -227,7 +286,8 @@ function renderCardMarkup(
   state: PlaybackState,
   label: string,
   idleText: string,
-  since: string | undefined
+  since: string | undefined,
+  labelOptions: LabelOptions
 ): string {
   // イコライザは常に描き、表示・非表示は #label の data-playing に任せる。
   // ライブ更新で再生が始まった/止まったときにDOMを作り直さずに済む。
@@ -236,7 +296,7 @@ function renderCardMarkup(
 
   if (!track) {
     return `<div class="card" id="card">
-  <div class="art-placeholder" aria-hidden="true">no art</div>
+  <div class="art-placeholder" aria-hidden="true">${STRINGS.noArt}</div>
   <div class="body">
     <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
     <p class="idle" id="mood">${escapeXml(idleText)}</p>
@@ -250,10 +310,9 @@ function renderCardMarkup(
   const artUrl = httpsUrl(track.album_art_url);
   const art = artUrl
     ? `<img class="art" id="art" src="${escapeXml(albumArtAtSize(artUrl, 300))}" alt="" decoding="async">`
-    : '<div class="art-placeholder" id="art" aria-hidden="true">no art</div>';
+    : `<div class="art-placeholder" id="art" aria-hidden="true">${STRINGS.noArt}</div>`;
 
-  const when = state === 'recent' ? sinceForSpeech(since) : '';
-  const ariaLabel = `${state === 'playing' ? '再生中' : `最後に再生${when}`}: ${mood?.text ? `${mood.text} — ` : ''}${track.name} / ${track.artist}（Spotifyで開く）`;
+  const ariaLabel = `${playbackSpeechPrefix(state, since, labelOptions)}: ${mood?.text ? `${mood.text} — ` : ''}${trackCredit(track)}${STRINGS.openInSpotify}`;
 
   // https でないリンクは張らない（カードは <div> にする）
   const href = httpsUrl(track.spotify_url);
@@ -267,14 +326,14 @@ function renderCardMarkup(
     <div class="label" id="label"${playing}>${eq}<span id="label-text">${escapeXml(label)}</span></div>
     ${mood?.text ? `<p class="mood" id="mood">${escapeXml(mood.text)}</p>` : ''}
     <p class="track" id="track">${escapeXml(track.name)}</p>
-    <p class="artist" id="artist">${escapeXml(track.artist)}</p>
+    <p class="artist" id="artist"${track.artist ? '' : ' hidden'}>${escapeXml(track.artist)}</p>
   </div>
 ${href ? '</a>' : '</div>'}`;
 }
 
 function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): string {
   const fetchedAt = new Date(topTracks.fetched_at);
-  const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
+  const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} ${STRINGS.asOf}`;
   const count = Math.min(Math.max(rankingCount ?? DEFAULT_RANKING_COUNT, 1), MAX_RANKING_COUNT);
   const rangeLabel = rangeLabelEn(topTracks.range);
 
@@ -284,17 +343,18 @@ function renderRanking(topTracks: TopTracksResponse, rankingCount?: number): str
       // ジャケ写が無い（または https でない）曲は、src の空の <img> ではなく同じ大きさの枠を置く
       const artUrl = httpsUrl(track.album_art_url);
       const art = artUrl
-        ? `<img src="${escapeXml(albumArtAtSize(artUrl, 64))}" alt="" width="40" height="40" loading="lazy" decoding="async">`
+        ? // 40px で表示する。高解像度の画面（2倍・3倍）では 64px 版だとぼやけるので、300px 版も選べるようにする
+          `<img src="${escapeXml(albumArtAtSize(artUrl, 64))}" srcset="${escapeXml(`${albumArtAtSize(artUrl, 64)} 64w, ${albumArtAtSize(artUrl, 300)} 300w`)}" sizes="40px" alt="" width="40" height="40" loading="lazy" decoding="async">`
         : '<span class="rank-art-placeholder" aria-hidden="true"></span>';
       const href = httpsUrl(track.spotify_url);
       const row = `${art}
         <span class="meta">
           <span class="name" style="display:block">${escapeXml(track.name)}</span>
-          <span class="by" style="display:block">${escapeXml(track.artist)}</span>
+          ${track.artist ? `<span class="by" style="display:block">${escapeXml(track.artist)}</span>` : ''}
         </span>`;
       return `    <li>
       <span class="rank">${track.rank}</span>
-      ${href ? `<a href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeXml(`${track.rank}位 ${track.name} / ${track.artist}（Spotifyで開く）`)}" style="display:flex;gap:12px;align-items:center;min-width:0">` : '<span style="display:flex;gap:12px;align-items:center;min-width:0">'}
+      ${href ? `<a href="${escapeXml(href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeXml(`${track.rank}位 ${trackCredit(track)}${STRINGS.openInSpotify}`)}" style="display:flex;gap:12px;align-items:center;min-width:0">` : '<span style="display:flex;gap:12px;align-items:center;min-width:0">'}
         ${row}
       ${href ? '</a>' : '</span>'}
     </li>`;
@@ -348,6 +408,11 @@ function renderLiveScript(
   var hadMood = ${shape.hasMood ? 'true' : 'false'};
   var hadArt = ${shape.hasArt ? 'true' : 'false'};
 
+  // 固定の文言（src/render/strings.ts）
+  var S = ${jsonForScript(STRINGS)};
+  // 取得がこの回数続けて失敗したら、再生中の表示をやめる（public/embed.js と同じ値）
+  var STALE_AFTER_FAILURES = ${STALE_AFTER_FAILURES};
+
   // ジャケ写URLのプレフィックスは画像サイズを表す。112pxで描くので
   // 300px版に寄せる。640px版のままだと表示が目に見えて遅れる。
   var ART_SIZES = ${JSON.stringify(Object.values(SIZE_PREFIX))};
@@ -383,22 +448,23 @@ function renderLiveScript(
     }
     if (!track) {
       // 取得できなかった表示から回復したときのため、文言を戻す
-      setText('label-text', 'NOTHING PLAYING');
-      setText('mood', '再生していません');
-      document.title = '再生していません';
+      setText('label-text', S.nothingPlaying);
+      setText('mood', S.idle);
+      document.title = S.idle;
       return;
     }
 
     var playing = !!data.is_playing;
-    setText('label-text', playing ? 'NOW PLAYING' : 'LAST PLAYED');
+    setText('label-text', playing ? S.nowPlaying : S.lastPlayed);
 
     // 読み上げとタブのタイトルも、表示中の曲に合わせる（サーバー側の書式と同じ）
+    // アーティストが空なら「曲名 / 」で終わらせない
+    var credit = track.artist ? track.name + ' / ' + track.artist : track.name;
     card.setAttribute(
       'aria-label',
-      (playing ? '再生中' : '最後に再生') + ': ' + (moodText ? moodText + ' — ' : '') +
-        track.name + ' / ' + track.artist + '（Spotifyで開く）'
+      (playing ? S.speechPlaying : S.speechLastPlayed) + ': ' + (moodText ? moodText + ' — ' : '') + credit + S.openInSpotify
     );
-    document.title = (playing ? 'Now Playing' : 'Last Played') + ': ' + track.name + ' / ' + track.artist;
+    document.title = (playing ? S.titlePlaying : S.titleLastPlayed) + ': ' + credit;
 
     // 再生が止まったらイコライザとアクセント色も戻す（CSSが属性を見ている）
     var label = document.getElementById('label');
@@ -409,6 +475,8 @@ function renderLiveScript(
 
     setText('track', track.name);
     setText('artist', track.artist);
+    var artistEl = document.getElementById('artist');
+    if (artistEl) artistEl.hidden = !track.artist;
     if (moodText) setText('mood', moodText);
 
     var art = document.getElementById('art');
@@ -421,6 +489,17 @@ function renderLiveScript(
   var failures = 0;
   var timer = null;
   var loading = false;
+
+  // 失敗が続いたら、前の曲を「NOW PLAYING」のまま出し続けない。見出しを UNAVAILABLE にし、イコライザを止める。
+  // 曲名は残す（何が取れなくなったのかが分かる）。次に成功すれば update() が見出しを戻す
+  function markStale() {
+    setText('label-text', S.unavailableLabel);
+    var label = document.getElementById('label');
+    if (label) label.removeAttribute('data-playing');
+    var card = document.getElementById('card');
+    if (card && card.getAttribute('aria-label')) card.setAttribute('aria-label', S.unavailable);
+    document.title = S.unavailable;
+  }
 
   function schedule() {
     if (timer !== null) clearTimeout(timer);
@@ -466,7 +545,10 @@ function renderLiveScript(
     load().then(
       function () { failures = 0; },
       // 一時的な失敗は次回に任せる。続くときは間隔を伸ばす
-      function () { failures = Math.min(failures + 1, 10); }
+      function () {
+        failures = Math.min(failures + 1, 10);
+        if (failures >= STALE_AFTER_FAILURES) markStale();
+      }
     ).then(function () {
       loading = false;
       schedule();
@@ -484,15 +566,8 @@ function renderLiveScript(
 </script>`;
 }
 
-/** 読み上げ用の「（10/16 21:04）」。読めない日時なら空にする（見出しの LAST PLAYED と同じ扱い）。 */
-function sinceForSpeech(since: string | undefined): string {
-  if (!since) return '';
-  const date = new Date(since);
-  return Number.isNaN(date.getTime()) ? '' : `（${formatDateTimeJa(date)}）`;
-}
-
-function buildTitle(state: PlaybackState, name?: string, artist?: string): string {
-  if (!name) return '再生していません';
-  const prefix = state === 'playing' ? 'Now Playing' : 'Last Played';
-  return `${prefix}: ${name} / ${artist ?? ''}`;
+function buildTitle(state: PlaybackState, track: NowPlayingResponse['track']): string {
+  if (!track) return STRINGS.idle;
+  const prefix = state === 'playing' ? STRINGS.titlePlaying : STRINGS.titleLastPlayed;
+  return `${prefix}: ${trackCredit(track)}`;
 }

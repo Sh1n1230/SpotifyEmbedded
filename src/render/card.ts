@@ -8,6 +8,7 @@
 import type { TrackSummary, MoodResult } from '../types/index.js';
 import { THEMES, FONT_STACK, formatDateTimeJa, type ThemeName } from './theme.js';
 import { escapeXml, svgIdSuffix, wrapToWidth, truncateToWidth } from './text.js';
+import { STRINGS } from './strings.js';
 
 export type PlaybackState =
   /** 再生中 */
@@ -23,6 +24,14 @@ export interface CardInput {
   mood: MoodResult | null;
   /** state が 'recent' のときの、その曲を確認した時刻 */
   since?: string | undefined;
+  /**
+   * 再生中でも、観測した時刻（since）を見出しに出す（静的モード）。数時間おきの生成なので、
+   * 閲覧時には再生が終わっていることが多く、時刻が無いと「今」再生中のように見える。
+   * ライブAPIは今の状態を返すので付けない。
+   */
+  observedTime?: boolean | undefined;
+  /** 生成した時刻（ISO 8601）。since の年がこれと違うときだけ年を出す。省略すると現在時刻。 */
+  now?: string | undefined;
   /** ジャケ写の data URI。null ならプレースホルダを描く。 */
   artDataUri?: string | null | undefined;
   theme?: ThemeName | undefined;
@@ -35,10 +44,10 @@ export interface CardInput {
   unavailable?: boolean | undefined;
 }
 
-/** 取得に失敗したときの表示。/embed（page.ts）とも共有する。 */
-export const UNAVAILABLE_LABEL = 'UNAVAILABLE';
-export const UNAVAILABLE_TEXT = '取得できませんでした';
-const IDLE_TEXT = '再生していません';
+/** 取得に失敗したときの表示。/embed（page.ts）とも共有する。文言は strings.ts にまとめている */
+export const UNAVAILABLE_LABEL = STRINGS.unavailableLabel;
+export const UNAVAILABLE_TEXT = STRINGS.unavailable;
+const IDLE_TEXT = STRINGS.idle;
 
 const WIDTH = 460;
 const HEIGHT = 160;
@@ -56,7 +65,8 @@ export function renderNowPlayingCard(input: CardInput): string {
   const unavailable = input.unavailable === true;
   // 曲が無ければ、playing・recent と渡されても曲なし（idle）として描く（ジャケ写の枠と「再生していません」が重ならない）
   const shownState: PlaybackState = track ? state : 'idle';
-  const label = unavailable ? UNAVAILABLE_LABEL : playbackLabel(shownState, input.since);
+  const labelOptions: LabelOptions = { observedTime: input.observedTime, now: input.now };
+  const label = unavailable ? UNAVAILABLE_LABEL : playbackLabel(shownState, input.since, labelOptions);
   const hasArt = shownState !== 'idle' && !unavailable;
   // 同じページに複数のカードをインラインで置いても id が衝突しないよう、内容から決まる接尾辞を付ける
   // （生成のたびに変わると静的モードの出力の差分が増えるので、ランダムにはしない）
@@ -67,9 +77,9 @@ export function renderNowPlayingCard(input: CardInput): string {
     ? renderIdleBody(theme.muted, idleText)
     : renderTrackBody(track, mood, theme);
 
-  const ariaLabel = unavailable ? idleText : buildAriaLabel(shownState, track, mood, input.since);
+  const ariaLabel = unavailable ? idleText : buildAriaLabel(shownState, track, mood, input.since, labelOptions);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${escapeXml(ariaLabel)}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" lang="ja" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
   <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${HEIGHT - 1}" rx="12" fill="${bgFill}" stroke="${theme.border}"/>
   ${hasArt ? renderArt(input.artDataUri ?? null, theme.placeholder, theme.sub, idSuffix) : ''}
@@ -81,15 +91,43 @@ export function renderNowPlayingCard(input: CardInput): string {
 `;
 }
 
+export interface LabelOptions {
+  /** 再生中でも観測した時刻を出す（静的モード） */
+  observedTime?: boolean | undefined;
+  /** 生成した時刻（ISO 8601）。年を出すかの基準 */
+  now?: string | undefined;
+}
+
+/** since を「10/16 21:04」の形にする。日時として読めなければ null。 */
+export function sinceText(since: string | undefined, now: string | undefined): string | null {
+  const at = since ? new Date(since) : null;
+  if (!at || Number.isNaN(at.getTime())) return null;
+  return formatDateTimeJa(at, now ? new Date(now) : undefined);
+}
+
 /** カードと埋め込みページで共通の見出し。日時として読めない since は時刻を省く。 */
-export function playbackLabel(state: PlaybackState, since: string | undefined): string {
-  if (state === 'playing') return 'NOW PLAYING';
-  if (state === 'recent') {
-    const at = since ? new Date(since) : null;
-    const when = at && !Number.isNaN(at.getTime()) ? formatDateTimeJa(at) : null;
-    return when ? `LAST PLAYED · ${when}` : 'LAST PLAYED';
+export function playbackLabel(state: PlaybackState, since: string | undefined, options: LabelOptions = {}): string {
+  const when = sinceText(since, options.now);
+  if (state === 'playing') return options.observedTime && when ? `${STRINGS.nowPlaying} · ${when}` : STRINGS.nowPlaying;
+  if (state === 'recent') return when ? `${STRINGS.lastPlayed} · ${when}` : STRINGS.lastPlayed;
+  return STRINGS.nothingPlaying;
+}
+
+/**
+ * 読み上げ・タイトル用の「曲名 / アーティスト」。アーティストが空（Spotify が artists を空で返した曲）なら
+ * 曲名だけにする（「曲名 / 」で終わらせない。「不明」とも書かない）。
+ */
+export function trackCredit(track: Pick<TrackSummary, 'name' | 'artist'>): string {
+  return track.artist ? `${track.name} / ${track.artist}` : track.name;
+}
+
+/** 読み上げの先頭の「再生中」「最後に再生（10/16 21:04）」。カードと埋め込みページで共通。 */
+export function playbackSpeechPrefix(state: PlaybackState, since: string | undefined, options: LabelOptions = {}): string {
+  const when = sinceText(since, options.now);
+  if (state === 'playing') {
+    return options.observedTime && when ? `${STRINGS.speechPlaying}（${when} ${STRINGS.asOf}）` : STRINGS.speechPlaying;
   }
-  return 'NOTHING PLAYING';
+  return `${STRINGS.speechLastPlayed}${when ? `（${when}）` : ''}`;
 }
 
 /** 「no art」の文字色は、枠（placeholder）の上で 4.5:1 を満たす sub を使う（muted はライトテーマで 4.0:1 しかない） */
@@ -101,7 +139,7 @@ function renderArt(dataUri: string | null, placeholder: string, textColor: strin
   }
 
   return `<rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8" fill="${placeholder}"/>
-  <text x="${PAD + ART_SIZE / 2}" y="${PAD + ART_SIZE / 2 + 5}" font-family="${FONT_STACK}" font-size="13" fill="${textColor}" text-anchor="middle" aria-hidden="true">no art</text>`;
+  <text x="${PAD + ART_SIZE / 2}" y="${PAD + ART_SIZE / 2 + 5}" font-family="${FONT_STACK}" font-size="13" fill="${textColor}" text-anchor="middle" aria-hidden="true">${STRINGS.noArt}</text>`;
 }
 
 function renderLabel(
@@ -124,9 +162,9 @@ function renderLabel(
 
 /**
  * 再生中インジケータの3本のバー。高さは [始め, 中間] で、始めと中間を行き来する。
- * /embed・embed.js の CSS アニメーション（.eq span）と同じ動き。
+ * /embed（page.ts は eqBarCss() で同じ値から CSS を作る）・embed.js（同じ値を持ち、一致は spec で確かめる）と同じ動き。
  */
-const EQ_BARS = [
+export const EQ_BARS = [
   { dx: 0, dur: '0.9s', heights: [4, 12] },
   { dx: 5.5, dur: '1.25s', heights: [11, 4] },
   { dx: 11, dur: '0.75s', heights: [6, 13] },
@@ -163,6 +201,23 @@ function equalizer(x: number, baselineY: number, color: string): string {
     <g class="spotify-embedded-eq">
       ${bars.join('\n      ')}
     </g>`;
+}
+
+/**
+ * HTML（/embed・静的モードの index.html）用の、バーごとの CSS。SVG と同じく高さは最大値に固定し、
+ * transform: scaleY() で伸び縮みさせる（height を動かすと毎フレームレイアウトが走る。transform は合成だけで済む）。
+ * @param selector 3本のバーの要素（例: '.eq span'）
+ */
+export function eqBarCss(selector: string): string {
+  const rules = EQ_BARS.map(({ dur, heights }, i) => {
+    const height = Math.max(...heights);
+    const [from, mid] = heights.map((h) => (h / height).toFixed(3));
+    return (
+      `${selector}:nth-child(${i + 1}) { height: ${height}px; animation: eq${i} ${dur} ease-in-out infinite; }\n` +
+      `  @keyframes eq${i} { 0%, 100% { transform: scaleY(${from}); } 50% { transform: scaleY(${mid}); } }`
+    );
+  });
+  return rules.join('\n  ');
 }
 
 function renderTrackBody(track: TrackSummary, mood: MoodResult | null, theme: Theme): string {
@@ -202,9 +257,12 @@ function renderTrackBody(track: TrackSummary, mood: MoodResult | null, theme: Th
     artistY = firstY + (lines.length - 1) * 21 + 24;
   }
 
-  parts.push(
-    `<text x="${TEXT_X}" y="${artistY}" font-size="11.5" fill="${theme.muted}">${escapeXml(truncateToWidth(track.artist, TEXT_WIDTH / 11.5))}</text>`
-  );
+  // アーティストが空なら行ごと省く（空の <text> を置かない）
+  if (track.artist) {
+    parts.push(
+      `<text x="${TEXT_X}" y="${artistY}" font-size="11.5" fill="${theme.muted}">${escapeXml(truncateToWidth(track.artist, TEXT_WIDTH / 11.5))}</text>`
+    );
+  }
 
   return parts.join('\n    ');
 }
@@ -217,14 +275,12 @@ function buildAriaLabel(
   state: PlaybackState,
   track: TrackSummary | null,
   mood: MoodResult | null,
-  since: string | undefined
+  since: string | undefined,
+  options: LabelOptions
 ): string {
   if (!track) return IDLE_TEXT;
-  const date = state === 'recent' && since ? new Date(since) : null;
-  const when = date && !Number.isNaN(date.getTime()) ? `（${formatDateTimeJa(date)}）` : '';
-  const prefix = state === 'playing' ? '再生中' : `最後に再生${when}`;
   const moodText = mood?.text ? `${mood.text} — ` : '';
-  return `${prefix}: ${moodText}${track.name} / ${track.artist}`;
+  return `${playbackSpeechPrefix(state, since, options)}: ${moodText}${trackCredit(track)}`;
 }
 
 type Theme = (typeof THEMES)[ThemeName];

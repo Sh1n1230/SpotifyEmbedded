@@ -9,9 +9,16 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { config } from './config.js';
-import { handleError } from './http/respond.js';
+import { handleError, sendError } from './http/respond.js';
 import { RATE_LIMIT, type RateLimiter } from './http/rateLimit.js';
-import { HSTS, PERMISSIONS_POLICY } from './http/securityHeaders.js';
+import {
+  CROSS_ORIGIN_RESOURCE_POLICY,
+  EMBEDDABLE_PATHS,
+  HSTS,
+  PERMISSIONS_POLICY,
+  REFERRER_POLICY,
+} from './http/securityHeaders.js';
+import { VERSION } from './version.js';
 import nowPlayingRouter from './routes/nowPlaying.js';
 import authRouter from './routes/auth.js';
 import embedRouter, { rateLimitedEmbedResponse } from './routes/embed.js';
@@ -22,10 +29,39 @@ export interface AppOptions {
   rateLimiter?: RateLimiter;
   /** Node では静的ファイル（public/）をここで配る。Workers は Static Assets が先に応答する。 */
   staticFiles?: Parameters<Hono['use']>[1];
+  /**
+   * 応答のたびに呼ぶ（アクセスログ用。Node のエントリが渡す）。クエリと接続元は渡さない。
+   * ここで投げた例外は応答に影響させない。
+   */
+  onResponse?: (info: { method: string; path: string; status: number; durationMs: number }) => void;
 }
+
+/** 他オリジンの JavaScript から読めるようにするレスポンスヘッダー（Access-Control-Expose-Headers）。 */
+const EXPOSED_HEADERS = [
+  'Retry-After',
+  'RateLimit-Policy',
+  'RateLimit',
+  'RateLimit-Limit',
+  'RateLimit-Remaining',
+  'RateLimit-Reset',
+  'X-Spotify-Embedded-Error',
+];
 
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
+
+  if (options.onResponse) {
+    const onResponse = options.onResponse;
+    app.use(async (c, next) => {
+      const startedAt = Date.now();
+      await next();
+      try {
+        onResponse({ method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - startedAt });
+      } catch {
+        // ログの失敗で応答を落とさない
+      }
+    });
+  }
 
   // セキュリティヘッダー（一覧は src/http/securityHeaders.ts）
   app.use(async (c, next) => {
@@ -34,8 +70,11 @@ export function createApp(options: AppOptions = {}): Hono {
     // /embed は他サイトの iframe に埋め込んでもらうためのページなので、
     // ここだけフレーム禁止を外す。API・デモ画面は DENY のまま。
     if (c.req.path !== '/embed') c.header('X-Frame-Options', 'DENY');
-    c.header('Referrer-Policy', 'no-referrer');
+    c.header('Referrer-Policy', REFERRER_POLICY);
     c.header('Permissions-Policy', PERMISSIONS_POLICY);
+    if (EMBEDDABLE_PATHS.includes(c.req.path)) {
+      c.header('Cross-Origin-Resource-Policy', CROSS_ORIGIN_RESOURCE_POLICY);
+    }
     // TLS を終端するプロキシの裏にいる Node 版では http に見えるので、そのときはプロキシ側で付ける
     if (new URL(c.req.url).protocol === 'https:') c.header('Strict-Transport-Security', HSTS);
   });
@@ -50,12 +89,19 @@ export function createApp(options: AppOptions = {}): Hono {
     const key = origins.join(',');
     if (key !== corsKey || !corsMiddleware) {
       corsKey = key;
-      corsMiddleware = cors({ origin: origins.length === 1 ? (origins[0] ?? '*') : origins });
+      corsMiddleware = cors({
+        origin: origins.length === 1 ? (origins[0] ?? '*') : origins,
+        // ルートは GET（と HEAD）だけ。実装していないメソッドを他オリジンに許可しない
+        allowMethods: ['GET', 'HEAD', 'OPTIONS'],
+        // CORS で安全とされるヘッダー以外は、ここに書かないと他オリジンの JavaScript から読めない
+        exposeHeaders: EXPOSED_HEADERS,
+      });
     }
     return corsMiddleware(c, next);
   });
 
-  app.get('/health', (c) => c.json({ status: 'ok' }));
+  // version は package.json の版。公開リポジトリの版なので、外から見えて困る情報ではない
+  app.get('/health', (c) => c.json({ status: 'ok', version: VERSION }));
 
   // 静的ファイル（デモ画面・embed.js）はレート制限より前に配り、数えない。Spotify も LLM も呼ばないので守る対象ではなく、
   // Workers の Static Assets（Worker より先に応答する）とも揃う
@@ -65,8 +111,13 @@ export function createApp(options: AppOptions = {}): Hono {
     const limiter = options.rateLimiter;
     app.use(async (c, next) => {
       const decision = await limiter(c);
-      // 残り回数が分かる実装（Node）だけが付ける。形は IETF の RateLimit ヘッダーの草案に沿う
+      // 残り回数が分かる実装（Node）だけが付ける。
+      // RateLimit-Policy / RateLimit は現行の草案 draft-ietf-httpapi-ratelimit-headers-11 の形
+      // （Structured Fields。q=上限、w=期間の秒、r=残り、t=回復までの秒）。
+      // RateLimit-Limit / -Remaining / -Reset は draft-03 以前の3分割の形で、移行のために併記している
       if (decision.remaining !== undefined) {
+        c.header('RateLimit-Policy', `"default";q=${RATE_LIMIT.limit};w=${RATE_LIMIT.windowSeconds}`);
+        c.header('RateLimit', `"default";r=${decision.remaining};t=${decision.retryAfterSeconds}`);
         c.header('RateLimit-Limit', String(RATE_LIMIT.limit));
         c.header('RateLimit-Remaining', String(decision.remaining));
         c.header('RateLimit-Reset', String(decision.retryAfterSeconds));
@@ -86,11 +137,14 @@ export function createApp(options: AppOptions = {}): Hono {
   app.onError(handleError);
   // 未定義のパスも、ほかのエラーと同じく JSON で返す。ランキングはライブAPIでは出さない（静的モード専用）
   app.notFound((c) =>
-    c.json(
+    sendError(
+      c,
+      404,
+      'not_found',
+      'Not found',
       c.req.path.startsWith('/api/top-tracks')
-        ? { error: 'Not found', hint: 'ランキングは静的モード（top-tracks.json）でだけ提供しています' }
-        : { error: 'Not found' },
-      404
+        ? { hint: 'ランキングは静的モード（top-tracks.json）でだけ提供しています' }
+        : {}
     )
   );
 
@@ -106,6 +160,6 @@ function rateLimited(c: Context, retryAfterSeconds: number): Response {
   c.header('Cache-Control', 'no-store');
   return (
     rateLimitedEmbedResponse(c) ??
-    c.json({ error: 'Too many requests, please try again later.' }, 429)
+    sendError(c, 429, 'rate_limited', 'Too many requests, please try again later.')
   );
 }

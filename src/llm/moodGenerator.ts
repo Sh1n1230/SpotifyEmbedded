@@ -1,4 +1,4 @@
-import { resolveLlm, type LlmSettings } from './settings.js';
+import { llmGenerationParams, resolveLlm, type LlmSettings } from './settings.js';
 import { chatCompletion } from './client.js';
 import type { TopTrackEntry } from '../types/index.js';
 
@@ -24,6 +24,12 @@ ${DATA_RULE}
 - センチメンタルな夜を過ごしているようです
 - 集中して作業中のようです
 - エモーショナルな気分に浸っているようです`;
+
+/**
+ * 曲ごとのムード文のプロンプトの版。SYSTEM_INSTRUCTION や組み立て方を変えて、保存済みの文
+ * （メモリ・Workers KV）を使い回したくないときに上げる。キャッシュのキーに入る（src/core/collect.ts）。
+ */
+export const MOOD_PROMPT_VERSION = 2;
 
 function truncate(s: string, max: number): string {
   // length と slice() は UTF-16 のコード単位で数える。上限の位置が絵文字などの
@@ -187,8 +193,7 @@ async function requestMood(system: string, prompt: string, settings?: LlmSetting
       { role: 'system', content: system },
       { role: 'user', content: prompt },
     ],
-    maxTokens: 80,
-    temperature: 0.7,
+    ...llmGenerationParams(),
   });
 
   const unquoted = stripOuterQuotes(

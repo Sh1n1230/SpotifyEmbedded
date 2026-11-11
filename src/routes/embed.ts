@@ -12,10 +12,12 @@
 import { Hono, type Context } from 'hono';
 import { collectNowPlaying } from '../core/collect.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
-import { renderEmbedPage } from '../render/page.js';
-import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
-import { resolveTheme } from '../render/theme.js';
+import { parseMaxWidth, renderEmbedPage } from '../render/page.js';
+import { IMAGE_CSP_SOURCES, albumArtAtSize, fetchImageDataUri } from '../render/image.js';
+import { resolvePageTheme, resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
+import { liveMoodOptions } from '../http/background.js';
+import { SpotifyAuthError } from '../spotify/client.js';
 import type { NowPlayingResponse } from '../types/index.js';
 
 const router = new Hono();
@@ -37,7 +39,7 @@ function sendSvg(c: Context, svg: string): Response {
 
 /**
  * /embed の CSP。スクリプトはライブ更新の1本だけを nonce で許す。
- * ジャケ写は Spotify の CDN（ホストが複数ある）から https で読む。
+ * ジャケ写は Spotify の CDN（IMAGE_CSP_SOURCES）からだけ読む。
  * frame-ancestors は付けない: 他サイトの iframe に入るためのページなので。
  */
 function embedCsp(nonce: string): string {
@@ -45,7 +47,7 @@ function embedCsp(nonce: string): string {
     "default-src 'none'",
     `script-src 'nonce-${nonce}'`,
     "style-src 'unsafe-inline'",
-    'img-src https: data:',
+    `img-src ${IMAGE_CSP_SOURCES}`,
     "connect-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
@@ -86,9 +88,12 @@ const ERROR_HEADER = 'X-Spotify-Embedded-Error';
 
 async function nowPlayingOrNull(c: Context): Promise<NowPlayingResponse | null> {
   try {
-    return await collectNowPlaying();
+    return await collectNowPlaying(liveMoodOptions(c));
   } catch (err) {
-    console.error('[embed] 再生状況を取得できませんでした:', err instanceof Error ? err.message : err);
+    // 覚えていた認証の失敗を返しただけのとき（Spotify は呼んでいない）は、表示のたびに同じ案内を出さない
+    if (!(err instanceof SpotifyAuthError && err.repeated)) {
+      console.error('[embed] 再生状況を取得できませんでした:', err instanceof Error ? err.message : err);
+    }
     c.header(ERROR_HEADER, 'spotify_unavailable');
     return null;
   }
@@ -153,7 +158,9 @@ function sendEmbedPage(c: Context, fetched: NowPlayingResponse | null): Response
       nowPlaying,
       state,
       since: nowPlaying.fetched_at,
-      theme: resolveTheme(c.req.query('theme')),
+      // auto は閲覧者の OS のダーク・ライトに合わせる（/badge.svg は1枚の SVG なので auto を受け付けない）
+      theme: resolvePageTheme(c.req.query('theme')),
+      maxWidth: parseMaxWidth(c.req.query('max_width')),
       transparent: c.req.query('transparent') === 'true',
       // ページ自身が定期的に取得し直す。iframe を貼り替える必要はない。
       liveEndpoint: '/api/now-playing',

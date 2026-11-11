@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
+import { parseArgs } from 'node:util';
 import { setup } from './setup.js';
 import { generate } from './generate.js';
 import { isTopTracksRange, isTopTracksLimit } from '../core/topTracksParams.js';
@@ -28,9 +29,15 @@ generate のオプション:
                     medium_term ≒ 直近6か月
                     long_term   ≒ 直近1年
   --limit <n>     Spotify から取得する件数 10 | 30 | 50（既定: 50）
-  --count <n>     ランキングの表示件数 1〜50（既定: 5）
+  --count <n>     ランキングの表示件数 1〜50（既定: 5。--limit 以下）
+  --page-count <n>  iframe 用ページ（index.html）のランキングの表示件数 1〜50（既定: --count と同じ）
   --theme <name>  dark | light | both（既定: both）
   --no-mood       AIムード文の生成をスキップする（LLM設定が不要になる）
+  --refresh-ranking-mood
+                  ランキングのムード文を、顔ぶれの変化に関係なく作り直す
+  --index         検索エンジンに載せてよい（既定では index.html に noindex を入れ、robots.txt を書く）
+
+  値は --out ./public と --out=./public のどちらの形でも渡せます。
 
   例: npm run generate -- --out ./public --range medium_term --count 10
 
@@ -88,71 +95,97 @@ async function main(): Promise<void> {
   }
 }
 
+/** generate のオプション。値の検証（範囲・選択肢）は下の parseGenerateArgs が行う。 */
+const GENERATE_OPTIONS = {
+  out: { type: 'string' },
+  range: { type: 'string' },
+  limit: { type: 'string' },
+  count: { type: 'string' },
+  'page-count': { type: 'string' },
+  theme: { type: 'string' },
+  'no-mood': { type: 'boolean' },
+  'refresh-ranking-mood': { type: 'boolean' },
+  index: { type: 'boolean' },
+} as const;
+
+/**
+ * node:util の parseArgs で読む。`--out dir` と `--out=dir` のどちらも受け付け、知らないオプション・
+ * 位置引数・値の無いオプションは拒む（strict）。`--` で始まる値は `--out=--dir` の形で渡せる。
+ */
 function parseGenerateArgs(args: string[]): Parameters<typeof generate>[0] {
+  let values: ReturnType<typeof parseArgs<{ options: typeof GENERATE_OPTIONS }>>['values'];
+  try {
+    ({ values } = parseArgs({ args, options: GENERATE_OPTIONS, strict: true, allowPositionals: false }));
+  } catch (err) {
+    throw new Error(describeParseError(err), { cause: err });
+  }
+
   const options: Parameters<typeof generate>[0] = {
     outDir: './out',
     count: DEFAULT_RANKING_COUNT,
     range: DEFAULT_TOP_TRACKS_RANGE,
     limit: DEFAULT_TOP_TRACKS_LIMIT,
     theme: 'both',
-    skipMood: false,
+    skipMood: values['no-mood'] === true,
+    refreshRankingMood: values['refresh-ranking-mood'] === true,
+    allowIndexing: values.index === true,
   };
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  if (values.out !== undefined) {
+    if (values.out === '') throw new Error('--out には値が必要です。');
+    options.outDir = values.out;
+  }
 
-    switch (arg) {
-      case '--out':
-        options.outDir = requireValue(args, ++i, '--out');
-        break;
-
-      case '--range': {
-        const range = requireValue(args, ++i, '--range');
-        if (!isTopTracksRange(range)) {
-          throw new Error('--range は short_term / medium_term / long_term のいずれかです。');
-        }
-        options.range = range;
-        break;
-      }
-
-      case '--limit': {
-        const limit = parseIntStrict(requireValue(args, ++i, '--limit'));
-        if (!isTopTracksLimit(limit)) {
-          throw new Error(`--limit は ${TOP_TRACKS_LIMITS.join(' / ')} のいずれかです。`);
-        }
-        options.limit = limit;
-        break;
-      }
-
-      case '--count': {
-        const raw = requireValue(args, ++i, '--count');
-        const count = parseIntStrict(raw);
-        if (Number.isNaN(count) || count < 1 || count > MAX_RANKING_COUNT) {
-          throw new Error(`--count は 1〜${MAX_RANKING_COUNT} の整数で指定してください。`);
-        }
-        options.count = count;
-        break;
-      }
-
-      case '--theme': {
-        const theme = requireValue(args, ++i, '--theme');
-        if (theme !== 'dark' && theme !== 'light' && theme !== 'both') {
-          throw new Error('--theme は dark / light / both のいずれかです。');
-        }
-        options.theme = theme;
-        break;
-      }
-
-      case '--no-mood':
-        options.skipMood = true;
-        break;
-
-      default:
-        throw new Error(`不明なオプション: ${arg}`);
+  if (values.range !== undefined) {
+    if (!isTopTracksRange(values.range)) {
+      throw new Error('--range は short_term / medium_term / long_term のいずれかです。');
     }
+    options.range = values.range;
+  }
+
+  if (values.limit !== undefined) {
+    const limit = parseIntStrict(values.limit);
+    if (!isTopTracksLimit(limit)) {
+      throw new Error(`--limit は ${TOP_TRACKS_LIMITS.join(' / ')} のいずれかです。`);
+    }
+    options.limit = limit;
+  }
+
+  if (values.count !== undefined) options.count = parseCount(values.count, '--count');
+  if (values['page-count'] !== undefined) options.pageCount = parseCount(values['page-count'], '--page-count');
+
+  if (values.theme !== undefined) {
+    if (values.theme !== 'dark' && values.theme !== 'light' && values.theme !== 'both') {
+      throw new Error('--theme は dark / light / both のいずれかです。');
+    }
+    options.theme = values.theme;
   }
 
   return options;
+}
+
+function parseCount(raw: string, flag: string): number {
+  const count = parseIntStrict(raw);
+  if (Number.isNaN(count) || count < 1 || count > MAX_RANKING_COUNT) {
+    throw new Error(`${flag} は 1〜${MAX_RANKING_COUNT} の整数で指定してください。`);
+  }
+  return count;
+}
+
+/** parseArgs の例外（英語）を、今までと同じ日本語の案内にする。 */
+function describeParseError(err: unknown): string {
+  const code = err instanceof Error && 'code' in err ? String(err.code) : '';
+  const message = err instanceof Error ? err.message : String(err);
+  // メッセージは `Unknown option '--foo'`・`Option '--out <value>' argument missing` のように、名前を '…' で囲んで始まる
+  const name = /'(-{1,2}[^'\s=]+)/.exec(message)?.[1] ?? '';
+  if (code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') return `不明なオプション: ${name || message}`;
+  if (code === 'ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL') {
+    return `不明なオプション: ${/'([^']*)'/.exec(message)?.[1] ?? message}`;
+  }
+  if (code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') {
+    return /does not take an argument/.test(message) ? `${name} は値を取りません。` : `${name} には値が必要です。`;
+  }
+  return message;
 }
 
 /**
@@ -161,14 +194,6 @@ function parseGenerateArgs(args: string[]): Parameters<typeof generate>[0] {
  */
 function parseIntStrict(raw: string): number {
   return /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
-}
-
-function requireValue(args: string[], index: number, flag: string): string {
-  const value = args[index];
-  if (value === undefined || value.startsWith('--')) {
-    throw new Error(`${flag} には値が必要です。`);
-  }
-  return value;
 }
 
 main().catch((err: unknown) => {

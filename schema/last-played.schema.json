@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Sh1n1230/SpotifyEmbedded/main/schema/last-played.schema.json",
+  "title": "last-played",
+  "description": "静的モードの last-played.json / .yaml。カードと同じ「最後に聴いた曲」（ライブAPIには無い）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "track",
+    "mood",
+    "played_at"
+  ],
+  "properties": {
+    "track": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/track"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mood": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/mood"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "played_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "再生中なら取得時刻、停止中なら聴き終えた時刻（または前回の観測時刻）。曲が無ければ null"
+    }
+  },
+  "$defs": {
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "artist",
+        "album",
+        "album_art_url",
+        "duration_ms",
+        "popularity",
+        "spotify_url",
+        "preview_url"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Spotify のトラック ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "曲名"
+        },
+        "artist": {
+          "type": "string",
+          "description": "アーティスト名。複数ならカンマ区切り（例: \"Artist A, Artist B\"）"
+        },
+        "album": {
+          "type": "string"
+        },
+        "album_art_url": {
+          "type": "string",
+          "description": "ジャケ写の URL（300px 以上の最大サイズ。通常は 640px 版）。無ければ空文字"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "popularity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "0〜100。2024年11月以降に作成された Spotify アプリでは null"
+        },
+        "spotify_url": {
+          "type": "string",
+          "description": "Spotify で開く URL"
+        },
+        "preview_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "30秒プレビュー。新しいアプリでは常に null"
+        }
+      }
+    },
+    "mood": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "generated_at"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "日本語のムード文（例: \"今ノリノリなようです\"）"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

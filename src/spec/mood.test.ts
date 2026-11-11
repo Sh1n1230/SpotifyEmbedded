@@ -14,6 +14,9 @@ import {
 } from '../core/rankingMood.js';
 import { generate } from '../cli/generate.js';
 import { chatCompletion } from '../llm/client.js';
+import { llmGenerationParams, llmKeyNotice, resolveLlm } from '../llm/settings.js';
+import { createApp } from '../app.js';
+import { headerOf } from './support.js';
 import { renderRankingCard } from '../render/ranking.js';
 import type { SpotifyTrack, TopTrackEntry, TopTracksRange } from '../types/index.js';
 import {
@@ -337,6 +340,52 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
     });
   });
 
+  describe('途中で打ち切られた応答（finish_reason）は採らない', () => {
+    function givenLlmFinishes(finishReason: string | undefined): void {
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? jsonOk({
+              choices: [
+                {
+                  message: { content: '今センチメンタルな夜を過ごして' },
+                  ...(finishReason === undefined ? {} : { finish_reason: finishReason }),
+                },
+              ],
+            })
+          : null
+      );
+    }
+
+    it.each(['length', 'content_filter'])('finish_reason: %s なら、本文があってもムード文にしない', async (reason) => {
+      givenLlmConfigured();
+      givenNowPlaying(aSpotifyTrack());
+      givenLlmFinishes(reason);
+
+      const result = await collectNowPlaying();
+
+      expect(result.mood).toBeNull();
+      expect(result.track).not.toBeNull();
+    });
+
+    it('finish_reason: length は「出力上限で途中で切れた」と分かるメッセージになる', async () => {
+      givenLlmFinishes('length');
+
+      await expect(
+        chatCompletion({ baseUrl: 'https://llm.example/v1', apiKey: 'k', model: 'spec-model', messages: [] })
+      ).rejects.toThrow(/出力上限で途中で切れました（モデル: spec-model）/);
+    });
+
+    it.each(['stop', undefined])('finish_reason: %s は今までどおり採る', async (reason) => {
+      givenLlmConfigured();
+      givenNowPlaying(aSpotifyTrack());
+      givenLlmFinishes(reason);
+
+      const result = await collectNowPlaying();
+
+      expect(result.mood?.text).toBe('今センチメンタルな夜を過ごして');
+    });
+  });
+
   describe('失敗の原因が分かるメッセージになる', () => {
     function callLlm(baseUrl = 'https://api.groq.com/openai/v1'): Promise<string> {
       return chatCompletion({
@@ -363,7 +412,7 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       }
     );
 
-    it('LLM_BASE_URL が http のリモートでも曲情報は返り、理由がログに出る', async () => {
+    it('LLM_BASE_URL が http のリモートなら、LLM 未設定と同じく扱い、曲ごとにエラーを出さない（理由は設定の誤りとして分かる）', async () => {
       givenLlmConfigured('http://example.com/v1');
       givenLlmReplies('今チルな気分になっています');
       givenNowPlaying(aSpotifyTrack());
@@ -373,7 +422,9 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
       expect(result.track?.name).toBe('Midnight Drive');
       expect(result.mood).toBeNull();
       expect(callsTo('/chat/completions')).toHaveLength(0);
-      expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain('https の URL');
+      expect(vi.mocked(console.error)).not.toHaveBeenCalled();
+      // 起動時（Node）・最初のリクエスト（Workers）・generate の冒頭が、この problem を一度だけ表示する
+      expect(resolveLlm()).toMatchObject({ kind: 'invalid', problem: expect.stringContaining('https の URL') as string });
     });
 
     it.each([
@@ -856,6 +907,213 @@ describe('ライブAPI（Workers）では曲ごとのムード文を KV に置�
     expect(again.mood?.text).toBe('一回目の文');
     expect(callsTo('/chat/completions')).toHaveLength(1);
   });
+
+  it('モデルを変えたら、保存済みの文を使わずに作り直す（キーにモデル名とプロンプトの版が入る）', async () => {
+    givenLlmReplies('一回目の文');
+    givenNowPlaying(aSpotifyTrack());
+    await collectNowPlaying();
+    expect([...kv.keys()]).toEqual(['mood:v2:spec-model:track-1']);
+
+    nowPlayingCache.flushAll();
+    vi.stubEnv('LLM_MODEL', 'another-model');
+    givenLlmReplies('二回目の文');
+    const again = await collectNowPlaying();
+
+    expect(again.mood?.text).toBe('二回目の文');
+    expect(callsTo('/chat/completions')).toHaveLength(2);
+  });
+
+  it('応答の後に終わればよい KV への書き込みは、預け先（Workers の ctx.waitUntil）に渡して待たない', async () => {
+    let finishPut: () => void = () => {};
+    const stored: string[] = [];
+    setDurableStore({
+      get: () => Promise.resolve(null),
+      put: (key) =>
+        new Promise<void>((resolve) => {
+          finishPut = () => {
+            stored.push(key);
+            resolve();
+          };
+        }),
+    });
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack());
+    const deferred: Promise<unknown>[] = [];
+
+    const result = await collectNowPlaying({ defer: (work) => deferred.push(work) });
+
+    // put が終わっていなくても応答は返る
+    expect(result.mood?.text).toBe('今チルな気分になっています');
+    expect(stored).toEqual([]);
+    expect(deferred).toHaveLength(1);
+
+    finishPut();
+    await Promise.all(deferred);
+    expect(stored).toEqual(['mood:v2:spec-model:track-1']);
+  });
+
+  it('預けた書き込みが失敗しても、ログに出るだけ', async () => {
+    setDurableStore({ get: () => Promise.resolve(null), put: () => Promise.reject(new Error('KV down')) });
+    givenLlmReplies('今チルな気分になっています');
+    givenNowPlaying(aSpotifyTrack());
+    const deferred: Promise<unknown>[] = [];
+
+    const result = await collectNowPlaying({ defer: (work) => deferred.push(work) });
+    await expect(Promise.all(deferred)).resolves.toBeDefined();
+
+    expect(result.mood?.text).toBe('今チルな気分になっています');
+    expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain('KV down');
+  });
+});
+
+describe('ライブAPIは、遅い LLM のために曲情報を遅らせない', () => {
+  /** release() を呼ぶまで応答しない LLM */
+  function givenSlowLlm(content: string): { release: () => void } {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/chat/completions')) await gate;
+      return original(input, init);
+    });
+    givenLlmReplies(content);
+    return { release: () => release() };
+  }
+
+  it('締め切りまでに生成が終わらなければ mood: null で応答し、終わった文は次の取得で載る', async () => {
+    givenLlmConfigured();
+    givenNowPlaying(aSpotifyTrack());
+    const llm = givenSlowLlm('今チルな気分になっています');
+    const deferred: Promise<unknown>[] = [];
+
+    const first = await collectNowPlaying({ moodDeadlineMs: 20, defer: (work) => deferred.push(work) });
+
+    expect(first.track?.name).toBe('Midnight Drive');
+    expect(first.mood).toBeNull();
+    // 続きは預けてある（Workers は応答を返すと残りの処理を止めるため）
+    expect(deferred).toHaveLength(1);
+
+    llm.release();
+    await Promise.all(deferred);
+    nowPlayingCache.flushAll();
+    const second = await collectNowPlaying({ moodDeadlineMs: 20 });
+
+    expect(second.mood?.text).toBe('今チルな気分になっています');
+    expect(callsTo('/chat/completions')).toHaveLength(1);
+  });
+
+  it('締め切りに間に合えば、そのままムード文つきで返す', async () => {
+    givenLlmConfigured();
+    givenNowPlaying(aSpotifyTrack());
+    givenLlmReplies('今チルな気分になっています');
+
+    const result = await collectNowPlaying({ moodDeadlineMs: 5000 });
+
+    expect(result.mood?.text).toBe('今チルな気分になっています');
+  });
+
+  it('同じ曲のムード文の生成を、同時に2本走らせない', async () => {
+    givenLlmConfigured();
+    givenNowPlaying(aSpotifyTrack());
+    givenLlmReplies('今チルな気分になっています');
+
+    // bypassCache は取得の共有を通らないので、ムード文の側でまとめる
+    const results = await Promise.all([
+      collectNowPlaying({ bypassCache: true }),
+      collectNowPlaying({ bypassCache: true }),
+    ]);
+
+    expect(results.map((result) => result.mood?.text)).toEqual(['今チルな気分になっています', '今チルな気分になっています']);
+    expect(callsTo('/chat/completions')).toHaveLength(1);
+  });
+
+  it('ライブAPIのルートは締め切り付きで取得する（静的モードの CLI は最後まで待つ）', async () => {
+    const { LIVE_MOOD_DEADLINE_MS } = await import('../http/background.js');
+    givenLlmConfigured();
+    givenNowPlaying(aSpotifyTrack());
+    givenLlmReplies('今チルな気分になっています');
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(LIVE_MOOD_DEADLINE_MS).toBeLessThanOrEqual(5000);
+    expect(((await res.json()) as { mood: { text: string } }).mood.text).toBe('今チルな気分になっています');
+  });
+});
+
+describe('ムード文の生成のパラメータ（LLM_MAX_TOKENS・LLM_TEMPERATURE）', () => {
+  it('既定は 80 トークン・temperature 0.7', () => {
+    expect(llmGenerationParams()).toEqual({ maxTokens: 80, temperature: 0.7 });
+  });
+
+  it('環境変数で変えた値が、LLM へのリクエストに入る', async () => {
+    vi.stubEnv('LLM_MAX_TOKENS', '400');
+    vi.stubEnv('LLM_TEMPERATURE', '0.2');
+    givenLlmConfigured();
+    givenNowPlaying(aSpotifyTrack());
+    givenLlmReplies('今チルな気分になっています');
+
+    await collectNowPlaying();
+
+    const body = bodyOf(must(callsTo('/chat/completions')[0], 'リクエスト'));
+    expect(body['max_tokens']).toBe(400);
+    expect(body['temperature']).toBe(0.2);
+  });
+
+  it.each([
+    ['LLM_MAX_TOKENS', 'abc'],
+    ['LLM_MAX_TOKENS', '5'],
+    ['LLM_MAX_TOKENS', '99999'],
+    ['LLM_TEMPERATURE', '-1'],
+    ['LLM_TEMPERATURE', '3'],
+    ['LLM_TEMPERATURE', 'hot'],
+  ])('%s=%s は既定値にして、一度だけ警告する', (name, value) => {
+    vi.stubEnv(name, value);
+    vi.mocked(console.warn).mockClear();
+
+    expect(llmGenerationParams()).toEqual({ maxTokens: 80, temperature: 0.7 });
+    llmGenerationParams();
+
+    expect(vi.mocked(console.warn).mock.calls.filter((args) => String(args[0]).includes(name))).toHaveLength(1);
+  });
+});
+
+describe('GOOGLE_API_KEY を LLM のキーとして使うときは、起動時に分かるようにする', () => {
+  it('GOOGLE_API_KEY だけがあるときに案内を返す', () => {
+    vi.stubEnv('GOOGLE_API_KEY', 'maps-or-gemini-key');
+
+    expect(llmKeyNotice()).toContain('GOOGLE_API_KEY を LLM（Gemini）の API キーとして使い');
+  });
+
+  it.each(['LLM_API_KEY', 'GEMINI_API_KEY'])('%s があればそちらを使うので、案内は出さない', (name) => {
+    vi.stubEnv('GOOGLE_API_KEY', 'maps-key');
+    vi.stubEnv(name, 'gemini-key');
+
+    expect(llmKeyNotice()).toBeNull();
+  });
+
+  it('LLM が未設定なら出さない', () => {
+    expect(llmKeyNotice()).toBeNull();
+  });
+});
+
+describe('外部への fetch には、アプリ名と版の User-Agent を付ける', () => {
+  it('Spotify・LLM・ジャケ写の取得のすべてに付く', async () => {
+    const { USER_AGENT } = await import('../http/userAgent.js');
+    const { VERSION } = await import('../version.js');
+    givenLlmConfigured();
+    givenNowPlaying(aSpotifyTrack());
+    givenLlmReplies('今チルな気分になっています');
+
+    await createApp().request('/badge.svg');
+
+    expect(USER_AGENT).toBe(`spotify-embedded/${VERSION} (+https://github.com/Sh1n1230/SpotifyEmbedded)`);
+    for (const fragment of ['accounts.spotify.com', 'api.spotify.com', '/chat/completions', '.scdn.co']) {
+      expect(headerOf(must(callsTo(fragment)[0], `${fragment} へのリクエスト`), 'user-agent'), fragment).toBe(USER_AGENT);
+    }
+  });
 });
 
 describe('LLM へのリクエストの形（送り先ごとの違い）', () => {
@@ -996,5 +1254,33 @@ describe('ムード文のプロンプトのアルバムの行', () => {
     await collectNowPlaying();
 
     expect(promptOf()).toContain('アルバム: Hollywood');
+  });
+});
+
+describe('LLM の呼び出しごとに、モデル・所要時間・トークン数をログに残す', () => {
+  const llmLogs = () =>
+    vi.mocked(console.log).mock.calls.map((args) => String(args[0])).filter((line) => line.startsWith('[llm]'));
+
+  it('usage があればトークン数も出し、応答の中身（ムード文）は出さない', async () => {
+    respondWith((url) =>
+      url.includes('/chat/completions')
+        ? jsonOk({
+            choices: [{ message: { content: '今チルな気分になっています' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 321, completion_tokens: 17, total_tokens: 338 },
+          })
+        : null
+    );
+
+    await chatCompletion({ baseUrl: 'https://llm.example/v1', apiKey: 'k', model: 'spec-model', messages: [] });
+
+    expect(llmLogs()).toEqual(['[llm] model=spec-model duration_ms=0 prompt_tokens=321 completion_tokens=17']);
+  });
+
+  it('usage を返さない互換サーバーでは、モデルと所要時間だけを出す', async () => {
+    givenLlmReplies('今チルな気分になっています');
+
+    await chatCompletion({ baseUrl: 'https://llm.example/v1', apiKey: 'k', model: 'spec-model', messages: [] });
+
+    expect(llmLogs()).toEqual(['[llm] model=spec-model duration_ms=0']);
   });
 });

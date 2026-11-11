@@ -30,6 +30,18 @@ export async function readSpotifyJson<T>(res: Response, path: string): Promise<T
   }
 }
 
+/**
+ * Spotify の 429 を受けたら、Retry-After の時刻まで Spotify API を呼ばない（呼び続けると制限が長引くおそれがある）。
+ * https://developer.spotify.com/documentation/web-api/concepts/rate-limits
+ * トークン更新（accounts.spotify.com）は別のホストなので対象外。Workers では isolate ごとの状態になる。
+ */
+let rateLimitedUntil = 0;
+
+/** テスト・CLI の単発実行向け。覚えている「この時刻までは呼ばない」を捨てる。 */
+export function resetSpotifyRateLimit(): void {
+  rateLimitedUntil = 0;
+}
+
 async function spotifyFetchOnce(path: string, token: string): Promise<Response> {
   return fetchWithTimeout(
     `${BASE_URL}${path}`,
@@ -40,6 +52,9 @@ async function spotifyFetchOnce(path: string, token: string): Promise<Response> 
 }
 
 export async function spotifyFetch(path: string): Promise<Response | null> {
+  const waitMs = rateLimitedUntil - Date.now();
+  if (waitMs > 0) throw new SpotifyRateLimitError(Math.ceil(waitMs / 1000));
+
   let token = await getAccessToken();
   let res = await spotifyFetchOnce(path, token);
 
@@ -55,7 +70,9 @@ export async function spotifyFetch(path: string): Promise<Response | null> {
 
   if (res.status === 429) {
     await discardBody(res);
-    throw new SpotifyRateLimitError(parseRetryAfter(res.headers.get('Retry-After')));
+    const retryAfter = parseRetryAfter(res.headers.get('Retry-After'));
+    rateLimitedUntil = Date.now() + retryAfter * 1000;
+    throw new SpotifyRateLimitError(retryAfter);
   }
 
   // 再生していない・デバイスが無い場合は 204（本文なし）

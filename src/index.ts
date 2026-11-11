@@ -10,11 +10,12 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { missingAuthValues } from './authStore.js';
-import { resolveLlm } from './llm/settings.js';
+import { llmKeyNotice, resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
 import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { portInUseHelp } from './http/portInUse.js';
-import { DEMO_PAGE_CSP } from './http/securityHeaders.js';
+import { forLog } from './http/log.js';
+import { DEMO_PAGE_CSP, EMBED_SCRIPT_CACHE_CONTROL } from './http/securityHeaders.js';
 
 // PORT の誤り（abc・3000abc・0 など）は、スタックトレースではなく直し方を出して終える
 let port: number;
@@ -45,6 +46,8 @@ if (llm.kind === 'unconfigured') {
   console.warn(`⚠️  ${llm.problem}`);
   console.warn('   設定を直すまで、AIのムード文なしで動作します。\n');
 }
+const llmNotice = llmKeyNotice();
+if (llmNotice) console.warn(`ℹ️  ${llmNotice}\n`);
 
 // ローカル開発では * のままでよいので、本番相当（NODE_ENV=production、Docker の既定）でだけ警告する
 const corsWarning = process.env['NODE_ENV'] === 'production' ? openCorsWarning(config.server.corsOrigins) : null;
@@ -52,6 +55,12 @@ if (corsWarning) console.warn(`⚠️  ${corsWarning}\n`);
 for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) console.warn(`⚠️  ${problem}\n`);
 
 const app = createApp({
+  // アクセスログ（Node 版だけ。Workers は Workers Logs が持つ）。どのパスがどれだけ叩かれているか・429 の頻度が分かる。
+  // 接続元の IP アドレスとクエリは出さない（個人を識別できる情報をログに残さない）
+  // パスとメソッドはリクエスト由来なので、改行・制御文字を落として1行に収める（偽のログの行を差し込ませない）
+  onResponse: ({ method, path, status, durationMs }) => {
+    console.log(`[access] ${forLog(method)} ${forLog(path)} ${status} ${durationMs}ms`);
+  },
   rateLimiter: memoryRateLimiter({
     key: (c) => {
       const key = clientKey(c, config.server.trustedProxyHeader, (ctx) => getConnInfo(ctx).remote.address);
@@ -67,6 +76,8 @@ const app = createApp({
     root: fileURLToPath(new URL('../public', import.meta.url)),
     onFound: (path, c) => {
       if (path.endsWith('.html')) c.header('Content-Security-Policy', DEMO_PAGE_CSP);
+      // path はファイルシステムのパス（Windows では区切りが \\）なので、リクエストのパスで判定する
+      if (c.req.path === '/embed.js') c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
     },
   }),
 });
@@ -117,3 +128,17 @@ function shutdown(signal: NodeJS.Signals): void {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+/**
+ * リクエストの処理の外（裏の処理・後処理）で起きた、拾われなかった例外と Promise の拒否。
+ * 続けると壊れた状態のまま応答し続けるおそれがあるので、原因を1行で出して終了し、再起動は実行環境
+ * （Docker の restart ポリシー・Fly.io など）に任せる。リクエストの処理中の例外は app.onError が拾うので、ここには来ない。
+ */
+function crash(kind: string, reason: unknown): void {
+  const detail = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+  console.error(`[fatal] ${kind}: ${detail.replace(/\s*\n\s*/g, ' | ')}`);
+  process.exit(1);
+}
+
+process.on('unhandledRejection', (reason) => crash('unhandledRejection', reason));
+process.on('uncaughtException', (err) => crash('uncaughtException', err));

@@ -3,6 +3,7 @@ import { authValueSource, saveStoredAuth } from '../authStore.js';
 import { SpotifyApiError, SpotifyRateLimitError, parseRetryAfter } from './errors.js';
 import { fetchWithTimeout, readBodyText, SPOTIFY_TIMEOUT_MS } from './timeout.js';
 import { discardBody } from '../http/body.js';
+import { sharesInFlightWork } from '../runtime.js';
 
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 /** エラーメッセージとログに出す、トークンエンドポイントの短い名前 */
@@ -29,11 +30,25 @@ let refreshing: Promise<TokenState> | null = null;
  */
 let rotatedRefreshToken: string | null = null;
 
-/** テスト・CLI の単発実行向け。アクセストークンと進行中の更新を捨てる。 */
+/**
+ * 設定を直さない限り回復しない認証の失敗（invalid_grant・invalid_client）と、そのときの認証情報。
+ * 同じ認証情報のままなら、トークンエンドポイントを呼ばずに同じ失敗を返す（Spotify は invalid_grant の後に
+ * 更新を再試行しないよう求めている）。認証情報が変われば（data/auth.json の書き換えなど）また試す。
+ * https://developer.spotify.com/documentation/web-api/tutorials/refreshing-tokens
+ */
+let rememberedFailure: { credentials: string; reason: SpotifyAuthFailure } | null = null;
+
+/** テスト・CLI の単発実行向け。アクセストークン・進行中の更新・覚えている認証の失敗を捨てる。 */
 export function resetAccessToken(): void {
   tokenState = null;
   refreshing = null;
   rotatedRefreshToken = null;
+  rememberedFailure = null;
+}
+
+/** 認証情報の組を比べるためのキー。値そのものはどこにも出さない。 */
+function credentialsKey(refreshToken: string): string {
+  return [config.spotify.clientId, config.spotify.clientSecret, refreshToken].join('\n');
 }
 
 /**
@@ -49,10 +64,13 @@ export type SpotifyAuthFailure = 'invalid_grant' | 'invalid_client' | 'unauthori
 
 export class SpotifyAuthError extends Error {
   reason: SpotifyAuthFailure;
-  constructor(reason: SpotifyAuthFailure = 'unauthorized') {
+  /** 覚えていた失敗をそのまま返した（Spotify は呼んでいない）。案内のログを繰り返さないために使う */
+  repeated: boolean;
+  constructor(reason: SpotifyAuthFailure = 'unauthorized', repeated = false) {
     super(describeAuthFailure(reason));
     this.name = 'SpotifyAuthError';
     this.reason = reason;
+    this.repeated = repeated;
   }
 }
 
@@ -113,7 +131,12 @@ async function fetchAccessToken(): Promise<TokenState> {
     }
     const body = await readBodyText(res, TOKEN_PATH, SPOTIFY_TIMEOUT_MS);
     const failure = authFailureOf(res.status, body);
-    if (failure) throw new SpotifyAuthError(failure);
+    if (failure) {
+      rememberedFailure = { credentials: credentialsKey(refreshToken), reason: failure };
+      // 入れ替わった refresh_token で失敗したなら捨てる。設定されている方が直されていれば、次はそちらで試せる
+      rotatedRefreshToken = null;
+      throw new SpotifyAuthError(failure);
+    }
     // 5xx などは設定の問題ではないので、認証エラーにはしない。SpotifyApiError にして 502 と、
     // 本文を切り詰めたログを Spotify API の失敗と共有する
     throw new SpotifyApiError(res.status, TOKEN_PATH, body);
@@ -179,6 +202,17 @@ function adoptRotatedRefreshToken(token: string): void {
 export async function getAccessToken(forceRefresh = false, staleToken?: string): Promise<string> {
   const replaced = staleToken !== undefined && tokenState?.accessToken !== staleToken;
   if ((!forceRefresh || replaced) && tokenState && Date.now() < tokenState.expiresAt) {
+    return tokenState.accessToken;
+  }
+  if (rememberedFailure) {
+    if (rememberedFailure.credentials === credentialsKey(rotatedRefreshToken ?? config.spotify.refreshToken)) {
+      throw new SpotifyAuthError(rememberedFailure.reason, true);
+    }
+    rememberedFailure = null;
+  }
+  // Workers では、別のリクエストが作った Promise を待たない（src/runtime.ts）。値（tokenState）だけを共有する
+  if (!sharesInFlightWork()) {
+    tokenState = await fetchAccessToken();
     return tokenState.accessToken;
   }
   // 401 を受けた後の取り直し（forceRefresh）も、進行中の更新があればそれを待つだけでよい

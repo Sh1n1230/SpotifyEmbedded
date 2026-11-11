@@ -9,8 +9,9 @@
 import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
 import { fetchRecentlyPlayed } from '../spotify/recentlyPlayed.js';
-import { generateMood } from '../llm/moodGenerator.js';
-import { hasLlmConfigured } from '../llm/settings.js';
+import { generateMood, MOOD_PROMPT_VERSION } from '../llm/moodGenerator.js';
+import { hasLlmConfigured, resolveLlm } from '../llm/settings.js';
+import { sharesInFlightWork } from '../runtime.js';
 import {
   nowPlayingCache,
   moodCache,
@@ -33,6 +34,22 @@ export interface CollectOptions {
   bypassCache?: boolean;
   /** ムード生成を行わない。LLMキーが未設定の場合は指定しなくても自動で省く。 */
   skipMood?: boolean;
+  /**
+   * ムード文の生成を待つ上限（ミリ秒）。間に合わなければ mood: null で返し、生成は続けてキャッシュに入れる
+   * （次の取得で載る）。ムード文は任意の情報なので、遅い LLM のために曲情報まで遅らせない。
+   * 省略すると最後まで待つ（静的モードの CLI）。
+   */
+  moodDeadlineMs?: number;
+  /**
+   * 応答の後に終わればよい処理（締め切りに間に合わなかった生成・外部ストアへの書き込み）を預ける先。
+   * Workers では ctx.waitUntil。省略すると、書き込みは待ち、生成はそのまま走らせておく（Node）。
+   */
+  defer?: (work: Promise<unknown>) => void;
+  /**
+   * すでに分かっているムード文（静的モードの前回のスナップショット）。再生中の曲が同じなら LLM を呼ばずに使う。
+   * CLI は実行ごとに新しいプロセスでメモリのキャッシュが空なので、これが無いと同じ曲でも毎回作り直す。
+   */
+  knownMood?: { trackId: string; mood: MoodResult } | null;
 }
 
 export interface TopTracksOptions {
@@ -87,32 +104,55 @@ async function readThrough<T>(
   }
 }
 
+/**
+ * メモリに載せ、外部ストアにも書く。外部ストアへの書き込みは応答の中身に影響しないので、
+ * defer があれば預けて待たない（Workers の ctx.waitUntil）。失敗はどちらでもログに出すだけ。
+ */
 async function writeThrough<V>(
   cache: TtlCache<V>,
   key: string,
   durableKey: string,
   value: V,
-  ttlSeconds?: number
+  ttlSeconds: number | undefined,
+  defer: CollectOptions['defer']
 ): Promise<void> {
   cacheSet(cache, key, value);
   const store = getDurableStore();
   if (!store) return;
-  try {
-    await store.put(durableKey, value, ttlSeconds);
-  } catch (err) {
-    console.warn('[store] 書き込みに失敗しました:', err instanceof Error ? err.message : err);
-  }
+  const written = (async () => {
+    try {
+      await store.put(durableKey, value, ttlSeconds);
+    } catch (err) {
+      console.warn('[store] 書き込みに失敗しました:', err instanceof Error ? err.message : err);
+    }
+  })();
+  if (defer) defer(written);
+  else await written;
 }
 
-/** 曲ごとのムード文。キャッシュに無ければ生成する。失敗しても null を返すだけ。 */
-async function moodFor(
-  trackId: string,
-  track: TrackSummary,
-  genres: string[]
-): Promise<MoodResult | null> {
-  const cached = await readThrough(moodCache, trackId, `mood:${trackId}`, isMoodResult);
-  if (cached) return cached;
+/**
+ * ムード文のキャッシュのキー。曲 ID だけにすると、モデルやプロンプトを変えても保存済みの文が使われ続けるので、
+ * プロンプトの版とモデル名を含める。
+ */
+function moodKey(trackId: string): string {
+  const llm = resolveLlm();
+  const model = llm.kind === 'ready' ? llm.settings.model : '';
+  return `v${MOOD_PROMPT_VERSION}:${model}:${trackId}`;
+}
 
+/**
+ * 進行中のムード文の生成（キーごと）。同じ曲の生成を同時に2本走らせない。
+ * Workers では別のリクエストが作った Promise を待てないので使わない（src/runtime.ts）。
+ */
+const moodInFlight = new Map<string, Promise<MoodResult | null>>();
+
+/** 生成して保存する。失敗しても null を返すだけで、投げない。 */
+async function generateAndStoreMood(
+  key: string,
+  track: TrackSummary,
+  genres: string[],
+  defer: CollectOptions['defer']
+): Promise<MoodResult | null> {
   try {
     const text = await generateMood({
       trackName: track.name,
@@ -122,13 +162,52 @@ async function moodFor(
       popularity: track.popularity,
     });
     const mood = { text, generated_at: new Date().toISOString() };
-    await writeThrough(moodCache, trackId, `mood:${trackId}`, mood, MOOD_TTL_SECONDS);
+    await writeThrough(moodCache, key, `mood:${key}`, mood, MOOD_TTL_SECONDS, defer);
     return mood;
   } catch (err) {
     // ムードが出せなくても曲情報は返す（デグレード動作）。
     // 原因が伝わればよいので、スタックトレースは出さない。
     console.error('[mood] ムード文を省略しました:', err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/** 曲ごとのムード文。キャッシュに無ければ生成する。失敗・締め切り切れなら null。 */
+async function moodFor(
+  trackId: string,
+  track: TrackSummary,
+  genres: string[],
+  options: Pick<CollectOptions, 'moodDeadlineMs' | 'defer'> = {}
+): Promise<MoodResult | null> {
+  const key = moodKey(trackId);
+  const cached = await readThrough(moodCache, key, `mood:${key}`, isMoodResult);
+  if (cached) return cached;
+
+  let generation: Promise<MoodResult | null>;
+  if (sharesInFlightWork()) {
+    generation =
+      moodInFlight.get(key) ??
+      generateAndStoreMood(key, track, genres, options.defer).finally(() => {
+        moodInFlight.delete(key);
+      });
+    moodInFlight.set(key, generation);
+  } else {
+    generation = generateAndStoreMood(key, track, genres, options.defer);
+  }
+
+  if (options.moodDeadlineMs === undefined) return generation;
+
+  // 間に合わなくても生成は続ける（終われば moodCache に入り、次の取得で載る）。
+  // Workers は応答を返すと残りの処理を止めるので、続きを預ける
+  options.defer?.(generation);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), options.moodDeadlineMs);
+  });
+  try {
+    return await Promise.race([generation, deadline]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -148,6 +227,8 @@ export async function collectNowPlaying(
 
   // skipMood の有無で結果が変わるので、共有するのは既定の呼び出しだけ。
   if (options.skipMood) return fetchAndBuildNowPlaying(options);
+  // Workers では、別のリクエストが作った Promise を待たない（src/runtime.ts）。値のキャッシュだけを共有する
+  if (!sharesInFlightWork()) return fetchAndBuildNowPlaying(options);
   nowPlayingInFlight ??= fetchAndBuildNowPlaying(options).finally(() => {
     nowPlayingInFlight = null;
   });
@@ -160,10 +241,13 @@ async function fetchAndBuildNowPlaying(options: CollectOptions): Promise<NowPlay
   // LLMが未設定なら、呼びに行かず静かに省く（曲情報だけで成立する）
   const wantMood = !options.skipMood && hasLlmConfigured();
 
-  const mood =
-    wantMood && data.isPlaying && data.track && data.trackId
-      ? await moodFor(data.trackId, data.track, data.genres)
-      : null;
+  let mood: MoodResult | null = null;
+  if (wantMood && data.isPlaying && data.track && data.trackId) {
+    mood =
+      options.knownMood?.trackId === data.trackId
+        ? options.knownMood.mood
+        : await moodFor(data.trackId, data.track, data.genres, options);
+  }
 
   const response: NowPlayingResponse = {
     is_playing: data.isPlaying,

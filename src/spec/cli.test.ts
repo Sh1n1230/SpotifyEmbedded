@@ -1,5 +1,5 @@
 /** CLI（spotify-embedded）の起動と引数の検証。方針は ./support.ts の冒頭を参照。 */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { get } from 'node:http';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -20,6 +20,8 @@ import {
   setGitHubSecret,
   setupRedirectUriProblem,
   type GhRunner,
+  askSpotifyApp,
+  workersSecretsReminder,
 } from '../cli/setup.js';
 import { TSX_LOADER, callsTo, jsonOk, respondWith } from './support.js';
 
@@ -66,6 +68,9 @@ function runEntry(entry: string, args: string[], options: RunOptions, cwds: stri
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, cwd };
 }
 
+import { buildAuthorizeUrl } from '../spotify/oauth.js';
+import { loadStoredAuth } from '../authStore.js';
+import { createServer } from 'node:net';
 describe('CLI（spotify-embedded）', () => {
   const cwds: string[] = [];
   afterEach(() => {
@@ -157,7 +162,12 @@ describe('CLI（spotify-embedded）', () => {
       [['--count', '51'], '--count'],
       [['--theme', 'sepia'], '--theme'],
       [['--out'], '--out'],
+      [['--out='], '--out'],
+      [['--out', '--range', 'short_term'], '--out'],
+      [['--page-count', '0'], '--page-count'],
+      [['--no-mood=yes'], '--no-mood'],
       [['--verbose'], '--verbose'],
+      [['extra'], 'extra'],
     ])('%j', (args, mentioned) => {
       const run = runCli(['generate', ...args]);
 
@@ -167,6 +177,18 @@ describe('CLI（spotify-embedded）', () => {
       expect(readdirSync(run.cwd)).toEqual([]);
     }, 30_000);
   });
+
+  it('値は --name value と --name=value のどちらの形でも渡せる', () => {
+    // 設定が無いので取得の前に止まる。そこまで進めば、オプションはすべて読めている
+    const spaced = runCli(['generate', '--out', 'foo', '--limit', '30', '--count', '10', '--no-mood']);
+    const equals = runCli(['generate', '--out=foo', '--limit=30', '--count=10', '--page-count=20', '--refresh-ranking-mood', '--index']);
+
+    for (const run of [spaced, equals]) {
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('Spotify の設定が見つかりません');
+      expect(run.stderr).not.toContain('不明なオプション');
+    }
+  }, 30_000);
 
   it('--limit 30・--count 10 のような正しい整数は今までどおり受け付ける', () => {
     // 後ろの --theme で止めて、--limit と --count は通ったことを確かめる
@@ -240,6 +262,62 @@ describe('npm run auth（/auth/* を有効にした Node のサーバー）', ()
     expect(run.stderr).toContain(`PORT は 1〜65535 の整数で指定してください（今の値: ${port}）`);
     expect(run.stderr).not.toMatch(/\n\s+at /);
   }, 30_000);
+});
+
+describe('npm run setup の Spotify の Client ID / Secret', () => {
+  /** 決まった答えを順に返す。聞かれた質問も記録する。 */
+  function scripted(...replies: string[]) {
+    const asked: string[] = [];
+    const prompt = (query: string) => {
+      asked.push(query);
+      return Promise.resolve(replies.shift() ?? '');
+    };
+    return { prompt, asked };
+  }
+  const redirectUri = 'http://127.0.0.1:3000/auth/callback';
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubEnv('AUTH_STORE_PATH', join(tmpdir(), 'spotify-embedded-setup-nonexistent.json'));
+    loadStoredAuth(true);
+  });
+
+  it('設定済みなら入れ替えるかを聞き、既定（Enter）では今の値をそのまま使う', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_ID', 'old-id');
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', 'old-secret');
+    const { prompt, asked } = scripted('');
+
+    await expect(askSpotifyApp(prompt, redirectUri)).resolves.toEqual({ clientId: 'old-id', clientSecret: 'old-secret' });
+    expect(asked).toEqual(['  入れ替えますか？（Client Secret を再発行した場合） (y/N): ']);
+  });
+
+  it('y と答えたら、設定済みでも両方を入力し直す（Client Secret を再発行した後にここで直せる）', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_ID', 'old-id');
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', 'old-secret');
+    const { prompt } = scripted('y', 'new-id', 'new-secret');
+
+    await expect(askSpotifyApp(prompt, redirectUri)).resolves.toEqual({ clientId: 'new-id', clientSecret: 'new-secret' });
+  });
+
+  it('まだ設定が無ければ、入れ替えは聞かずに入力を求める', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_ID', '');
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', '');
+    const { prompt, asked } = scripted('first-id', 'first-secret');
+
+    await expect(askSpotifyApp(prompt, redirectUri)).resolves.toEqual({ clientId: 'first-id', clientSecret: 'first-secret' });
+    expect(asked.join('')).not.toContain('入れ替えますか');
+  });
+
+  it('やり直しでも Spotify の承認画面を出す（show_dialog=true。別のアカウントに切り替えられる）', () => {
+    const url = new URL(buildAuthorizeUrl({ clientId: 'id', clientSecret: 'secret', redirectUri }, 'state'));
+
+    expect(url.searchParams.get('show_dialog')).toBe('true');
+  });
+
+  it('wrangler.jsonc のある作業ディレクトリでは、完了時に Workers の Secrets の更新を案内する', () => {
+    expect(workersSecretsReminder(true).join('\n')).toContain('npx wrangler secret bulk');
+    expect(workersSecretsReminder(false)).toEqual([]);
+  });
 });
 
 describe('npm run setup の LLM エンドポイントの入力（API キーの送り先）', () => {
@@ -318,9 +396,22 @@ describe('setup の部品', () => {
     }
   );
 
+  /** いま空いているループバックのポート。 */
+  function freePort(): Promise<number> {
+    return new Promise((done, fail) => {
+      const probe = createServer();
+      probe.on('error', fail);
+      probe.listen(0, '127.0.0.1', () => {
+        const address = probe.address();
+        probe.close(() => done(typeof address === 'object' && address ? address.port : 0));
+      });
+    });
+  }
+
   /** 一時サーバーを立て、コールバックを1回送って、結果のページと Promise の結末を返す。 */
-  async function callbackOnce(offset: number, query: (state: string) => string) {
-    const port = 41_100 + offset + (process.pid % 20_000);
+  async function callbackOnce(_offset: number, query: (state: string) => string) {
+    // 空いているポートを OS に選ばせる。決め打ちの番号は、Windows の予約済みの範囲に当たると待ち受けられない
+    const port = await freePort();
     const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
     let authorizeUrl = '';
     const flow = runOAuthFlow({ clientId: 'id', clientSecret: 'secret', redirectUri }, (url) => {
@@ -329,7 +420,7 @@ describe('setup の部品', () => {
       () => 'resolved',
       (err: unknown) => (err instanceof Error ? err.message : String(err))
     );
-    await vi.waitFor(() => expect(authorizeUrl).not.toBe(''));
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(''), { timeout: 5_000 });
     const state = new URL(authorizeUrl).searchParams.get('state') ?? '';
     const page = await new Promise<{ status: number; body: string }>((done, fail) => {
       get(`${redirectUri}?${query(state)}`, (res) => {

@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write # GitHub Release の作成
+      id-token: write # artifact attestation の署名（Sigstore）
+      attestations: write # artifact attestation の登録
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,6 +36,14 @@ jobs:
           cache: npm
 
       - run: npm ci --ignore-scripts
+
+      # 受け付けるのは v1.2.3 と、プレリリースの v1.2.3-rc.1 の形だけ（on.push.tags は glob なので、ここで確かめる）
+      - name: タグの形を確かめる
+        run: |
+          if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::タグ $GITHUB_REF_NAME は v1.2.3 か v1.2.3-rc.1 の形ではありません"
+            exit 1
+          fi
 
       - name: タグと package.json の版が一致しているか確かめる
         run: |
@@ -61,6 +71,19 @@ jobs:
       - name: Pack npm artifact
         run: mkdir -p release && npm pack --pack-destination release
 
+      # このリポジトリのこのワークフローが、このコミットから作ったアーカイブであることに署名する。
+      # 利用者は gh attestation verify <file> --repo <owner>/<repo> で確かめられる（Release の添付は後から差し替えられるため）
+      - name: アーカイブのビルドの来歴（artifact attestation）を作る
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*.tgz
+
+      # 依存の一覧（SPDX 形式の SBOM）。GitHub の依存グラフから、タグの時点のものを書き出す
+      - name: SBOM を書き出す
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" --jq '.sbom' > release/sbom.spdx.json
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,5 +94,8 @@ jobs:
             # CHANGELOG のその版の内容（アップグレード時の注意）を先頭に載せ、PR の一覧を続ける
             version="${GITHUB_REF_NAME#v}"
             awk -v heading="## [$version]" 'index($0, "## [") == 1 { if (found) exit; if (index($0, heading) == 1) { found = 1; next } } found' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
-            gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
+            # 版に - を含むもの（v1.8.0-rc.1 など）はプレリリースとして作る（Latest にしない）
+            flags=()
+            case "$version" in *-*) flags+=(--prerelease) ;; esac
+            gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${flags[@]}"
           fi

@@ -7,7 +7,13 @@ import { collectNowPlaying } from '../core/collect.js';
 import { Hono, type Context } from 'hono';
 import { createApp } from '../app.js';
 import { clientKey, memoryRateLimiter, rateLimitKey, RATE_LIMIT } from '../http/rateLimit.js';
-import { DEMO_PAGE_CSP, HSTS, PERMISSIONS_POLICY } from '../http/securityHeaders.js';
+import {
+  CROSS_ORIGIN_RESOURCE_POLICY,
+  DEMO_PAGE_CSP,
+  EMBED_SCRIPT_CACHE_CONTROL,
+  HSTS,
+  PERMISSIONS_POLICY,
+} from '../http/securityHeaders.js';
 import { analyzeCorsOrigins, openCorsWarning, parseCorsOrigins } from '../http/cors.js';
 import { escapeXml } from '../render/text.js';
 import {
@@ -35,6 +41,44 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     expect(callsTo('/me/player/currently-playing')).toHaveLength(1);
     expect(b).toBe(a);
     expect(c).toBe(a);
+  });
+
+  it('/api/now-playing の成功応答は、使う前に必ず問い合わせさせる（Cache-Control: public, max-age=0, must-revalidate）', async () => {
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+  });
+
+  it('エラー応答は保存させず（Cache-Control: no-store）、機械で分岐できる code を持つ', async () => {
+    respondWith((url) => (url.includes('/me/player/currently-playing') ? new Response('boom', { status: 500 }) : null));
+    vi.stubEnv('SPOTIFY_REFRESH_TOKEN', '');
+    const app = createApp();
+
+    const responses = await Promise.all([app.request('/api/now-playing'), app.request('/no-such-path')]);
+
+    for (const res of responses) expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(await Promise.all(responses.map(async (res) => ((await res.json()) as { code: string }).code))).toEqual([
+      'not_configured',
+      'not_found',
+    ]);
+  });
+
+  it('必須の設定が無いときは 500 ではなく 503 を返し、環境変数名は本文に出さずログにだけ出す', async () => {
+    vi.stubEnv('SPOTIFY_REFRESH_TOKEN', '');
+
+    const res = await createApp().request('/api/now-playing');
+    const text = await res.text();
+
+    expect(res.status).toBe(503);
+    expect(JSON.parse(text)).toEqual({ error: 'Server is not configured. See server logs.', code: 'not_configured' });
+    expect(text).not.toContain('SPOTIFY_');
+    const logged = vi.mocked(console.error).mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(logged).toContain('SPOTIFY_REFRESH_TOKEN');
+    expect(logged).toContain('npm run setup');
+    expect(logged).toContain('wrangler secret put');
   });
 
   it('/api/now-playing は Accept で形式が変わるので Vary: Accept を返す', async () => {
@@ -148,7 +192,7 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
       const res = await createApp().request('/api/now-playing');
 
       expect(res.status).toBe(502);
-      expect(await res.json()).toEqual({ error: 'Spotify API request failed', spotify_status: 503 });
+      expect(await res.json()).toEqual({ error: 'Spotify API request failed', code: 'spotify_error', spotify_status: 503 });
     });
   });
 
@@ -378,6 +422,14 @@ describe('/health', () => {
 
     expect(res.status).toBe(200);
   });
+
+  it('動いている版（package.json の version）を返す', async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+
+    const res = await createApp().request('/health');
+
+    expect(await res.json()).toEqual({ status: 'ok', version: pkg.version });
+  });
 });
 
 describe('/embed の ?transparent=', () => {
@@ -502,7 +554,83 @@ describe('ライブAPIの境界: 他サイトの iframe に入れてよいのは
   });
 });
 
+describe('ライブAPIの境界: 埋め込まれるパスは COEP を有効にしたサイトからも読める', () => {
+  it.each(['/badge.svg', '/embed', '/api/now-playing'])(
+    '%s は Cross-Origin-Resource-Policy: cross-origin を返す',
+    async (path) => {
+      givenNowPlaying(aSpotifyTrack());
+
+      const res = await createApp().request(path);
+
+      expect(res.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
+    }
+  );
+
+  it('埋め込まれないパス（/health）には付けない', async () => {
+    const res = await createApp().request('/health');
+
+    expect(res.headers.get('cross-origin-resource-policy')).toBeNull();
+  });
+
+  it('embed.js は2つの実行環境で同じヘッダーになる（Workers は public/_headers、Node は静的ファイルの経路）', async () => {
+    const source = readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8');
+    const section = source.slice(source.indexOf('\n/embed.js\n'));
+    const { serveStatic } = await import('@hono/node-server/serve-static');
+    const { fileURLToPath } = await import('node:url');
+    // src/index.ts と同じ組み立て（エントリは import すると待ち受けを始めるので、ここでは同じ部品を使う）
+    const app = createApp({
+      staticFiles: serveStatic({
+        root: fileURLToPath(new URL('../../public', import.meta.url)),
+        onFound: (_path, c) => {
+          if (c.req.path === '/embed.js') c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);
+        },
+      }),
+    });
+
+    const res = await app.request('/embed.js');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe(EMBED_SCRIPT_CACHE_CONTROL);
+    expect(res.headers.get('cross-origin-resource-policy')).toBe(CROSS_ORIGIN_RESOURCE_POLICY);
+    expect(section).toContain(`  Cache-Control: ${EMBED_SCRIPT_CACHE_CONTROL}\n`);
+    expect(section).toContain(`  Cross-Origin-Resource-Policy: ${CROSS_ORIGIN_RESOURCE_POLICY}\n`);
+    expect(readFileSync(new URL('../index.ts', import.meta.url), 'utf8')).toContain(
+      // ファイルシステムのパス（Windows では区切りが \\）ではなく、リクエストのパスで判定する
+      "if (c.req.path === '/embed.js') c.header('Cache-Control', EMBED_SCRIPT_CACHE_CONTROL);"
+    );
+  });
+});
+
 describe('ライブAPIの境界: CORS は CORS_ORIGIN に書いたオリジンにだけ許す', () => {
+  it('プリフライトで許可するメソッドは、実装している GET・HEAD（と OPTIONS）だけ', async () => {
+    vi.stubEnv('CORS_ORIGIN', 'https://a.example');
+
+    const res = await createApp().request('/api/now-playing', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://a.example', 'Access-Control-Request-Method': 'GET' },
+    });
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-methods')).toBe('GET,HEAD,OPTIONS');
+  });
+
+  it('待ち時間と失敗の理由のヘッダーを、他オリジンの JavaScript から読めるようにする', async () => {
+    vi.stubEnv('CORS_ORIGIN', 'https://a.example');
+    givenNowPlaying(aSpotifyTrack());
+
+    const res = await createApp().request('/api/now-playing', { headers: { Origin: 'https://a.example' } });
+
+    expect(res.headers.get('access-control-expose-headers')?.split(',')).toEqual([
+      'Retry-After',
+      'RateLimit-Policy',
+      'RateLimit',
+      'RateLimit-Limit',
+      'RateLimit-Remaining',
+      'RateLimit-Reset',
+      'X-Spotify-Embedded-Error',
+    ]);
+  });
+
   async function allowOriginFor(origin: string): Promise<string | null> {
     givenNowPlaying(aSpotifyTrack());
     const res = await createApp().request('/api/now-playing', { headers: { Origin: origin } });
@@ -583,7 +711,7 @@ describe('未定義のパスやリクエストの誤りも JSON で返す', () =
     const res = await createApp().request('/no-such-path');
 
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(await res.json()).toEqual({ error: 'Not found', code: 'not_found' });
   });
 
   it('/api/top-tracks の 404 は、ランキングが静的モードにあることを案内する', async () => {
@@ -604,7 +732,7 @@ describe('未定義のパスやリクエストの誤りも JSON で返す', () =
     const res = await app.request('/bad');
 
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'Malformed JSON' });
+    expect(await res.json()).toEqual({ error: 'Malformed JSON', code: 'bad_request' });
   });
 });
 
@@ -636,7 +764,7 @@ describe('ライブAPIの境界: レート制限を超えたリクエストは�
     expect(res.status).toBe(429);
     expect(res.headers.get('retry-after')).toBe('42');
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(await res.json()).toEqual({ error: 'Too many requests, please try again later.' });
+    expect(await res.json()).toEqual({ error: 'Too many requests, please try again later.', code: 'rate_limited' });
     expect(callsTo('api.spotify.com')).toHaveLength(0);
   });
 
@@ -703,6 +831,10 @@ describe('ライブAPIの境界: レート制限を超えたリクエストは�
 
     const res = await app.request('/api/now-playing');
 
+    // 現行の草案（draft-ietf-httpapi-ratelimit-headers-11）の形
+    expect(res.headers.get('ratelimit-policy')).toBe('"default";q=100;w=60');
+    expect(res.headers.get('ratelimit')).toBe('"default";r=7;t=30');
+    // draft-03 以前の3分割の形（移行のために併記）
     expect(res.headers.get('ratelimit-limit')).toBe('100');
     expect(res.headers.get('ratelimit-remaining')).toBe('7');
     expect(res.headers.get('ratelimit-reset')).toBe('30');

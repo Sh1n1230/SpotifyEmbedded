@@ -35,6 +35,28 @@ export function parsePort(value: string | undefined): number {
   return port;
 }
 
+/** now-playing のキャッシュの秒数の既定値と、受け付ける範囲 */
+export const NOW_PLAYING_CACHE = { defaultSeconds: 30, minSeconds: 5, maxSeconds: 300 } as const;
+const warnedCacheSeconds = new Set<string>();
+
+/**
+ * NOW_PLAYING_CACHE_SECONDS を読む。5〜300 の整数。範囲の外は近い端に丸め、読めない値は既定の 30 にして、
+ * どちらも一度だけ警告する。下限は Spotify を叩きすぎないため、上限は「再生中」の表示が古くなりすぎないため。
+ */
+export function parseNowPlayingCacheSeconds(value: string | undefined): number {
+  const raw = value?.trim() ?? '';
+  if (raw === '') return NOW_PLAYING_CACHE.defaultSeconds;
+  const { defaultSeconds, minSeconds, maxSeconds } = NOW_PLAYING_CACHE;
+  const seconds = /^\d+$/.test(raw) ? Math.min(Math.max(Number(raw), minSeconds), maxSeconds) : defaultSeconds;
+  if (String(seconds) !== raw && !warnedCacheSeconds.has(raw)) {
+    warnedCacheSeconds.add(raw);
+    console.warn(
+      `NOW_PLAYING_CACHE_SECONDS は ${minSeconds}〜${maxSeconds} の整数で指定してください（今の値: ${raw}。${seconds} 秒として扱います）`
+    );
+  }
+  return seconds;
+}
+
 /**
  * 秘匿値は getter による遅延評価にしている。
  *
@@ -90,6 +112,10 @@ export const config = {
      */
     get trustedProxyHeader(): string | null {
       return process.env['TRUSTED_PROXY_HEADER']?.trim().toLowerCase() || null;
+    },
+    /** now-playing をメモリに保持する秒数（ライブAPI）。この間は Spotify を呼ばない */
+    get nowPlayingCacheSeconds(): number {
+      return parseNowPlayingCacheSeconds(process.env['NOW_PLAYING_CACHE_SECONDS']);
     },
     get enableAuthRoutes(): boolean {
       return parseBooleanEnv('ENABLE_AUTH_ROUTES');

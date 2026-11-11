@@ -4,10 +4,11 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 
 import { moodCache } from '../cache/index.js';
 import { collectNowPlaying, collectTopTracks } from '../core/collect.js';
-import { generate, forLog } from '../cli/generate.js';
+import { generate, forLog, SNAPSHOT_SCHEMA_VERSION } from '../cli/generate.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
 import type { TopTrackEntry } from '../types/index.js';
@@ -326,14 +327,256 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(svg).not.toContain('3位');
     });
 
-    it('--count が --limit を超えても失敗せず、最大 limit 件になることを警告する', async () => {
+    it.each([
+      ['--count', { count: 30 }],
+      ['--page-count', { count: 5, pageCount: 30 }],
+    ])('%s が --limit を超える指定は、取得を始める前にエラーにする（出力先も作らない）', async (flag, counts) => {
       givenNowPlaying(null);
       givenTopTracks([aSpotifyTrack()]);
+      const target = join(outDir, 'not-created');
 
-      await generate({ outDir, count: 30, range: 'short_term', limit: 10, theme: 'dark', skipMood: true });
+      await expect(
+        generate({ outDir: target, range: 'short_term', limit: 10, theme: 'dark', skipMood: true, ...counts })
+      ).rejects.toThrow(`${flag} 30 は --limit 10 を超えています`);
 
-      expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain('--count 30 は --limit 10 を超えています');
-      expect(read('ranking.svg').length).toBeGreaterThan(0);
+      expect(callsTo('api.spotify.com')).toHaveLength(0);
+      expect(readdirSync(outDir)).toEqual([]);
+    });
+
+    it('--page-count で、iframe 用ページのランキングだけ別の件数にできる（既定は --count と同じ）', async () => {
+      givenNowPlaying(null);
+      givenTopTracks(Array.from({ length: 4 }, (_, i) => aSpotifyTrack({ id: `t${i}`, name: `曲${i + 1}` })));
+
+      await generate({ outDir, count: 2, pageCount: 4, range: 'short_term', limit: 10, theme: 'dark', skipMood: true });
+
+      expect(read('ranking.svg')).not.toContain('曲3');
+      expect(read('index.html')).toContain('曲4');
+
+      await generate({ outDir, count: 2, range: 'short_term', limit: 10, theme: 'dark', skipMood: true });
+      expect(read('index.html')).not.toContain('曲3');
+    });
+
+    describe('ランキングの取得が失敗した回', () => {
+      function givenTopTracksFail(): void {
+        respondWith((url) => (url.includes('/me/top/tracks') ? new Response('boom', { status: 500 }) : null));
+      }
+
+      it('再生状況のファイルは更新し、ランキングのファイルは前回のまま残す（失敗にしない）', async () => {
+        givenNowPlaying(aSpotifyTrack());
+        givenTopTracks([aSpotifyTrack({ name: '前回の1位' })]);
+        await runGenerate();
+        const before = { svg: read('ranking.svg'), json: read('top-tracks.json'), yaml: read('top-tracks.yaml') };
+
+        vi.setSystemTime(new Date(NOW.getTime() + 60 * 60 * 1000));
+        givenNowPlaying(aSpotifyTrack({ id: 'track-2', name: '新しい曲' }));
+        givenTopTracksFail();
+        await runGenerate();
+
+        expect(read('ranking.svg')).toBe(before.svg);
+        expect(read('top-tracks.json')).toBe(before.json);
+        expect(read('top-tracks.yaml')).toBe(before.yaml);
+        for (const name of ['now-playing.svg', 'now-playing.json', 'last-played.json', 'snapshot.json']) {
+          expect(read(name), name).toContain('新しい曲');
+        }
+        // iframe 用ページには前回のランキングを出す
+        expect(read('index.html')).toContain('新しい曲');
+        expect(read('index.html')).toContain('前回の1位');
+        expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain('ランキングを取得できませんでした');
+      });
+
+      it('前回のランキングが無ければ、ランキングのファイルを作らず、ページはランキングなしになる', async () => {
+        givenNowPlaying(aSpotifyTrack());
+        givenTopTracksFail();
+
+        await runGenerate();
+
+        expect(readdirSync(outDir).filter((name) => /ranking|top-tracks/.test(name))).toEqual([]);
+        expect(read('index.html')).not.toContain('TOP TRACKS');
+        expect(read('now-playing.json')).toContain('Midnight Drive');
+      });
+
+      it('ランキングのムード文の記録は消さない（次に取れた回で使い回す）', async () => {
+        givenLlmConfigured();
+        givenLlmReplies('一回目の文');
+        givenNowPlaying(null);
+        givenTopTracks([aSpotifyTrack()]);
+        await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+        givenTopTracksFail();
+        await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+        const snapshot = JSON.parse(read('snapshot.json')) as { ranking_mood: { mood: { text: string } } };
+        expect(snapshot.ranking_mood.mood.text).toBe('一回目の文');
+      });
+    });
+
+    describe('ランキングのムード文の記録（snapshot.json の ranking_mood）は、作らない回でも残す', () => {
+      const withMood = { count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false } as const;
+
+      async function firstRun(): Promise<void> {
+        givenLlmConfigured();
+        givenLlmReplies('一回目の文');
+        givenNowPlaying(null);
+        givenTopTracks([aSpotifyTrack()]);
+        await generate({ outDir, ...withMood });
+        clearCalls();
+        givenLlmReplies('作り直された文');
+      }
+      const rankingMoodText = () =>
+        (JSON.parse(read('snapshot.json')) as { ranking_mood: { mood: { text: string } } | null }).ranking_mood?.mood.text;
+      const shownMood = () => (JSON.parse(read('top-tracks.json')) as { mood: { text: string } | null }).mood;
+
+      it('--no-mood の回は表示しないが記録は残し、次の通常の回は LLM を呼ばずに使い回す', async () => {
+        await firstRun();
+
+        await generate({ outDir, ...withMood, skipMood: true });
+        expect(shownMood()).toBeNull();
+        expect(rankingMoodText()).toBe('一回目の文');
+
+        await generate({ outDir, ...withMood });
+        expect(shownMood()?.text).toBe('一回目の文');
+        expect(callsTo('/chat/completions')).toHaveLength(0);
+      });
+
+      it('上位曲が0件だった回も同じ', async () => {
+        await firstRun();
+
+        givenTopTracks([]);
+        await generate({ outDir, ...withMood });
+        expect(shownMood()).toBeNull();
+        expect(rankingMoodText()).toBe('一回目の文');
+
+        givenTopTracks([aSpotifyTrack()]);
+        await generate({ outDir, ...withMood });
+        expect(shownMood()?.text).toBe('一回目の文');
+        expect(callsTo('/chat/completions')).toHaveLength(0);
+      });
+
+      it('--refresh-ranking-mood は、顔ぶれが同じでも作り直す', async () => {
+        await firstRun();
+
+        await generate({ outDir, ...withMood, refreshRankingMood: true });
+
+        expect(shownMood()?.text).toBe('作り直された文');
+        expect(rankingMoodText()).toBe('作り直された文');
+      });
+
+      it('--refresh-ranking-mood で LLM が失敗したら、前回の文を残す', async () => {
+        await firstRun();
+        respondWith((url) => (url.includes('/chat/completions') ? new Response('busy', { status: 503 }) : null));
+
+        await generate({ outDir, ...withMood, refreshRankingMood: true });
+
+        expect(rankingMoodText()).toBe('一回目の文');
+      });
+    });
+
+    describe('snapshot.json は内部の状態ファイル', () => {
+      it('形の版と、書いた generate の版を持ち、ログ用の source は持たない', async () => {
+        const { VERSION } = await import('../version.js');
+        givenNowPlaying(null);
+        givenTopTracks([aSpotifyTrack()]);
+        givenRecentlyPlayed(aSpotifyTrack(), new Date(NOW.getTime() - 60_000).toISOString());
+
+        await runGenerate();
+
+        const snapshot = JSON.parse(read('snapshot.json')) as Record<string, unknown>;
+        expect(snapshot['schema_version']).toBe(SNAPSHOT_SCHEMA_VERSION);
+        expect(snapshot['generator_version']).toBe(VERSION);
+        expect(snapshot['state']).toBe('recent');
+        expect(snapshot).not.toHaveProperty('source');
+      });
+
+      it('自分より新しい版が書いた snapshot.json は読まずに作り直す', async () => {
+        writeFileSync(
+          join(outDir, 'snapshot.json'),
+          JSON.stringify({
+            schema_version: SNAPSHOT_SCHEMA_VERSION + 1,
+            state: 'playing',
+            track: aTopTrackEntry({ name: '未来の形の曲' }),
+            mood: null,
+            observed_at: NOW_ISO,
+          })
+        );
+        givenNowPlaying(null);
+        givenTopTracks([aSpotifyTrack()]);
+
+        await runGenerate();
+
+        expect((JSON.parse(read('snapshot.json')) as { state: string }).state).toBe('idle');
+        expect(vi.mocked(console.warn).mock.calls.flat().join(' ')).toContain('新しい版');
+      });
+
+      it('版の無い（これまでの）snapshot.json は今までどおり読める', async () => {
+        writeFileSync(
+          join(outDir, 'snapshot.json'),
+          JSON.stringify({ state: 'playing', source: 'carried', track: aTopTrackEntry({ name: '前の版の曲' }), mood: null, observed_at: NOW_ISO })
+        );
+        givenNowPlaying(null);
+        givenTopTracks([aSpotifyTrack()]);
+
+        await runGenerate();
+
+        expect(read('snapshot.json')).toContain('前の版の曲');
+      });
+    });
+
+    it('中身が前回と同じファイルは書き直さない', async () => {
+      const { statSync, utimesSync } = await import('node:fs');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await runGenerate();
+      const old = new Date(NOW.getTime() - 86_400_000);
+      for (const name of ['ranking.svg', 'now-playing.json']) utimesSync(join(outDir, name), old, old);
+      vi.mocked(console.log).mockClear();
+
+      // 時刻が進むと fetched_at を含む JSON は変わるが、同じ日のランキング SVG は変わらない
+      vi.setSystemTime(new Date(NOW.getTime() + 60_000));
+      await runGenerate();
+
+      expect(statSync(join(outDir, 'ranking.svg')).mtimeMs).toBe(old.getTime());
+      expect(statSync(join(outDir, 'now-playing.json')).mtimeMs).not.toBe(old.getTime());
+      const logged = vi.mocked(console.log).mock.calls.flat().join('\n');
+      expect(logged).toContain('= ranking.svg（変更なし）');
+      expect(logged).toContain('✓ now-playing.json');
+    });
+
+    describe('検索エンジンへの掲載', () => {
+      it('既定では index.html に noindex を入れ、robots.txt（Disallow: /）を書く', async () => {
+        givenNowPlaying(aSpotifyTrack());
+        givenTopTracks([aSpotifyTrack()]);
+
+        await runGenerate();
+
+        expect(read('index.html')).toContain('<meta name="robots" content="noindex">');
+        expect(read('index-light.html')).toContain('<meta name="robots" content="noindex">');
+        expect(read('robots.txt')).toBe('User-agent: *\nDisallow: /\n');
+      });
+
+      it('--index なら noindex を入れず、以前の実行が書いた robots.txt を消す（利用者が置いたものは触らない）', async () => {
+        givenNowPlaying(aSpotifyTrack());
+        givenTopTracks([aSpotifyTrack()]);
+        await runGenerate();
+
+        await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'both', skipMood: true, allowIndexing: true });
+        expect(read('index.html')).not.toContain('name="robots"');
+        expect(readdirSync(outDir)).not.toContain('robots.txt');
+
+        writeFileSync(join(outDir, 'robots.txt'), 'User-agent: *\nAllow: /\n');
+        await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'both', skipMood: true, allowIndexing: true });
+        expect(read('robots.txt')).toBe('User-agent: *\nAllow: /\n');
+      });
+    });
+
+    it('再生中のカードとページには、観測した時刻を出す（数時間おきの生成なので「今」ではない）', async () => {
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+
+      await runGenerate();
+
+      // NOW は日本時間の 9/21 21:00
+      expect(read('now-playing.svg')).toContain('NOW PLAYING · 9/21 21:00');
+      expect(read('index.html')).toContain('NOW PLAYING · 9/21 21:00');
     });
 
     it.each(['yes', 'null', '123', '- dash', 'a: b'])('曲名が %j でも、YAML を読み戻した値は JSON と一致する', async (name) => {
@@ -664,6 +907,51 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       expect(snapshot.mood.text).toBe('前回の文');
     });
 
+    it('前回と同じ曲を再生中なら、LLM を呼ばずに前回のムード文を使う', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('前回の文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      // 次の実行（新しいプロセスなのでメモリのキャッシュは空）
+      vi.setSystemTime(new Date(NOW.getTime() + 30 * 60 * 1000));
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      moodCache.flushAll();
+      givenLlmReplies('作り直された文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      const snapshot = JSON.parse(read('snapshot.json')) as { state: string; mood: { text: string } };
+      expect(snapshot.state).toBe('playing');
+      expect(snapshot.mood.text).toBe('前回の文');
+      expect((JSON.parse(read('now-playing.json')) as { mood: { text: string } }).mood.text).toBe('前回の文');
+      // ランキングのムード文も顔ぶれが同じなので呼ばない
+      expect(callsTo('/chat/completions')).toHaveLength(0);
+    });
+
+    it('再生中の曲が前回と違えば、今までどおり生成する', async () => {
+      givenLlmConfigured();
+      givenLlmReplies('前回の文');
+      givenNowPlaying(aSpotifyTrack());
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      clearHandlers();
+      clearCalls();
+      installDefaultHandlers();
+      moodCache.flushAll();
+      givenLlmReplies('別の曲の文');
+      givenNowPlaying(aSpotifyTrack({ id: 'track-2', name: 'Another Song' }));
+      givenTopTracks([aSpotifyTrack()]);
+      await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+
+      expect((JSON.parse(read('snapshot.json')) as { mood: { text: string } }).mood.text).toBe('別の曲の文');
+    });
+
     it('前回 LLM が失敗してムード文が無ければ、同じ曲でも作り直す', async () => {
       // 使い回すと、別の曲を聴くまでムード文が空のまま固まる
       givenLlmConfigured();
@@ -773,6 +1061,19 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
     ) as Workflow;
     const steps = must(workflow.jobs['update'], 'ジョブ update').steps;
     const allRunScripts = steps.map((step) => step.run ?? '').join('\n');
+
+    it('snapshot.json の形をワークフローに持ち込まない（作り直しは generate のオプションで頼む）', () => {
+      expect(allRunScripts).not.toContain('node -e');
+      expect(allRunScripts).not.toContain('ranking_mood');
+      expect(allRunScripts).toContain('--refresh-ranking-mood');
+    });
+
+    it('定期実行の期間と件数は、リポジトリの Variables で変えられる（手動実行の入力 > Variables > 既定値）', () => {
+      const env = must(steps.find((step) => step.name === 'Generate'), 'Generate ステップ').env ?? {};
+
+      expect(env['RANGE']).toBe("${{ inputs.range || vars.RANKING_RANGE || 'short_term' }}");
+      expect(env['COUNT']).toBe("${{ inputs.count || vars.RANKING_COUNT || '5' }}");
+    });
 
     it('定期実行のスケジュールが設定されている', () => {
       // 間隔そのものは仕様ではない（GitHub 側で遅延・間引きされるため、
@@ -888,5 +1189,65 @@ describe('静的モードとライブAPIは同一のJSONスキーマを出す', 
     const asYaml = yaml.load(readFileSync(join(outDir, 'top-tracks.yaml'), 'utf8'));
 
     expect(asYaml).toEqual(asJson);
+  });
+});
+
+describe('公開スキーマの JSON Schema（schema/*.schema.json）', () => {
+  let outDir: string;
+  const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
+  const validatorOf = (name: string) =>
+    ajv.compile(JSON.parse(readFileSync(new URL(`../../schema/${name}.schema.json`, import.meta.url), 'utf8')) as object);
+  const validators = {
+    'now-playing': validatorOf('now-playing'),
+    'top-tracks': validatorOf('top-tracks'),
+    'last-played': validatorOf('last-played'),
+  };
+
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), 'spotify-embedded-schema-'));
+  });
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  function expectValid(name: keyof typeof validators, data: unknown): void {
+    const validate = validators[name];
+    expect(validate(data), JSON.stringify(validate.errors)).toBe(true);
+  }
+
+  it.each([
+    ['再生中・ムード文あり', true, true],
+    ['再生中・ムード文なし', true, false],
+    ['停止中（曲なし）', false, false],
+  ])('静的モードの出力（%s）は、JSON も YAML もスキーマに合う', async (_label, playing, withMood) => {
+    if (withMood) {
+      givenLlmConfigured();
+      givenLlmReplies('今チルな気分になっています');
+    }
+    givenNowPlaying(playing ? aSpotifyTrack() : null);
+    givenTopTracks([aSpotifyTrack(), aSpotifyTrack({ id: 'track-2', popularity: 55, preview_url: 'https://p.scdn.co/x' })]);
+
+    await generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: !withMood });
+
+    for (const name of ['now-playing', 'top-tracks', 'last-played'] as const) {
+      expectValid(name, JSON.parse(readFileSync(join(outDir, `${name}.json`), 'utf8')));
+      expectValid(name, yaml.load(readFileSync(join(outDir, `${name}.yaml`), 'utf8')));
+    }
+  });
+
+  it('ライブAPIの /api/now-playing の応答も同じスキーマに合う', async () => {
+    const { createApp } = await import('../app.js');
+    givenNowPlaying(aSpotifyTrack());
+
+    expectValid('now-playing', await (await createApp().request('/api/now-playing')).json());
+  });
+
+  it('スキーマに無いキーや、型の違う値は弾く（スキーマが何でも通すものになっていない）', () => {
+    const valid = { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO };
+
+    expect(validators['now-playing'](valid)).toBe(true);
+    expect(validators['now-playing']({ ...valid, extra: 1 })).toBe(false);
+    expect(validators['now-playing']({ ...valid, is_playing: 'yes' })).toBe(false);
+    expect(validators['now-playing']({ ...valid, track: { id: 't' } })).toBe(false);
   });
 });

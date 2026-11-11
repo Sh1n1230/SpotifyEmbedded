@@ -3,7 +3,6 @@
  * ライブAPIの /auth ルートと CLI の setup の両方から使う。
  */
 import { fetchWithTimeout, SPOTIFY_TIMEOUT_MS } from './timeout.js';
-import { discardBody } from '../http/body.js';
 
 // user-read-recently-played は v1.3.0 で追加。それ以前に発行した refresh_token には
 // 含まれないが、静的モードは「取れなければ従来どおり」で動くので再認証は任意。
@@ -19,6 +18,13 @@ export interface OAuthApp {
   redirectUri: string;
 }
 
+/**
+ * 認可の URL。show_dialog=true を付け、承認済みのアプリでも毎回 Spotify の承認画面を出す。
+ * 付けないと、やり直してもブラウザでログイン中のアカウントのまま即座に戻り、別のアカウントに切り替えられない
+ * （承認画面には、今のアカウントの表示と切り替えのリンクがある）。この URL を使うのは setup と /auth/login の
+ * 「取り直す」操作だけなので、常に付ける。
+ * https://developer.spotify.com/documentation/web-api/tutorials/code-flow
+ */
 export function buildAuthorizeUrl(app: OAuthApp, state: string): string {
   const params = new URLSearchParams({
     response_type: 'code',
@@ -26,6 +32,7 @@ export function buildAuthorizeUrl(app: OAuthApp, state: string): string {
     scope: SCOPES.join(' '),
     redirect_uri: app.redirectUri,
     state,
+    show_dialog: 'true',
   });
   return `https://accounts.spotify.com/authorize?${params}`;
 }
@@ -36,6 +43,32 @@ export interface TokenResponse {
   access_token: string;
   refresh_token: string;
   expires_in: number;
+}
+
+/**
+ * トークンエンドポイントの失敗の `error`（RFC 6749 §5.2 の決まった語彙）ごとの、直す場所の案内。
+ * 応答の本文は任意の文字列なので案内にもログにも使わないが、`error` はこの一覧と照合したものだけを使う
+ * （`error_description` や一覧に無い値は使わない）。
+ */
+const TOKEN_ERROR_HELP: Record<string, string> = {
+  invalid_client:
+    'Client ID / Client Secret が正しくありません。設定値を確認してください（`npm run setup` をやり直すと入れ替えられます）。',
+  invalid_grant:
+    '認可コードが期限切れ・使用済みか、Redirect URI が Spotify の Dashboard の登録値と一致していません。' +
+    'Redirect URI を確かめて、認可からやり直してください。',
+  invalid_request: 'リクエストのパラメータが受け付けられませんでした（このアプリの不具合の可能性があります）。',
+  unauthorized_client: 'この Spotify アプリには Authorization Code フローが許可されていません。Dashboard のアプリの設定を確認してください。',
+  unsupported_grant_type: 'grant_type が受け付けられませんでした（このアプリの不具合の可能性があります）。',
+};
+
+/** 失敗の応答から `error` を読む。一覧に無い値・JSON でない本文は null。 */
+async function tokenErrorCode(res: Response): Promise<string | null> {
+  try {
+    const error = ((await res.json()) as { error?: unknown }).error;
+    return typeof error === 'string' && Object.hasOwn(TOKEN_ERROR_HELP, error) ? error : null;
+  } catch {
+    return null;
+  }
 }
 
 /** 認可コードを refresh_token に交換する。失敗時は理由を添えて throw。 */
@@ -65,11 +98,11 @@ export async function exchangeCodeForTokens(
   );
 
   if (!res.ok) {
-    await discardBody(res);
-    const detail = res.status === 400
-      ? 'Client ID / Client Secret、または Redirect URI の登録内容を確認してください。'
-      : '';
-    throw new Error(`トークンの交換に失敗しました (${res.status})。${detail}`);
+    const error = await tokenErrorCode(res);
+    const detail =
+      (error && TOKEN_ERROR_HELP[error]) ??
+      (res.status === 400 ? 'Client ID / Client Secret、または Redirect URI の登録内容を確認してください。' : '');
+    throw new Error(`トークンの交換に失敗しました (${res.status}${error ? ` ${error}` : ''})。${detail}`);
   }
 
   let data: Partial<TokenResponse>;

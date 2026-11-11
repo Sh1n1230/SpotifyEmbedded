@@ -52,7 +52,8 @@ describe('Workers のエントリ（src/worker.ts）は、バインディング�
     expect(ok.status).toBe(200);
     expect(puts).toEqual([
       {
-        key: 'mood:track-1',
+        // キーにはプロンプトの版とモデル名が入る（変えたら保存済みの文を使い回さない）
+        key: 'mood:v2:spec-model:track-1',
         value: JSON.stringify({ text: '今チルな気分になっています', generated_at: NOW_ISO }),
         // KV の無料枠は書き込みが 1,000回/日。期限なしで溜め込まない
         options: { expirationTtl: 86400 },
@@ -223,6 +224,35 @@ describe('Workers のエントリは、バインディングが無くても動�
     expect(callsTo('/chat/completions')).toHaveLength(1);
   });
 
+  it('あるリクエストが作った Promise を別のリクエストに待たせない（進行中の取得を共有せず、値のキャッシュだけを共有する）', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const fresh = await freshWorker();
+
+    const responses = await Promise.all([fresh.fetch(request(), env, ctx), fresh.fetch(request(), env, ctx)]);
+
+    expect(responses.map((res) => res.status)).toEqual([200, 200]);
+    // 同時の2本はそれぞれ自分で取得する（Node 版は1回にまとめる。src/runtime.ts）
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(2);
+
+    // 終わった後は、値のキャッシュから返す
+    await fresh.fetch(request(), env, ctx);
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(2);
+  });
+
+  it('Secrets の入れ忘れは、最初のリクエストでログに名前と直し方を出し、503 を返す（/health は返せる）', async () => {
+    vi.stubEnv('SPOTIFY_CLIENT_SECRET', '');
+    const fresh = await freshWorker();
+
+    const health = await fresh.fetch(new Request('https://spotify-embedded.example/health'), env, ctx);
+    const res = await fresh.fetch(request(), env, ctx);
+
+    expect(health.status).toBe(200);
+    expect(res.status).toBe(503);
+    const logged = vi.mocked(console.error).mock.calls.map((args) => args.join(' '));
+    expect(logged[0]).toContain('SPOTIFY_CLIENT_SECRET');
+    expect(logged[0]).toContain('wrangler secret put');
+  });
+
   it('RATE_LIMITER が無ければ 429 にせず、RateLimit-* も付けない', async () => {
     givenNowPlaying(aSpotifyTrack());
     const fresh = await freshWorker();
@@ -232,5 +262,80 @@ describe('Workers のエントリは、バインディングが無くても動�
       expect(res.status).toBe(200);
       expect(res.headers.get('RateLimit-Limit')).toBeNull();
     }
+  });
+});
+
+describe('Node のエントリ（src/index.ts）の運用まわり', () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+  it('アクセスログは、メソッド・パス・ステータス・所要時間だけを渡す（クエリと接続元は渡さない）', async () => {
+    const { createApp } = await import('../app.js');
+    const seen: unknown[] = [];
+    const app = createApp({ onResponse: (info) => seen.push(info) });
+
+    await app.request('/health?token=do-not-log', { headers: { 'x-forwarded-for': '203.0.113.7' } });
+    await app.request('/no-such-path');
+
+    expect(seen).toEqual([
+      { method: 'GET', path: '/health', status: 200, durationMs: 0 },
+      { method: 'GET', path: '/no-such-path', status: 404, durationMs: 0 },
+    ]);
+    expect(JSON.stringify(seen)).not.toContain('do-not-log');
+    // リクエスト由来の値は、改行・制御文字を落としてから出す（偽のログの行を差し込ませない）
+    expect(read('../index.ts')).toContain('console.log(`[access] ${forLog(method)} ${forLog(path)} ${status} ${durationMs}ms`)');
+  });
+
+  it('アクセスログの失敗で応答を落とさない', async () => {
+    const { createApp } = await import('../app.js');
+    const app = createApp({
+      onResponse: () => {
+        throw new Error('log sink is down');
+      },
+    });
+
+    expect((await app.request('/health')).status).toBe(200);
+  });
+
+  it('拾われなかった例外と Promise の拒否は、原因を1行で出して終了する（再起動は実行環境に任せる）', () => {
+    const source = read('../index.ts');
+
+    expect(source).toContain("process.on('unhandledRejection', (reason) => crash('unhandledRejection', reason));");
+    expect(source).toContain("process.on('uncaughtException', (err) => crash('uncaughtException', err));");
+    expect(source).toMatch(/function crash[\s\S]*console\.error\(`\[fatal\][\s\S]*process\.exit\(1\);/);
+  });
+});
+
+describe('配布物', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+    main?: string;
+    exports: Record<string, string>;
+    files: string[];
+    bin: Record<string, string>;
+    version: string;
+  };
+
+  it('ライブラリとしての入口を持たない（import してもサーバーの起動処理が走らない）', () => {
+    expect(pkg.main).toBeUndefined();
+    expect(pkg.exports).toEqual({ './package.json': './package.json' });
+    expect(pkg.bin).toEqual({ 'spotify-embedded': 'dist/cli/index.js' });
+  });
+
+  it('npm では使い道の無い Workers のエントリと _headers を含めない', () => {
+    expect(pkg.files).toEqual(expect.arrayContaining(['!dist/worker.js', '!public/_headers']));
+  });
+
+  it('src/version.ts は package.json の version と一致する', async () => {
+    const { VERSION } = await import('../version.js');
+
+    expect(VERSION).toBe(pkg.version);
+  });
+
+  it('Docker の HEALTHCHECK は Node を起動せず、npm のキャッシュをイメージに入れない', () => {
+    const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
+    const healthcheck = dockerfile.slice(dockerfile.indexOf('HEALTHCHECK'));
+
+    expect(healthcheck).toContain('wget -q -O /dev/null "http://127.0.0.1:${PORT:-3000}/health"');
+    expect(healthcheck.split('\nCMD [')[0]).not.toContain('node ');
+    expect(dockerfile.match(/RUN --mount=type=cache,target=\/root\/\.npm npm ci/g)).toHaveLength(2);
   });
 });

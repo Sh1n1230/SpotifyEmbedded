@@ -97,11 +97,13 @@ export function loadStoredAuth(forceReload = false): StoredAuth {
     const next: StoredAuth = {};
     for (const field of AUTH_FIELDS) {
       const value = source[field];
-      if (typeof value === 'string' && value !== '') next[field] = value;
+      const cleaned = typeof value === 'string' ? cleanAuthValue(value, `${path} の ${field}`) : undefined;
+      if (cleaned) next[field] = cleaned;
     }
     // 旧フィールド名からの移行（groqApiKey → llmApiKey）
-    if (!next.llmApiKey && typeof source['groqApiKey'] === 'string' && source['groqApiKey'] !== '') {
-      next.llmApiKey = source['groqApiKey'];
+    if (!next.llmApiKey && typeof source['groqApiKey'] === 'string') {
+      const legacy = cleanAuthValue(source['groqApiKey'], `${path} の groqApiKey`);
+      if (legacy) next.llmApiKey = legacy;
     }
     cached = next;
   } catch (err) {
@@ -137,10 +139,36 @@ export function saveStoredAuth(update: StoredAuth): void {
   cached = merged;
 }
 
+const warnedInnerWhitespace = new Set<string>();
+
+/**
+ * 設定値の前後の空白・改行を取り除く。空になったら未設定（undefined）。
+ *
+ * 改行付きでパイプした値や、ダッシュボードに行末ごと貼り付けた値は末尾に改行が付く。そのままだと
+ * Basic 認証の値がずれて Spotify は invalid_client を返し、値そのものは正しいので原因にたどり着けない。
+ * 前後を除いても空白・制御文字が残る値は、貼り付けの誤りの可能性が高いので、値を出さずに一度だけ知らせる。
+ *
+ * @param label 警告に出す、値の在りか（環境変数名など）
+ */
+function cleanAuthValue(value: string | undefined, label: string): string | undefined {
+  const cleaned = value?.trim();
+  if (!cleaned) return undefined;
+  if (/[\s\p{Cc}]/u.test(cleaned) && !warnedInnerWhitespace.has(label)) {
+    warnedInnerWhitespace.add(label);
+    console.warn(`[auth] ${label} に空白か制御文字が含まれています。貼り付けた値を確かめてください。`);
+  }
+  return cleaned;
+}
+
+/** 環境変数の値（前後の空白を除く）。未設定・空白だけなら undefined。 */
+function envValue(name: string): string | undefined {
+  return cleanAuthValue(process.env[name], name);
+}
+
 /** 環境変数（別名を含む）→ data/auth.json の順で解決する。 */
 export function resolveAuthValue(field: AuthField): string | undefined {
   for (const name of AUTH_ENV_NAMES[field]) {
-    const value = process.env[name];
+    const value = envValue(name);
     if (value) return value;
   }
   return loadStoredAuth()[field];
@@ -148,13 +176,30 @@ export function resolveAuthValue(field: AuthField): string | undefined {
 
 /** 環境変数から読んでいるなら、その名前（別名を含む）。data/auth.json から・未設定なら null。 */
 export function authValueEnvName(field: AuthField): string | null {
-  return AUTH_ENV_NAMES[field].find((name) => process.env[name]) ?? null;
+  return AUTH_ENV_NAMES[field].find((name) => envValue(name)) ?? null;
 }
 
 /** その値をどこから読んでいるか。書き換えてよい保存先かを判断するために使う。 */
 export function authValueSource(field: AuthField): 'env' | 'file' | null {
-  if (AUTH_ENV_NAMES[field].some((name) => process.env[name])) return 'env';
+  if (authValueEnvName(field)) return 'env';
   return loadStoredAuth()[field] ? 'file' : null;
+}
+
+/**
+ * 必須の設定が無い。コードの不具合ではなく運用者が直す設定の欠落なので、ライブAPIは 500 ではなく 503 で返す
+ * （環境変数名は公開エンドポイントには出さず、ログにだけ出す）。
+ */
+export class MissingConfigError extends Error {
+  /** 欠けている設定の正規の環境変数名 */
+  readonly names: readonly string[];
+  constructor(names: readonly string[]) {
+    super(
+      `${names.join(', ')} が設定されていません。環境変数に設定するか、\`npm run setup\` を実行してください` +
+        '（Workers では `npx wrangler secret put <名前>`）。'
+    );
+    this.name = 'MissingConfigError';
+    this.names = names;
+  }
 }
 
 /** 解決できなければ、次に何をすべきかを示して throw する。 */
@@ -165,11 +210,7 @@ export function requireAuthValue(field: AuthField): string {
     loadStoredAuth(true);
     value = resolveAuthValue(field);
   }
-  if (!value) {
-    throw new Error(
-      `${AUTH_ENV[field]} が設定されていません。環境変数に設定するか、\`npm run setup\` を実行してください。`
-    );
-  }
+  if (!value) throw new MissingConfigError([AUTH_ENV[field]]);
   return value;
 }
 

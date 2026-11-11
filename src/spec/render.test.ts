@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 
 import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa } from '../render/theme.js';
 import { renderNowPlayingCard } from '../render/card.js';
-import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
+import { renderEmbedPage, STATIC_PAGE_CSP, FAVICON_DATA_URI, PAGE_DESCRIPTION } from '../render/page.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { portInUseHelp } from '../http/portInUse.js';
 import { truncateToWidth, visualWidth, wrapToWidth, jsonForScript } from '../render/text.js';
@@ -13,6 +13,9 @@ import { albumArtAtSize, fetchImageDataUri, SIZE_PREFIX } from '../render/image.
 import type { NowPlayingResponse } from '../types/index.js';
 import { NOW_ISO, ART_640, aTopTrackEntry, calls, callsTo, respondWith, expectValidXml } from './support.js';
 
+import { ART_300 as ART_300_URL, ART_64 as ART_64_URL } from './support.js';
+import { RANKING_ART_HIRES_MAX_COUNT, rankingArtSize } from '../cli/generate.js';
+import { eqBarCss } from '../render/card.js';
 describe('カードの文字色は、どちらのテーマでも背景に対して WCAG AA（4.5:1）を満たす', () => {
   /** WCAG 2.2 の相対輝度とコントラスト比 */
   function luminance(hex: string): number {
@@ -113,7 +116,8 @@ describe('iframe 用ページ（/embed・静的モードの index.html）のサ�
     });
 
     expect(html).not.toContain('javascript:');
-    expect(html).not.toContain('data:image/svg+xml');
+    // ファビコン（<link rel="icon">）はこちらで決めた data URI なので除いて確かめる
+    expect(html.replace(/<link rel="icon"[^>]*>/, '')).not.toContain('data:image/svg+xml');
     expect(html).toContain('<div class="card" id="card"');
     expect(html).toContain('no art');
   });
@@ -543,7 +547,130 @@ describe('日付の表示は日本時間の境界で切り替わる', () => {
     ['2026-12-31T15:00:00.000Z', '2027-01-01', '1/1 00:00'],
   ])('%s → %s / %s', (iso, date, dateTime) => {
     expect(formatDateJa(new Date(iso))).toBe(date);
-    expect(formatDateTimeJa(new Date(iso))).toBe(dateTime);
+    // 基準の時刻（生成した時刻）と同じ年なら、年は付けない
+    expect(formatDateTimeJa(new Date(iso), new Date(iso))).toBe(dateTime);
+  });
+});
+
+describe('「最後に聴いた」時刻は、生成した年と違うときだけ年を付ける（日本時間）', () => {
+  it('前の年の曲には年が入る（何か月も前の曲が今年の日付に見えないように）', () => {
+    expect(formatDateTimeJa(new Date('2025-10-16T12:04:00.000Z'), new Date(NOW_ISO))).toBe('2025/10/16 21:04');
+  });
+
+  it('同じ年なら今までどおり M/D HH:mm', () => {
+    expect(formatDateTimeJa(new Date('2026-01-16T12:04:00.000Z'), new Date(NOW_ISO))).toBe('1/16 21:04');
+  });
+
+  it('年の境目は日本時間で判定する（UTC では前の年でも、日本時間で同じ年なら付けない）', () => {
+    // 2025-12-31T15:30Z は日本時間の 2026-01-01 00:30
+    expect(formatDateTimeJa(new Date('2025-12-31T15:30:00.000Z'), new Date(NOW_ISO))).toBe('1/1 00:30');
+  });
+
+  it('カードの見出しと読み上げにも年が入る', () => {
+    const svg = renderNowPlayingCard({
+      state: 'recent',
+      track: aTopTrackEntry(),
+      mood: null,
+      since: '2025-10-16T12:04:00.000Z',
+      now: NOW_ISO,
+    });
+
+    expect(svg).toContain('LAST PLAYED · 2025/10/16 21:04');
+    expect(svg).toContain('最後に再生（2025/10/16 21:04）');
+  });
+});
+
+describe('静的モードの再生中のカードは、いつの情報かが分かる', () => {
+  const since = '2026-09-21T11:30:00.000Z';
+
+  it('SVG は見出しと読み上げに観測時刻を出す', () => {
+    const svg = renderNowPlayingCard({ state: 'playing', track: aTopTrackEntry(), mood: null, since, observedTime: true, now: NOW_ISO });
+
+    expect(svg).toContain('NOW PLAYING · 9/21 20:30');
+    expect(svg).toContain('再生中（9/21 20:30 時点）: Midnight Drive / Neon District');
+  });
+
+  it('iframe 用ページも同じ見出しになる', () => {
+    const html = renderEmbedPage({
+      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: since },
+      state: 'playing',
+      since,
+      observedTime: true,
+      now: NOW_ISO,
+    });
+
+    expect(html).toContain('NOW PLAYING · 9/21 20:30');
+  });
+
+  it('ライブAPI（observedTime なし）は今の状態なので、今までどおり NOW PLAYING だけ', () => {
+    const svg = renderNowPlayingCard({ state: 'playing', track: aTopTrackEntry(), mood: null, since });
+
+    expect(svg).toContain('>NOW PLAYING<');
+  });
+});
+
+describe('アーティストが空の曲（Spotify が artists を空で返した曲）', () => {
+  const track = aTopTrackEntry({ artist: '' });
+
+  it('SVG カードは空の行を描かず、読み上げを「曲名 / 」で終わらせない', () => {
+    const svg = renderNowPlayingCard({ state: 'playing', track, mood: null });
+
+    expect(svg).toContain('aria-label="再生中: Midnight Drive"');
+    expect(svg).not.toMatch(/<text[^>]*><\/text>/);
+  });
+
+  it('ランキングも同じ', () => {
+    const svg = renderRankingCard({ tracks: [track], fetchedAt: NOW_ISO });
+
+    expect(svg).toContain('1位 Midnight Drive<');
+    expect(svg).not.toMatch(/<text[^>]*><\/text>/);
+  });
+
+  it('iframe 用ページはアーティストの行を隠し、タイトルと読み上げは曲名だけにする', () => {
+    const html = renderEmbedPage({
+      nowPlaying: { is_playing: true, track, mood: null, fetched_at: NOW_ISO },
+      topTracks: { range: 'short_term', limit: 10, fetched_at: NOW_ISO, mood: null, tracks: [track] },
+      state: 'playing',
+    });
+
+    expect(html).toContain('<title>Now Playing: Midnight Drive</title>');
+    expect(html).toContain('<p class="artist" id="artist" hidden></p>');
+    expect(html).toContain('再生中: Midnight Drive（Spotifyで開く）');
+    expect(html).toContain('1位 Midnight Drive（Spotifyで開く）');
+    expect(html).not.toContain('class="by"');
+  });
+});
+
+describe('ページの説明・ファビコン・画像の取得先', () => {
+  const page = (overrides: Partial<Parameters<typeof renderEmbedPage>[0]> = {}) =>
+    renderEmbedPage({
+      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
+      state: 'playing',
+      ...overrides,
+    });
+
+  it('description と、外部に取りに行かない（data URI の）ファビコンを持つ', () => {
+    const html = page();
+
+    expect(html).toContain(`<meta name="description" content="${PAGE_DESCRIPTION}">`);
+    expect(html).toMatch(/<link rel="icon" href="data:image\/svg\+xml,[^"]+">/);
+    expect(decodeURIComponent(FAVICON_DATA_URI.slice('data:image/svg+xml,'.length))).toMatch(/^<svg xmlns=.*<\/svg>$/);
+  });
+
+  it('noindex は指定したときだけ入る（静的モードの既定）', () => {
+    expect(page({ noindex: true })).toContain('<meta name="robots" content="noindex">');
+    expect(page()).not.toContain('name="robots"');
+  });
+
+  it('3つの CSP（静的ページ・/embed・デモ画面）の img-src は Spotify の画像のホストと data: だけ', async () => {
+    const { DEMO_PAGE_CSP } = await import('../http/securityHeaders.js');
+    const { createApp } = await import('../app.js');
+    const embed = (await createApp().request('/embed')).headers.get('content-security-policy') ?? '';
+
+    for (const csp of [STATIC_PAGE_CSP, embed, DEMO_PAGE_CSP]) {
+      expect(csp).toContain('img-src https://*.scdn.co https://*.spotifycdn.com data:;');
+      expect(csp).not.toContain('img-src https: ');
+    }
   });
 });
 
@@ -608,7 +735,9 @@ describe('now-playing の SVG カードの組み方', () => {
     spotify_url: 'https://open.spotify.com/track/t',
     preview_url: null,
   };
-  const yOf = (svg: string, text: string) => Number(new RegExp(`y="([\\d.]+)"[^>]*>${text}<`).exec(svg)?.[1]);
+  /** その文字列を中身に持つ要素の y。text から正規表現を組み立てず、決まった形で要素を取り出して中身を比べる。 */
+  const yOf = (svg: string, text: string) =>
+    Number([...svg.matchAll(/y="([\d.]+)"[^>]*>([^<]*)</g)].find((match) => match[2] === text)?.[1]);
   const LONG = 'とても長い文字列がカードの幅に収まらずに二行目まで折り返されていくことを確かめます';
 
   it('ムード文が1行なら y=82、曲名とアーティストはその下の決まった位置', () => {
@@ -768,5 +897,94 @@ describe('<script> に埋め込む値', () => {
 
     expect(json).not.toContain('<');
     expect(JSON.parse(json)).toBe('</script><img src=x>');
+  });
+});
+
+describe('/embed は閲覧者の設定と置き場所に合わせられる', () => {
+  const page = (overrides: Partial<Parameters<typeof renderEmbedPage>[0]> = {}) =>
+    renderEmbedPage({
+      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
+      topTracks: { range: 'short_term', limit: 10, fetched_at: NOW_ISO, mood: null, tracks: [aTopTrackEntry()] },
+      state: 'playing',
+      ...overrides,
+    });
+
+  it('theme: auto はダークを既定にし、prefers-color-scheme: light のときだけライトの色に差し替える', () => {
+    const html = page({ theme: 'auto' });
+
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(html).toMatch(new RegExp(`:root \\{\\s+--bg: ${THEMES.dark.bg};`));
+    expect(html).toMatch(new RegExp(`@media \\(prefers-color-scheme: light\\) \\{\\s+:root \\{\\s+--bg: ${THEMES.light.bg};`));
+  });
+
+  it('dark・light を指定したときは、閲覧者の設定で色を変えない', () => {
+    expect(page({ theme: 'light' })).not.toContain('prefers-color-scheme');
+    expect(page()).not.toContain('prefers-color-scheme');
+  });
+
+  it('?theme=auto は /embed だけが受け付け、/badge.svg（1枚の SVG）はダークのまま', async () => {
+    const { createApp } = await import('../app.js');
+    const app = createApp();
+
+    expect(await (await app.request('/embed?theme=auto')).text()).toContain('prefers-color-scheme: light');
+    expect(await (await app.request('/badge.svg?theme=auto')).text()).toContain(THEMES.dark.border);
+  });
+
+  it.each([
+    [{}, '460px'],
+    [{ maxWidth: 600 }, '600px'],
+    [{ maxWidth: 'full' as const }, '100%'],
+  ])('maxWidth %j ならカードとランキングの最大幅は %s', (overrides, expected) => {
+    const html = page(overrides);
+
+    expect(html).toContain(`--max-width: ${expected};`);
+    expect(html.match(/max-width: var\(--max-width\)/g)).toHaveLength(2);
+  });
+
+  it('?max_width= は数字だけの値を 240〜1920 に丸め、full は親の幅いっぱいにする', async () => {
+    const { createApp } = await import('../app.js');
+    const app = createApp();
+    const maxWidthOf = async (query: string) =>
+      /--max-width: ([^;]+);/.exec(await (await app.request(`/embed${query}`)).text())?.[1];
+
+    expect(await maxWidthOf('')).toBe('460px');
+    expect(await maxWidthOf('?max_width=600')).toBe('600px');
+    expect(await maxWidthOf('?max_width=full')).toBe('100%');
+    expect(await maxWidthOf('?max_width=1')).toBe('240px');
+    expect(await maxWidthOf('?max_width=100%25;color:red')).toBe('460px');
+  });
+
+  it('ランキングのジャケ写は、高解像度の画面で 300px 版を選べる（srcset）', () => {
+    const html = page();
+
+    expect(html).toContain(`src="${ART_64_URL}" srcset="${ART_64_URL} 64w, ${ART_300_URL} 300w" sizes="40px"`);
+  });
+
+  it('再生中インジケータは height ではなく transform で動かし、視差効果を減らす設定では止める', () => {
+    const html = page();
+
+    expect(html).toContain(eqBarCss('.eq span'));
+    expect(html).not.toMatch(/@keyframes eq\d? \{[^}]*height/);
+    expect(html).toContain('.eq span:nth-child(n) { animation: none; transform: scaleY(0.667); }');
+  });
+});
+
+describe('SVG カードは日本語として読み上げられる', () => {
+  it('now-playing カードとランキングのルート要素に lang="ja" がある', () => {
+    const card = renderNowPlayingCard({ state: 'playing', track: aTopTrackEntry(), mood: null });
+    const ranking = renderRankingCard({ tracks: [aTopTrackEntry()], fetchedAt: NOW_ISO });
+
+    expect(card).toMatch(/^<svg [^>]*lang="ja"/);
+    expect(ranking).toMatch(/^<svg [^>]*lang="ja"/);
+    expectValidXml(card);
+    expectValidXml(ranking);
+  });
+});
+
+describe('ランキング SVG に焼き込むジャケ写のサイズ', () => {
+  it('10件までは 300px 版（2倍の画面でもぼやけない）、それより多ければ 64px 版（SVG を大きくしすぎない）', () => {
+    expect(RANKING_ART_HIRES_MAX_COUNT).toBe(10);
+    expect([1, 5, 10].map(rankingArtSize)).toEqual([300, 300, 300]);
+    expect([11, 50].map(rankingArtSize)).toEqual([64, 64]);
   });
 });

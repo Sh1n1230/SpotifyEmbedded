@@ -341,6 +341,32 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
       expect(artistGenresAvailable()).toBe(false);
     });
 
+    // 2026年2月の Web API の変更で、Development Mode のアプリから GET /artists（バッチ取得）が削除された。
+    // 削除後に Spotify がどのステータスを返すかは実機で確かめられていないので、恒久的な失敗を表すものを並べる
+    it.each([404, 410])('/artists が %d（エンドポイントの削除）でも、以降そのプロセスでは呼ばない', async (status) => {
+      givenTopTracks([aSpotifyTrack()]);
+      respondWith((url) => (url.includes('/artists?ids=') ? new Response('gone', { status }) : null));
+
+      await collectTopTracks();
+      await collectTopTracks();
+
+      expect(callsTo('/artists?ids=')).toHaveLength(1);
+      expect(artistGenresAvailable()).toBe(false);
+    });
+
+    it.each([429, 500, 503])('/artists が %d（一時的な失敗）なら、次の呼び出しでまた試す', async (status) => {
+      givenNowPlaying(aSpotifyTrack());
+      respondWith((url) =>
+        url.includes('/artists?ids=') ? new Response('later', { status, headers: { 'Retry-After': '0' } }) : null
+      );
+
+      await collectNowPlaying({ bypassCache: true });
+      await collectNowPlaying({ bypassCache: true });
+
+      expect(callsTo('/artists?ids=')).toHaveLength(2);
+      expect(artistGenresAvailable()).toBe(true);
+    });
+
     it('ジャンルが返る環境（extended quota mode）ではそのまま載る', async () => {
       givenTopTracks([aSpotifyTrack()]);
       givenArtistGenres({ 'artist-1': ['city pop', 'synthwave'] });
@@ -496,7 +522,7 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
       });
       const res = await createApp().request('/api/now-playing');
       expect(res.status).toBe(504);
-      expect(await res.json()).toEqual({ error: 'Spotify API timed out' });
+      expect(await res.json()).toEqual({ error: 'Spotify API timed out', code: 'spotify_timeout' });
     });
 
     it('ジャケ写の取得が時間内に終わらなければ、プレースホルダのカードを返す', async () => {
@@ -534,7 +560,41 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
       expect(res.status).toBe(502);
       expect(await res.json()).toEqual({
         error: 'Spotify authentication failed. Re-run `npm run setup` to get a new refresh_token.',
+        code: 'spotify_auth_failed',
       });
+    });
+
+    it('失効（invalid_grant）の後は、同じ認証情報のままならトークンエンドポイントを呼ばずに 502 を返し、案内のログも繰り返さない', async () => {
+      givenTokenEndpointFails(400, '{"error":"invalid_grant"}');
+      const app = createApp();
+      const tokenRequests = () => callsTo('accounts.spotify.com/api/token');
+      const guidance = () =>
+        vi.mocked(console.error).mock.calls.filter((args) => String(args[1]).includes('invalid_grant'));
+
+      const first = await app.request('/api/now-playing');
+      const sent = tokenRequests().length;
+      const second = await app.request('/api/now-playing');
+      const third = await app.request('/badge.svg');
+
+      expect([first.status, second.status, third.status]).toEqual([502, 502, 200]);
+      expect(tokenRequests()).toHaveLength(sent);
+      expect(guidance()).toHaveLength(1);
+    });
+
+    it('refresh_token が変わったら、また更新を試す', async () => {
+      givenTokenEndpointFails(400, '{"error":"invalid_grant"}');
+      await expect(getAccessToken()).rejects.toBeInstanceOf(SpotifyAuthError);
+      const sent = callsTo('accounts.spotify.com/api/token').length;
+
+      vi.stubEnv('SPOTIFY_REFRESH_TOKEN', 'renewed-refresh-token');
+      respondWith((url) =>
+        url.includes('accounts.spotify.com/api/token') ? jsonOk({ access_token: 'renewed', expires_in: 3600 }) : null
+      );
+
+      await expect(getAccessToken()).resolves.toBe('renewed');
+      const calls = callsTo('accounts.spotify.com/api/token');
+      expect(calls).toHaveLength(sent + 1);
+      expect(formBodyOf(must(calls.at(-1), 'リクエスト'))['refresh_token']).toBe('renewed-refresh-token');
     });
 
     it('Client ID / Secret の誤り（401 invalid_client）も認証エラーとして扱い、原因を区別できる', async () => {
@@ -599,9 +659,38 @@ describe('spotifyFetch の契約（要件1・2の土台）', () => {
 
       const res = await createApp().request('/api/now-playing');
 
-      expect(res.status).toBe(429);
+      // 429（そのクライアントの送りすぎ）ではなく 503（上流の都合で一時的に応えられない）
+      expect(res.status).toBe(503);
       expect(res.headers.get('retry-after')).toBe('0');
-      expect(await res.json()).toEqual({ error: 'Spotify rate limit exceeded', retry_after: 0 });
+      expect(await res.json()).toEqual({
+        error: 'Spotify rate limit exceeded',
+        code: 'spotify_rate_limited',
+        retry_after: 0,
+      });
+    });
+
+    it('Retry-After の間は Spotify を呼ばずに 503 と残り秒数を返し、過ぎたらまた呼ぶ', async () => {
+      givenRateLimited('30');
+      const app = createApp();
+      const spotifyCalls = () => callsTo('/me/player/currently-playing');
+
+      const first = await app.request('/api/now-playing');
+      expect(first.status).toBe(503);
+      expect(first.headers.get('retry-after')).toBe('30');
+      expect(spotifyCalls()).toHaveLength(1);
+
+      vi.setSystemTime(NOW.getTime() + 10_000);
+      const second = await app.request('/api/now-playing');
+      expect(second.status).toBe(503);
+      expect(second.headers.get('retry-after')).toBe('20');
+      expect(await second.json()).toMatchObject({ code: 'spotify_rate_limited', retry_after: 20 });
+      expect(spotifyCalls()).toHaveLength(1);
+
+      vi.setSystemTime(NOW.getTime() + 30_000);
+      givenNowPlaying(aSpotifyTrack());
+      const third = await app.request('/api/now-playing');
+      expect(third.status).toBe(200);
+      expect(spotifyCalls()).toHaveLength(2);
     });
   });
 
@@ -677,8 +766,9 @@ describe('アクセストークンの更新', () => {
     let fail = true;
     respondWith((url) => {
       if (!url.includes('accounts.spotify.com/api/token')) return null;
+      // 一時的な失敗（5xx）。設定の問題（invalid_grant など）は覚えて再試行しないので、ここでは使わない
       return fail
-        ? new Response('{"error":"invalid_grant"}', { status: 400 })
+        ? new Response('Service Unavailable', { status: 503 })
         : jsonOk({ access_token: 'second-try', expires_in: 3600 });
     });
 
@@ -686,8 +776,8 @@ describe('アクセストークンの更新', () => {
 
     expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
     expect(results.map((r) => (r as PromiseRejectedResult).reason as unknown)).toEqual([
-      expect.any(SpotifyAuthError),
-      expect.any(SpotifyAuthError),
+      expect.any(SpotifyApiError),
+      expect.any(SpotifyApiError),
     ]);
     expect(tokenRequests()).toHaveLength(1);
 
@@ -775,7 +865,7 @@ describe('Spotify の応答を読めないとき・届かないとき', () => {
     const res = await createApp().request('/api/now-playing');
 
     expect(res.status).toBe(504);
-    expect(await res.json()).toEqual({ error: 'Spotify API timed out' });
+    expect(await res.json()).toEqual({ error: 'Spotify API timed out', code: 'spotify_timeout' });
   });
 
   it('Spotify に接続できない（DNS・接続拒否など）なら、ライブAPIは 502 を返し、接続先をログに出す', async () => {
@@ -788,7 +878,7 @@ describe('Spotify の応答を読めないとき・届かないとき', () => {
     const res = await createApp().request('/api/now-playing');
 
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'Could not reach Spotify' });
+    expect(await res.json()).toEqual({ error: 'Could not reach Spotify', code: 'spotify_unreachable' });
     expect(String(error.mock.calls.at(-1)?.[1])).toMatch(/currently-playing.*ENOTFOUND/);
   });
 
@@ -812,7 +902,7 @@ describe('Spotify の応答を読めないとき・届かないとき', () => {
     const res = await createApp().request('/api/now-playing');
 
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'Spotify API request failed', spotify_status: 200 });
+    expect(await res.json()).toEqual({ error: 'Spotify API request failed', code: 'spotify_error', spotify_status: 200 });
   });
 
   it.each([200, 202])('本文の無い %d は、再生していないものとして扱う', async (status) => {
@@ -857,18 +947,18 @@ describe('トークンの更新の応答の検査', () => {
     const res = await createApp().request('/api/now-playing');
 
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'Spotify API request failed', spotify_status: 503 });
+    expect(await res.json()).toEqual({ error: 'Spotify API request failed', code: 'spotify_error', spotify_status: 503 });
     const logged = String(error.mock.calls.at(-1)?.[1]);
     expect(logged).toContain('/api/token');
     expect(logged.match(/x+/)?.[0].length).toBeLessThanOrEqual(200);
   });
 
-  it('トークンエンドポイントが Retry-After 付きの 429 なら、ライブAPIも 429 と Retry-After を返す', async () => {
+  it('トークンエンドポイントが Retry-After 付きの 429 なら、ライブAPIは 503 と Retry-After を返す', async () => {
     givenTokenResponse(() => new Response('slow down', { status: 429, headers: { 'Retry-After': '5' } }));
 
     const res = await createApp().request('/api/now-playing');
 
-    expect(res.status).toBe(429);
+    expect(res.status).toBe(503);
     expect(res.headers.get('retry-after')).toBe('5');
   });
 
@@ -929,6 +1019,39 @@ describe('認可コードの交換（setup・/auth/callback）', () => {
     );
 
     await expect(exchangeCodeForTokens(app, 'code')).resolves.toMatchObject({ refresh_token: 'r' });
+  });
+
+  describe('失敗の error（RFC 6749 §5.2）ごとに、直す場所を案内する', () => {
+    function givenTokenError(status: number, body: string): void {
+      respondWith((url) => (url.includes('accounts.spotify.com/api/token') ? new Response(body, { status }) : null));
+    }
+
+    it.each([
+      [401, 'invalid_client', /Client ID \/ Client Secret が正しくありません/],
+      [400, 'invalid_grant', /認可コードが期限切れ・使用済みか、Redirect URI/],
+      [400, 'unauthorized_client', /Authorization Code フローが許可されていません/],
+    ])('%d %s', async (status, error, expected) => {
+      givenTokenError(status, JSON.stringify({ error, error_description: 'do-not-leak <script>' }));
+
+      const err = (await exchangeCodeForTokens(app, 'code').catch((e: unknown) => e)) as Error;
+
+      expect(err.message).toMatch(expected);
+      expect(err.message).toContain(`(${status} ${error})`);
+      expect(err.message).not.toContain('do-not-leak');
+    });
+
+    it('一覧に無い error や JSON でない本文は案内に使わず、今までどおりの案内にする', async () => {
+      givenTokenError(400, JSON.stringify({ error: '<img src=x onerror=alert(1)>' }));
+      const unknown = (await exchangeCodeForTokens(app, 'code').catch((e: unknown) => e)) as Error;
+      givenTokenError(400, '<html>Bad Request</html>');
+      const notJson = (await exchangeCodeForTokens(app, 'code').catch((e: unknown) => e)) as Error;
+
+      for (const err of [unknown, notJson]) {
+        expect(err.message).toBe(
+          'トークンの交換に失敗しました (400)。Client ID / Client Secret、または Redirect URI の登録内容を確認してください。'
+        );
+      }
+    });
   });
 });
 

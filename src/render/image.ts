@@ -5,6 +5,7 @@
  * 描画しない。README に貼れる SVG にするには、画像そのものを base64 で
  * 焼き込む必要がある。
  */
+import { withUserAgent } from '../http/userAgent.js';
 import { IMAGE_TIMEOUT_MS } from '../spotify/timeout.js';
 import { discardBody } from '../http/body.js';
 
@@ -38,6 +39,14 @@ export function albumArtAtSize(url: string, size: 640 | 300 | 64): string {
 
 /** リダイレクトを辿る上限。Spotify の CDN は通常リダイレクトしない。 */
 const MAX_REDIRECTS = 3;
+
+/**
+ * ページ（/embed・デモ画面・静的モードの index.html）の CSP の img-src。ジャケ写は Spotify の CDN から読む。
+ * トラックのジャケ写は i.scdn.co で配られる（mosaic.scdn.co などの兄弟ホストも *.scdn.co に入る）。
+ * Spotify は一部の画像を image-cdn-*.spotifycdn.com でも配るので、表示が欠けないようそちらも許す。
+ * SVG に焼き込む側（isAllowedImageUrl）は README に載るものの境界なので、より狭い *.scdn.co だけのまま。
+ */
+export const IMAGE_CSP_SOURCES = 'https://*.scdn.co https://*.spotifycdn.com data:';
 
 /** 埋め込んでよい取得先か。https の Spotify の CDN（*.scdn.co）だけ。 */
 function isAllowedImageUrl(url: URL): boolean {
@@ -109,7 +118,7 @@ async function fetchAllowedImage(url: string, signal: AbortSignal): Promise<Resp
       return null;
     }
 
-    const res = await fetch(parsed.href, { signal, redirect: 'manual' });
+    const res = await fetch(parsed.href, { signal, redirect: 'manual', headers: withUserAgent() });
     if (res.status < 300 || res.status >= 400) return res;
 
     const location = res.headers.get('location');

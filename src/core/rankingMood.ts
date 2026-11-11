@@ -36,7 +36,15 @@ function basisOf(tracks: TopTrackEntry[]): string[] {
   return tracks.slice(0, RANKING_MOOD_BASIS_SIZE).map((t) => t.id);
 }
 
-/** 前回のムード文が今のランキングにもまだ当てはまるか。 */
+/**
+ * 前回のムード文が今のランキングにもまだ当てはまるか。
+ *
+ * 数えるのは「今の上位曲のうち、生成時点の根拠に無い曲」だけで、割合や件数の差は見ない:
+ * - 今の上位曲が少ない（新しいアカウント・ほとんど聴いていない期間で 10 曲に満たない）ときは、
+ *   新顔が RANKING_MOOD_MAX_NEWCOMERS を超えるまで作り直さない。曲が減っただけ（新顔 0）なら使い回す。
+ *   材料が減った状態で作り直しても、前より良い文にはならないため
+ * - 前回の根拠が少なかった場合は、曲が増えて新顔が閾値を超えた時点で作り直す（材料が増えたので作り直す価値がある）
+ */
 export function isRankingMoodFresh(
   previous: RankingMoodRecord | null,
   range: TopTracksRange,
@@ -55,11 +63,13 @@ export function isRankingMoodFresh(
 export async function resolveRankingMood(
   range: TopTracksRange,
   tracks: TopTrackEntry[],
-  previous: RankingMoodRecord | null
+  previous: RankingMoodRecord | null,
+  /** force: 顔ぶれが変わっていなくても作り直す（generate --refresh-ranking-mood）。失敗したら前回を残すのは同じ */
+  options: { force?: boolean } = {}
 ): Promise<RankingMoodRecord | null> {
   const trackIds = basisOf(tracks);
   if (trackIds.length === 0) return null;
-  if (isRankingMoodFresh(previous, range, trackIds)) return previous;
+  if (!options.force && isRankingMoodFresh(previous, range, trackIds)) return previous;
 
   try {
     const text = await generateRankingMood({

@@ -89,7 +89,6 @@ jobs:
       - name: Restore previous snapshot
         if: steps.secrets.outputs.configured == 'true'
         env:
-          REFRESH_RANKING_MOOD: ${{ inputs.refresh_ranking_mood }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p out
@@ -99,7 +98,7 @@ jobs:
             -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' \
             fetch --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" spotify-data 2>/dev/null; then
             # 直接 out/ へ書くと、ブランチに snapshot.json が無いときに空のファイルが残る
-            # （次のステップが読めないと警告し、下の作り直しの node -e は落ちる）。取れたときだけ置く
+            # （次のステップが読めないと警告する）。取れたときだけ置く
             if git show FETCH_HEAD:snapshot.json > "$RUNNER_TEMP/snapshot.json" 2>/dev/null; then
               mv "$RUNNER_TEMP/snapshot.json" out/snapshot.json
               echo "前回のスナップショットを復元しました"
@@ -108,10 +107,6 @@ jobs:
             fi
           else
             echo "spotify-data ブランチを取得できませんでした（初回はまだありません）"
-          fi
-          if [ "$REFRESH_RANKING_MOOD" = "true" ] && [ -f out/snapshot.json ]; then
-            node -e 'const f="out/snapshot.json",fs=require("fs"),s=JSON.parse(fs.readFileSync(f));s.ranking_mood=null;fs.writeFileSync(f,JSON.stringify(s))'
-            echo "ランキングのムード文を作り直します"
           fi
 
       - name: Generate
@@ -123,12 +118,18 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
-          # 手動実行時のみ指定できる。スケジュール実行では既定値を使う。
-          RANGE: ${{ inputs.range || 'short_term' }}
-          COUNT: ${{ inputs.count || '5' }}
+          # 優先順位は「手動実行の入力 > リポジトリの Variables > 組み込みの既定値」。
+          # 定期実行の期間と件数は、このファイルを書き換えずに Settings → Secrets and variables → Actions → Variables の
+          # RANKING_RANGE（short_term | medium_term | long_term）と RANKING_COUNT（1〜50）で変えられる
+          RANGE: ${{ inputs.range || vars.RANKING_RANGE || 'short_term' }}
+          COUNT: ${{ inputs.count || vars.RANKING_COUNT || '5' }}
+          REFRESH_RANKING_MOOD: ${{ inputs.refresh_ranking_mood }}
         run: |
-          # LLM の有無は generate が判定する（ここで分岐すると、設定の読み方が増えたときにずれる）
-          node dist/cli/index.js generate --out out --range "$RANGE" --count "$COUNT" --theme both
+          # LLM の有無は generate が判定する（ここで分岐すると、設定の読み方が増えたときにずれる）。
+          # snapshot.json の形を知っているのは generate だけなので、作り直しもオプションで頼む
+          args=(--out out --range "$RANGE" --count "$COUNT" --theme both)
+          if [ "$REFRESH_RANKING_MOOD" = "true" ]; then args+=(--refresh-ranking-mood); fi
+          node dist/cli/index.js generate "${args[@]}"
 
       # 毎回1コミットに潰して force push する。
       # 30分おきの更新で履歴が肥大化するのを防ぐため。前のスナップショットへ戻す手段は持たない:

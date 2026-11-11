@@ -6,8 +6,14 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-import { parseBooleanEnv } from '../config.js';
-import { loadStoredAuth, requireAuthValue, saveStoredAuth } from '../authStore.js';
+import { parseBooleanEnv, parseNowPlayingCacheSeconds } from '../config.js';
+import {
+  MissingConfigError,
+  loadStoredAuth,
+  missingAuthValues,
+  requireAuthValue,
+  saveStoredAuth,
+} from '../authStore.js';
 import { collectNowPlaying } from '../core/collect.js';
 import { resolveLlm } from '../llm/settings.js';
 import { upsertEnvFile } from '../cli/setup.js';
@@ -68,6 +74,51 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
     await collectNowPlaying();
 
     expect(refreshTokenSent()).toBe('spec-refresh-token');
+  });
+
+  describe('貼り付けで付いた前後の空白・改行は取り除く', () => {
+    it('末尾に改行の付いた Client Secret でも、Basic 認証は中身だけから作る', async () => {
+      vi.stubEnv('SPOTIFY_CLIENT_SECRET', 'spec-client-secret\n');
+      vi.stubEnv('SPOTIFY_CLIENT_ID', '  spec-client-id ');
+      vi.stubEnv('SPOTIFY_REFRESH_TOKEN', 'spec-refresh-token\r\n');
+      givenTokenRefreshForced(null);
+
+      await collectNowPlaying();
+
+      const call = must(callsTo('accounts.spotify.com/api/token').at(-1), 'トークン更新のリクエスト');
+      expect(headerOf(call, 'authorization')).toBe(
+        `Basic ${Buffer.from('spec-client-id:spec-client-secret').toString('base64')}`
+      );
+      expect(refreshTokenSent()).toBe('spec-refresh-token');
+    });
+
+    it('空白だけの値は未設定として扱う', () => {
+      vi.stubEnv('SPOTIFY_CLIENT_SECRET', ' \n\t');
+
+      expect(missingAuthValues()).toEqual(['SPOTIFY_CLIENT_SECRET']);
+      expect(() => requireAuthValue('spotifyClientSecret')).toThrow(MissingConfigError);
+    });
+
+    it('data/auth.json の値も同じく取り除く', () => {
+      vi.stubEnv('SPOTIFY_REFRESH_TOKEN', '');
+      givenAuthFile({ spotifyRefreshToken: ' from-file\n' });
+
+      expect(requireAuthValue('spotifyRefreshToken')).toBe('from-file');
+    });
+
+    it('途中に空白の残る値は、値を出さずに一度だけ知らせる', () => {
+      vi.stubEnv('SPOTIFY_CLIENT_SECRET', 'abc def-inner-space');
+      const warn = vi.mocked(console.warn);
+      warn.mockClear();
+
+      requireAuthValue('spotifyClientSecret');
+      requireAuthValue('spotifyClientSecret');
+
+      const warned = warn.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('空白か制御文字'));
+      expect(warned).toHaveLength(1);
+      expect(warned[0]).toContain('SPOTIFY_CLIENT_SECRET');
+      expect(warned[0]).not.toContain('def-inner-space');
+    });
   });
 
   it('環境変数が無い項目は data/auth.json から補う', async () => {
@@ -347,5 +398,37 @@ describe('真偽値の環境変数（ENABLE_AUTH_ROUTES など）', () => {
     expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('SPEC_BOOLEAN'));
     warn.mockRestore();
+  });
+});
+
+describe('now-playing のキャッシュの秒数（NOW_PLAYING_CACHE_SECONDS）', () => {
+  it.each([
+    [undefined, 30],
+    ['', 30],
+    ['10', 10],
+    ['120', 120],
+    // 範囲の外は近い端に丸める
+    ['1', 5],
+    ['9999', 300],
+    // 数字だけを受け付ける
+    ['10abc', 30],
+    ['1e2', 30],
+    ['-5', 30],
+  ])('%j → %d 秒', (value, expected) => {
+    expect(parseNowPlayingCacheSeconds(value)).toBe(expected);
+  });
+
+  it('設定した秒数だけ Spotify を呼ばず、過ぎたら取り直す', async () => {
+    vi.stubEnv('NOW_PLAYING_CACHE_SECONDS', '10');
+    givenNowPlaying(aSpotifyTrack());
+
+    await collectNowPlaying();
+    vi.setSystemTime(NOW.getTime() + 9_000);
+    await collectNowPlaying();
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(1);
+
+    vi.setSystemTime(NOW.getTime() + 10_000);
+    await collectNowPlaying();
+    expect(callsTo('/me/player/currently-playing')).toHaveLength(2);
   });
 });

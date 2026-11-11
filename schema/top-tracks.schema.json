@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Sh1n1230/SpotifyEmbedded/main/schema/top-tracks.schema.json",
+  "title": "top-tracks",
+  "description": "静的モードの top-tracks.json / .yaml（ライブAPIには無い）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "range",
+    "limit",
+    "fetched_at",
+    "mood",
+    "tracks"
+  ],
+  "properties": {
+    "range": {
+      "enum": [
+        "short_term",
+        "medium_term",
+        "long_term"
+      ]
+    },
+    "limit": {
+      "enum": [
+        10,
+        30,
+        50
+      ],
+      "description": "リクエストした取得件数（実際の件数は tracks の長さ）"
+    },
+    "fetched_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "mood": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/mood"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "ランキング全体のムード文。上位10曲の顔ぶれが変わらない限り作り直さない"
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "mood": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "generated_at"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "日本語のムード文（例: \"今ノリノリなようです\"）"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "artist",
+        "album",
+        "album_art_url",
+        "duration_ms",
+        "popularity",
+        "spotify_url",
+        "preview_url",
+        "rank",
+        "genres"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Spotify のトラック ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "曲名"
+        },
+        "artist": {
+          "type": "string",
+          "description": "アーティスト名。複数ならカンマ区切り（例: \"Artist A, Artist B\"）"
+        },
+        "album": {
+          "type": "string"
+        },
+        "album_art_url": {
+          "type": "string",
+          "description": "ジャケ写の URL（300px 以上の最大サイズ。通常は 640px 版）。無ければ空文字"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "popularity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "0〜100。2024年11月以降に作成された Spotify アプリでは null"
+        },
+        "spotify_url": {
+          "type": "string",
+          "description": "Spotify で開く URL"
+        },
+        "preview_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "30秒プレビュー。新しいアプリでは常に null"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "genres": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "アーティストのジャンル。アプリの権限で取得できなければ空配列"
+        }
+      }
+    }
+  }
+}

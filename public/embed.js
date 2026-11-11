@@ -5,6 +5,11 @@
  *           data-target="#spotify"
  *           data-theme="dark"></script>
  *
+ * data-theme: dark（既定）| light | auto（閲覧者の OS のダーク・ライトに合わせる）
+ * data-max-width: カードの最大幅。240〜1920 の数（px）か full（親の幅いっぱい）。既定は 460
+ * data-transparent="true": 背景を透過する
+ * data-refresh: 取得の間隔（秒）。10〜3600、既定は 30
+ *
  * カードは Shadow DOM の中に作るので、貼り付け先サイトのCSSから
  * 影響を受けない（逆にこちらのCSSも漏れない）。
  */
@@ -22,11 +27,19 @@
   var refreshAttribute = script.getAttribute('data-refresh');
   var refreshSeconds = refreshAttribute && /^\d+$/.test(refreshAttribute) ? Math.min(Math.max(Number(refreshAttribute), 10), 3600) : 30;
 
+  // data-max-width は /embed の ?max_width= と同じ規則（src/render/page.ts の parseMaxWidth）
+  var maxWidthAttribute = script.getAttribute('data-max-width');
+  var maxWidth = maxWidthAttribute === 'full'
+    ? '100%'
+    : (maxWidthAttribute && /^\d+$/.test(maxWidthAttribute) ? Math.min(Math.max(Number(maxWidthAttribute), 240), 1920) : 460) + 'px';
+
+  var themeAttribute = script.getAttribute('data-theme');
   var options = {
     target: script.getAttribute('data-target'),
-    theme: script.getAttribute('data-theme') === 'light' ? 'light' : 'dark',
+    theme: themeAttribute === 'light' || themeAttribute === 'auto' ? themeAttribute : 'dark',
     transparent: script.getAttribute('data-transparent') === 'true',
-    refresh: refreshSeconds
+    refresh: refreshSeconds,
+    maxWidth: maxWidth
   };
 
   var THEMES = {
@@ -40,7 +53,30 @@
     }
   };
 
-  var theme = THEMES[options.theme];
+  // 色は CSS 変数で渡す。auto はダークを既定にして、閲覧者がライトを選んでいるときだけ差し替える
+  function themeVariables(theme) {
+    return '--se-bg: ' + (options.transparent ? 'transparent' : theme.bg) + '; --se-fg: ' + theme.fg +
+      '; --se-sub: ' + theme.sub + '; --se-muted: ' + theme.muted + '; --se-accent: ' + theme.accent +
+      '; --se-border: ' + theme.border + '; --se-placeholder: ' + theme.placeholder + ';';
+  }
+
+  // 固定の文言。src/render/strings.ts と同じ（一致は spec で確かめている）
+  var S = {
+    nowPlaying: 'NOW PLAYING',
+    lastPlayed: 'LAST PLAYED',
+    nothingPlaying: 'NOTHING PLAYING',
+    unavailableLabel: 'UNAVAILABLE',
+    idle: '再生していません',
+    unavailable: '取得できませんでした',
+    speechPlaying: '再生中',
+    speechLastPlayed: '最後に再生',
+    openInSpotify: '（Spotifyで開く）',
+    noArt: 'no art'
+  };
+
+  // 取得がこの回数続けて失敗したら、前の曲を出し続けずに「取得できませんでした」にする
+  // （src/render/strings.ts の STALE_AFTER_FAILURES と同じ値。/embed のライブ更新も同じ）
+  var STALE_AFTER_FAILURES = 3;
 
   // src/render/theme.ts の FONT_STACK と同じ（一致は spec で確かめている）
   var FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', 'Segoe UI', 'Yu Gothic UI', sans-serif";
@@ -88,39 +124,49 @@
     var style = document.createElement('style');
     style.textContent = [
       ':host, * { box-sizing: border-box; }',
+      '.root { ' + themeVariables(THEMES[options.theme === 'light' ? 'light' : 'dark']) + ' }',
+      options.theme === 'auto' ? '@media (prefers-color-scheme: light) { .root { ' + themeVariables(THEMES.light) + ' } }' : '',
       '.card {',
-      '  display: flex; gap: 16px; align-items: flex-start; max-width: 460px;',
-      '  padding: 14px; border: 1px solid ' + theme.border + '; border-radius: 12px;',
-      '  background: ' + (options.transparent ? 'transparent' : theme.bg) + ';',
-      '  color: ' + theme.fg + '; text-decoration: none;',
+      '  display: flex; gap: 16px; align-items: flex-start; max-width: ' + options.maxWidth + ';',
+      '  padding: 14px; border: 1px solid var(--se-border); border-radius: 12px;',
+      '  background: var(--se-bg);',
+      '  color: var(--se-fg); text-decoration: none;',
       '  font-family: ' + FONT_STACK + ';',
       '  transition: border-color .18s ease, transform .18s ease;',
       '}',
-      'a.card:hover { border-color: ' + theme.accent + '; transform: translateY(-1px); }',
-      'a.card:focus-visible { outline: 2px solid ' + theme.accent + '; outline-offset: 2px; }',
-      '.art, .art-ph { width: 112px; height: 112px; flex: none; border-radius: 8px; object-fit: cover; background: ' + theme.placeholder + '; }',
+      'a.card:hover { border-color: var(--se-accent); transform: translateY(-1px); }',
+      'a.card:focus-visible { outline: 2px solid var(--se-accent); outline-offset: 2px; }',
+      '.art, .art-ph { width: 112px; height: 112px; flex: none; border-radius: 8px; object-fit: cover; background: var(--se-placeholder); }',
       // 枠の上で 4.5:1 を満たす色（muted はライトテーマで 4.0:1 しかない）
-      '.art-ph { display: grid; place-items: center; font-size: 12px; color: ' + theme.sub + '; }',
+      '.art-ph { display: grid; place-items: center; font-size: 12px; color: var(--se-sub); }',
       '.body { min-width: 0; padding-top: 2px; }',
-      '.label { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 600; letter-spacing: .14em; color: ' + theme.muted + '; margin-bottom: 10px; }',
-      '.label.live { color: ' + theme.accent + '; }',
-      '.eq { display: flex; align-items: flex-end; gap: 2px; height: 12px; }',
-      '.eq i { width: 3px; height: 4px; border-radius: 1.5px; background: ' + theme.accent + '; animation: eq .9s ease-in-out infinite; }',
-      '.eq i:nth-child(2) { animation-duration: 1.25s; }',
-      '.eq i:nth-child(3) { animation-duration: .75s; }',
-      '@keyframes eq { 0%, 100% { height: 4px; } 50% { height: 12px; } }',
+      '.label { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 600; letter-spacing: .14em; color: var(--se-muted); margin-bottom: 10px; }',
+      '.label.live { color: var(--se-accent); }',
+      // 再生中インジケータ。SVG カード（src/render/card.ts の EQ_BARS）と同じ動き（一致は spec で確かめている）。
+      // 高さは固定し、transform で伸び縮みさせる（height を動かすと毎フレームレイアウトが走る）
+      '.eq { display: flex; align-items: flex-end; gap: 2px; height: 13px; }',
+      '.eq i { width: 3px; border-radius: 1.5px; background: var(--se-accent); transform-origin: 50% 100%; }',
+      '.eq i:nth-child(1) { height: 12px; animation: eq0 0.9s ease-in-out infinite; }',
+      '@keyframes eq0 { 0%, 100% { transform: scaleY(0.333); } 50% { transform: scaleY(1.000); } }',
+      '.eq i:nth-child(2) { height: 11px; animation: eq1 1.25s ease-in-out infinite; }',
+      '@keyframes eq1 { 0%, 100% { transform: scaleY(1.000); } 50% { transform: scaleY(0.364); } }',
+      '.eq i:nth-child(3) { height: 13px; animation: eq2 0.75s ease-in-out infinite; }',
+      '@keyframes eq2 { 0%, 100% { transform: scaleY(0.462); } 50% { transform: scaleY(1.000); } }',
       /* ムード文が主役。曲名はその出典として下に添える。 */
       '.mood { font-size: 19px; font-weight: 700; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }',
-      '.track { font-size: 12.5px; color: ' + theme.sub + '; margin: 10px 0 0; }',
-      '.artist { font-size: 11.5px; color: ' + theme.muted + '; margin: 3px 0 0; }',
+      '.track { font-size: 12.5px; color: var(--se-sub); margin: 10px 0 0; }',
+      '.artist { font-size: 11.5px; color: var(--se-muted); margin: 3px 0 0; }',
       '.track, .artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
-      '.card.no-mood .track { font-size: 17px; font-weight: 700; color: ' + theme.fg + '; margin-top: 0; white-space: normal; overflow-wrap: anywhere; }',
-      '.idle { font-size: 17px; font-weight: 700; color: ' + theme.muted + '; margin: 0; }',
-      '@media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 8px; } a.card:hover { transform: none; } }'
+      '.card.no-mood .track { font-size: 17px; font-weight: 700; color: var(--se-fg); margin-top: 0; white-space: normal; overflow-wrap: anywhere; }',
+      '.idle { font-size: 17px; font-weight: 700; color: var(--se-muted); margin: 0; }',
+      '@media (prefers-reduced-motion: reduce) { .eq i:nth-child(n) { animation: none; transform: scaleY(0.667); } a.card:hover { transform: none; } }'
     ].join('\n');
     root.appendChild(style);
 
     var container = document.createElement('div');
+    container.className = 'root';
+    // カードの文言とムード文は日本語。英語のページ（<html lang="en">）に貼られても、日本語として読み上げられるようにする
+    container.lang = 'ja';
     root.appendChild(container);
 
     // Spotifyのジャケ写URLはプレフィックスがサイズを表す。表示サイズに
@@ -151,10 +197,6 @@
       return typeof url === 'string' && /^https:\/\//i.test(url);
     }
 
-    // 取得できなかったときの表示。/badge.svg・/embed と同じ文言（src/render/card.ts）
-    var UNAVAILABLE_LABEL = 'UNAVAILABLE';
-    var UNAVAILABLE_TEXT = '取得できませんでした';
-
     /** data が null なら「取得できませんでした」のカードを描く。 */
     function renderCard(data) {
       var track = data && data.track;
@@ -170,9 +212,10 @@
         card.rel = 'noopener noreferrer';
         card.setAttribute(
           'aria-label',
-          (playing ? '再生中: ' : '最後に再生: ') +
+          (playing ? S.speechPlaying : S.speechLastPlayed) + ': ' +
             (mood && mood.text ? mood.text + ' — ' : '') +
-            track.name + ' / ' + track.artist + '（Spotifyで開く）'
+            // アーティストが空なら「曲名 / 」で終わらせない
+            (track.artist ? track.name + ' / ' + track.artist : track.name) + S.openInSpotify
         );
       }
 
@@ -184,7 +227,7 @@
         img.decoding = 'async';
         card.appendChild(img);
       } else {
-        var noArt = el('div', 'art-ph', 'no art');
+        var noArt = el('div', 'art-ph', S.noArt);
         noArt.setAttribute('aria-hidden', 'true');
         card.appendChild(noArt);
       }
@@ -199,16 +242,16 @@
         eq.appendChild(el('i'));
         label.appendChild(eq);
       }
-      var labelText = !data ? UNAVAILABLE_LABEL : track ? (playing ? 'NOW PLAYING' : 'LAST PLAYED') : 'NOTHING PLAYING';
+      var labelText = !data ? S.unavailableLabel : track ? (playing ? S.nowPlaying : S.lastPlayed) : S.nothingPlaying;
       label.appendChild(el('span', null, labelText));
       body.appendChild(label);
 
       if (!track) {
-        body.appendChild(el('p', 'idle', data ? '再生していません' : UNAVAILABLE_TEXT));
+        body.appendChild(el('p', 'idle', data ? S.idle : S.unavailable));
       } else {
         if (mood && mood.text) body.appendChild(el('p', 'mood', mood.text));
         body.appendChild(el('p', 'track', track.name));
-        body.appendChild(el('p', 'artist', track.artist));
+        if (track.artist) body.appendChild(el('p', 'artist', track.artist));
       }
 
       card.appendChild(body);
@@ -302,8 +345,9 @@
         }, function () {
           failures = Math.min(failures + 1, 10);
           // まだ何も描いていなければ「取得できませんでした」を出す。
-          // 描いたものがあれば残し、次の更新に任せる
-          if (lastKey === null) show(null);
+          // 描いたものがあれば残し、次の更新に任せる。ただし失敗が続いたら、とうに再生を終えた曲を
+          // 「NOW PLAYING」のまま出し続けないよう、取得できなかった表示に切り替える（成功すれば元に戻る）
+          if (lastKey === null || failures >= STALE_AFTER_FAILURES) show(null);
         })
         .then(function () {
           loading = false;

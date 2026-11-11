@@ -13,6 +13,9 @@ import { bindingRateLimiter } from './http/rateLimit.js';
 import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
 import { config } from './config.js';
 import { setDurableStore, type DurableStore } from './cache/index.js';
+import { MissingConfigError, missingAuthValues } from './authStore.js';
+import { setShareInFlightWork } from './runtime.js';
+import { llmKeyNotice, resolveLlm } from './llm/settings.js';
 
 interface Env {
   /** ムード文の保存先。isolate が入れ替わっても LLM を呼び直さないため。 */
@@ -35,9 +38,21 @@ export default {
     // バインディングは isolate 内で不変なので、最初のリクエストで一度だけ組み立てる
     if (!app) {
       setDurableStore(env.MOODS ? kvStore(env.MOODS) : null);
-      // Workers は本番として扱う。isolate ごとに一度だけ出る
+      // あるリクエストが作った Promise を別のリクエストに待たせない（理由は src/runtime.ts）
+      setShareInFlightWork(false);
+      // Secrets の入れ忘れは、最初のリクエストで分かるようにする（Node 版の起動時の確認にあたる）。
+      // リクエストは止めない: /health と失敗時のカードは Secrets が無くても返せる
+      const missing = missingAuthValues();
+      if (missing.length > 0) console.error('[config]', new MissingConfigError(missing).message);
+      // LLM の設定の誤り（送れない送り先など）と、GOOGLE_API_KEY を LLM のキーとして使うことも、ここで一度だけ知らせる
+      const llm = resolveLlm();
+      if (llm.kind === 'invalid') console.warn('[llm]', `${llm.problem} 設定を直すまで、ムード文なしで動作します。`);
+      const llmNotice = llmKeyNotice();
+      if (llmNotice) console.warn('[llm]', llmNotice);
+      // Workers は本番として扱う。isolate は頻繁に作り直され、そのたびにここを通るので、設定を変えない限り
+      // 繰り返し出る。警告（warn）で Workers Logs を埋めないよう、情報（info）として出す（README にも書いている）
       const corsWarning = openCorsWarning(config.server.corsOrigins);
-      if (corsWarning) console.warn(corsWarning);
+      if (corsWarning) console.info('[cors]', corsWarning);
       for (const problem of analyzeCorsOrigins(process.env['CORS_ORIGIN']).problems) console.warn(problem);
       app = createApp(env.RATE_LIMITER ? { rateLimiter: bindingRateLimiter(env.RATE_LIMITER) } : {});
     }

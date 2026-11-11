@@ -11,7 +11,23 @@
  * | /embed 以外           | X-Frame-Options: DENY（/embed は他サイトの iframe に入るためのページ） |
  * | /embed・/badge.svg    | それぞれの CSP（src/routes/embed.ts） |
  * | デモ画面（/）         | DEMO_PAGE_CSP |
+ * | 埋め込まれるパス      | Cross-Origin-Resource-Policy: cross-origin（EMBEDDABLE_PATHS） |
+ * | /embed.js             | EMBED_SCRIPT_CACHE_CONTROL |
  */
+
+import { IMAGE_CSP_SOURCES } from '../render/image.js';
+
+/**
+ * 参照元（Referer）はどこにも送らない。意図した方針:
+ * - /embed は他人のサイトの iframe の中で開かれる。曲のリンクから Spotify へ移るときに参照元を送ると、
+ *   埋め込み先のページでも利用者のものでもない、このサーバーの URL（?theme= などのクエリつき）が渡るだけで、誰の役にも立たない
+ * - ジャケ写（*.scdn.co）の取得でも、どのサイトにカードが貼られているかを CDN に知らせない
+ *
+ * ヘッダーが正で、ページの中のすべての遷移と取得に効く。リンクの rel="noopener noreferrer" は重ねて付けている:
+ * noopener は別の目的（開いた先から window.opener を触らせない）で必要で、noreferrer は、ヘッダーを付けられない
+ * 配り方（静的モードの GitHub Pages・embed.js を貼った先のページ）でも同じ方針にするため。
+ */
+export const REFERRER_POLICY = 'no-referrer';
 
 /** カメラ・位置情報などは一切使わないので閉じる。 */
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()';
@@ -28,9 +44,23 @@ export const DEMO_PAGE_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'unsafe-inline'",
-  'img-src https: data:',
+  `img-src ${IMAGE_CSP_SOURCES}`,
   "connect-src 'self'",
   "base-uri 'none'",
   "form-action 'none'",
   "frame-ancestors 'none'",
 ].join('; ');
+
+/**
+ * 他サイトに埋め込まれるためのパス。Cross-Origin-Embedder-Policy: require-corp のサイトは、他オリジンの
+ * 画像・iframe・スクリプトに Cross-Origin-Resource-Policy: cross-origin が無いと読み込まない。
+ * それ以外のパス（デモ画面・/health など）には付けない。
+ */
+export const EMBEDDABLE_PATHS: readonly string[] = ['/badge.svg', '/embed', '/embed.js', '/api/now-playing'];
+export const CROSS_ORIGIN_RESOURCE_POLICY = 'cross-origin';
+
+/**
+ * embed.js は他人のサイトに貼られるので、修正が届くまでの時間を実行環境まかせにしない。
+ * 5分だけ保存させ、過ぎたら必ず問い合わせさせる。Workers 版は public/_headers に同じ値を書く。
+ */
+export const EMBED_SCRIPT_CACHE_CONTROL = 'public, max-age=300, must-revalidate';

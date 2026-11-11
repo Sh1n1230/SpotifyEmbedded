@@ -43,6 +43,16 @@ export function resolveTheme(name: string | undefined): ThemeName {
 }
 
 /**
+ * iframe 用ページ（/embed）のテーマ。auto は閲覧者の OS（iframe では埋め込み元の要素の color-scheme）の
+ * ダーク・ライトに合わせる。SVG は1枚の中で切り替えないので、auto は受け付けない（resolveTheme は dark にする）。
+ */
+export type PageThemeName = ThemeName | 'auto';
+
+export function resolvePageTheme(name: string | undefined): PageThemeName {
+  return name === 'auto' ? 'auto' : resolveTheme(name);
+}
+
+/**
  * 日本語が確実に出るフォントスタック。SVGは閲覧者の環境で描画されるため、
  * ここで指定できるのはあくまで優先順位。
  */
@@ -67,6 +77,7 @@ export function formatDateJa(date: Date): string {
 
 const DATETIME_FORMAT_JST = new Intl.DateTimeFormat('en-US', {
   timeZone: 'Asia/Tokyo',
+  year: 'numeric',
   month: 'numeric',
   day: 'numeric',
   hour: '2-digit',
@@ -78,9 +89,16 @@ const DATETIME_FORMAT_JST = new Intl.DateTimeFormat('en-US', {
  * 「10/16 21:04」のような日時（日本時間）。静的モードの「最後に聴いた」時刻に使う。
  * 静的な生成物は数時間おきにしか作り直されないので、生成時刻を基準にした
  * 「約1時間前」を焼き込むと、閲覧時には実際より新しく見えてしまう。
+ *
+ * 年は、基準の時刻（now。生成した時刻）と違うときだけ付ける（「2025/10/16 21:04」）。静的モードは停止中も
+ * 前回の曲を引き継ぐので、何か月も前の曲が残ることがあり、年が無いと今年の日付に見える。
+ * タイムゾーンは付けない: 表示は日本語向けで日本時間に固定している（README にも書いている）。
  */
-export function formatDateTimeJa(date: Date): string {
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    DATETIME_FORMAT_JST.formatToParts(date).find((p) => p.type === type)?.value ?? '';
-  return `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
+export function formatDateTimeJa(date: Date, now: Date = new Date()): string {
+  const partsOf = (value: Date) => DATETIME_FORMAT_JST.formatToParts(value);
+  const parts = partsOf(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
+  const yearNow = Number.isNaN(now.getTime()) ? '' : (partsOf(now).find((p) => p.type === 'year')?.value ?? '');
+  const year = yearNow !== '' && part('year') !== yearNow ? `${part('year')}/` : '';
+  return `${year}${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
 }
