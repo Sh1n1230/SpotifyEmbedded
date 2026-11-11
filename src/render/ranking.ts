@@ -16,6 +16,7 @@ import {
 import { rangeLabelEn, rangeLabelJa } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml, svgIdSuffix, truncateToWidth, wrapToWidth } from './text.js';
+import { trackCredit } from './card.js';
 
 export interface RankingInput {
   tracks: TopTrackEntry[];
@@ -83,7 +84,7 @@ export function renderRankingCard(input: RankingInput): string {
   // role="img" の中の <text> は支援技術に公開されない（WAI-ARIA の img role は Children Presentational）。
   // 曲名とアーティストは <desc> に並べ、aria-describedby で結び付ける（SVG-AAM）。
   const description = tracks.length
-    ? tracks.map((track) => `${track.rank}位 ${track.name} / ${track.artist}`).join('。')
+    ? tracks.map((track) => `${track.rank}位 ${trackCredit(track)}`).join('。')
     : 'データがありません';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="rank-title-${idSuffix}" aria-describedby="rank-desc-${idSuffix}">
@@ -121,6 +122,10 @@ function renderRow(
 
   return `${art}
     <text x="${PAD + 18}" y="${artY + 28}" font-size="13" font-weight="700" fill="${theme.muted}" text-anchor="end">${track.rank}</text>
-    <text x="${TEXT_X}" y="${artY + 20}" font-size="13" font-weight="600" fill="${theme.fg}">${escapeXml(truncateToWidth(track.name, TEXT_WIDTH / 13))}</text>
-    <text x="${TEXT_X}" y="${artY + 37}" font-size="11" fill="${theme.muted}">${escapeXml(truncateToWidth(track.artist, TEXT_WIDTH / 11))}</text>`;
+    <text x="${TEXT_X}" y="${artY + (track.artist ? 20 : 28)}" font-size="13" font-weight="600" fill="${theme.fg}">${escapeXml(truncateToWidth(track.name, TEXT_WIDTH / 13))}</text>${
+      // アーティストが空なら行ごと省き、曲名を行の中央に置く
+      track.artist
+        ? `\n    <text x="${TEXT_X}" y="${artY + 37}" font-size="11" fill="${theme.muted}">${escapeXml(truncateToWidth(track.artist, TEXT_WIDTH / 11))}</text>`
+        : ''
+    }`;
 }

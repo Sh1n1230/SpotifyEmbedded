@@ -167,8 +167,17 @@ describe('ワークフローの細かな約束', () => {
     expect(workflow.on.push.paths).toContain('package-lock.json');
   });
 
-  // リダイレクトは git show が失敗しても空のファイルを作る。空の snapshot.json は generate が読めず、
-  // refresh_ranking_mood の作り直し（JSON.parse）はステップごと落ちる
+  it('deploy-pages.yml は、内部の状態ファイル（snapshot.json）を Pages に公開しない', () => {
+    const workflow = yaml.load(read('deploy-pages.yml')) as { jobs: Record<string, Job> };
+    const steps = workflow.jobs['deploy']!.steps;
+    const upload = steps.find((step) => step.uses?.startsWith('actions/upload-pages-artifact@'));
+
+    expect(steps.map((step) => step.run ?? '').join('\n')).toMatch(/rm -rf[^\n]*snapshot\.json/);
+    // ブランチを丸ごと（path: .）上げない
+    expect(upload?.with?.['path']).toBe('${{ runner.temp }}/site');
+  });
+
+  // リダイレクトは git show が失敗しても空のファイルを作る。空の snapshot.json は generate が読めない
   it('update-spotify.yml は、復元できなかったときに空の snapshot.json を残さない', () => {
     expect(read('update-spotify.yml')).not.toMatch(/git show[^\n]*>\s*out\/snapshot\.json/);
   });

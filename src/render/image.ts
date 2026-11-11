@@ -40,6 +40,14 @@ export function albumArtAtSize(url: string, size: 640 | 300 | 64): string {
 /** リダイレクトを辿る上限。Spotify の CDN は通常リダイレクトしない。 */
 const MAX_REDIRECTS = 3;
 
+/**
+ * ページ（/embed・デモ画面・静的モードの index.html）の CSP の img-src。ジャケ写は Spotify の CDN から読む。
+ * トラックのジャケ写は i.scdn.co で配られる（mosaic.scdn.co などの兄弟ホストも *.scdn.co に入る）。
+ * Spotify は一部の画像を image-cdn-*.spotifycdn.com でも配るので、表示が欠けないようそちらも許す。
+ * SVG に焼き込む側（isAllowedImageUrl）は README に載るものの境界なので、より狭い *.scdn.co だけのまま。
+ */
+export const IMAGE_CSP_SOURCES = 'https://*.scdn.co https://*.spotifycdn.com data:';
+
 /** 埋め込んでよい取得先か。https の Spotify の CDN（*.scdn.co）だけ。 */
 function isAllowedImageUrl(url: URL): boolean {
   return url.protocol === 'https:' && url.hostname.endsWith('.scdn.co');

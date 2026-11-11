@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 
 import { THEMES, FONT_STACK, formatDateJa, formatDateTimeJa } from '../render/theme.js';
 import { renderNowPlayingCard } from '../render/card.js';
-import { renderEmbedPage, STATIC_PAGE_CSP } from '../render/page.js';
+import { renderEmbedPage, STATIC_PAGE_CSP, FAVICON_DATA_URI, PAGE_DESCRIPTION } from '../render/page.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { portInUseHelp } from '../http/portInUse.js';
 import { truncateToWidth, visualWidth, wrapToWidth, jsonForScript } from '../render/text.js';
@@ -113,7 +113,8 @@ describe('iframe 用ページ（/embed・静的モードの index.html）のサ�
     });
 
     expect(html).not.toContain('javascript:');
-    expect(html).not.toContain('data:image/svg+xml');
+    // ファビコン（<link rel="icon">）はこちらで決めた data URI なので除いて確かめる
+    expect(html.replace(/<link rel="icon"[^>]*>/, '')).not.toContain('data:image/svg+xml');
     expect(html).toContain('<div class="card" id="card"');
     expect(html).toContain('no art');
   });
@@ -543,7 +544,130 @@ describe('日付の表示は日本時間の境界で切り替わる', () => {
     ['2026-12-31T15:00:00.000Z', '2027-01-01', '1/1 00:00'],
   ])('%s → %s / %s', (iso, date, dateTime) => {
     expect(formatDateJa(new Date(iso))).toBe(date);
-    expect(formatDateTimeJa(new Date(iso))).toBe(dateTime);
+    // 基準の時刻（生成した時刻）と同じ年なら、年は付けない
+    expect(formatDateTimeJa(new Date(iso), new Date(iso))).toBe(dateTime);
+  });
+});
+
+describe('「最後に聴いた」時刻は、生成した年と違うときだけ年を付ける（日本時間）', () => {
+  it('前の年の曲には年が入る（何か月も前の曲が今年の日付に見えないように）', () => {
+    expect(formatDateTimeJa(new Date('2025-10-16T12:04:00.000Z'), new Date(NOW_ISO))).toBe('2025/10/16 21:04');
+  });
+
+  it('同じ年なら今までどおり M/D HH:mm', () => {
+    expect(formatDateTimeJa(new Date('2026-01-16T12:04:00.000Z'), new Date(NOW_ISO))).toBe('1/16 21:04');
+  });
+
+  it('年の境目は日本時間で判定する（UTC では前の年でも、日本時間で同じ年なら付けない）', () => {
+    // 2025-12-31T15:30Z は日本時間の 2026-01-01 00:30
+    expect(formatDateTimeJa(new Date('2025-12-31T15:30:00.000Z'), new Date(NOW_ISO))).toBe('1/1 00:30');
+  });
+
+  it('カードの見出しと読み上げにも年が入る', () => {
+    const svg = renderNowPlayingCard({
+      state: 'recent',
+      track: aTopTrackEntry(),
+      mood: null,
+      since: '2025-10-16T12:04:00.000Z',
+      now: NOW_ISO,
+    });
+
+    expect(svg).toContain('LAST PLAYED · 2025/10/16 21:04');
+    expect(svg).toContain('最後に再生（2025/10/16 21:04）');
+  });
+});
+
+describe('静的モードの再生中のカードは、いつの情報かが分かる', () => {
+  const since = '2026-09-21T11:30:00.000Z';
+
+  it('SVG は見出しと読み上げに観測時刻を出す', () => {
+    const svg = renderNowPlayingCard({ state: 'playing', track: aTopTrackEntry(), mood: null, since, observedTime: true, now: NOW_ISO });
+
+    expect(svg).toContain('NOW PLAYING · 9/21 20:30');
+    expect(svg).toContain('再生中（9/21 20:30 時点）: Midnight Drive / Neon District');
+  });
+
+  it('iframe 用ページも同じ見出しになる', () => {
+    const html = renderEmbedPage({
+      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: since },
+      state: 'playing',
+      since,
+      observedTime: true,
+      now: NOW_ISO,
+    });
+
+    expect(html).toContain('NOW PLAYING · 9/21 20:30');
+  });
+
+  it('ライブAPI（observedTime なし）は今の状態なので、今までどおり NOW PLAYING だけ', () => {
+    const svg = renderNowPlayingCard({ state: 'playing', track: aTopTrackEntry(), mood: null, since });
+
+    expect(svg).toContain('>NOW PLAYING<');
+  });
+});
+
+describe('アーティストが空の曲（Spotify が artists を空で返した曲）', () => {
+  const track = aTopTrackEntry({ artist: '' });
+
+  it('SVG カードは空の行を描かず、読み上げを「曲名 / 」で終わらせない', () => {
+    const svg = renderNowPlayingCard({ state: 'playing', track, mood: null });
+
+    expect(svg).toContain('aria-label="再生中: Midnight Drive"');
+    expect(svg).not.toMatch(/<text[^>]*><\/text>/);
+  });
+
+  it('ランキングも同じ', () => {
+    const svg = renderRankingCard({ tracks: [track], fetchedAt: NOW_ISO });
+
+    expect(svg).toContain('1位 Midnight Drive<');
+    expect(svg).not.toMatch(/<text[^>]*><\/text>/);
+  });
+
+  it('iframe 用ページはアーティストの行を隠し、タイトルと読み上げは曲名だけにする', () => {
+    const html = renderEmbedPage({
+      nowPlaying: { is_playing: true, track, mood: null, fetched_at: NOW_ISO },
+      topTracks: { range: 'short_term', limit: 10, fetched_at: NOW_ISO, mood: null, tracks: [track] },
+      state: 'playing',
+    });
+
+    expect(html).toContain('<title>Now Playing: Midnight Drive</title>');
+    expect(html).toContain('<p class="artist" id="artist" hidden></p>');
+    expect(html).toContain('再生中: Midnight Drive（Spotifyで開く）');
+    expect(html).toContain('1位 Midnight Drive（Spotifyで開く）');
+    expect(html).not.toContain('class="by"');
+  });
+});
+
+describe('ページの説明・ファビコン・画像の取得先', () => {
+  const page = (overrides: Partial<Parameters<typeof renderEmbedPage>[0]> = {}) =>
+    renderEmbedPage({
+      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
+      state: 'playing',
+      ...overrides,
+    });
+
+  it('description と、外部に取りに行かない（data URI の）ファビコンを持つ', () => {
+    const html = page();
+
+    expect(html).toContain(`<meta name="description" content="${PAGE_DESCRIPTION}">`);
+    expect(html).toMatch(/<link rel="icon" href="data:image\/svg\+xml,[^"]+">/);
+    expect(decodeURIComponent(FAVICON_DATA_URI.slice('data:image/svg+xml,'.length))).toMatch(/^<svg xmlns=.*<\/svg>$/);
+  });
+
+  it('noindex は指定したときだけ入る（静的モードの既定）', () => {
+    expect(page({ noindex: true })).toContain('<meta name="robots" content="noindex">');
+    expect(page()).not.toContain('name="robots"');
+  });
+
+  it('3つの CSP（静的ページ・/embed・デモ画面）の img-src は Spotify の画像のホストと data: だけ', async () => {
+    const { DEMO_PAGE_CSP } = await import('../http/securityHeaders.js');
+    const { createApp } = await import('../app.js');
+    const embed = (await createApp().request('/embed')).headers.get('content-security-policy') ?? '';
+
+    for (const csp of [STATIC_PAGE_CSP, embed, DEMO_PAGE_CSP]) {
+      expect(csp).toContain('img-src https://*.scdn.co https://*.spotifycdn.com data:;');
+      expect(csp).not.toContain('img-src https: ');
+    }
   });
 });
 

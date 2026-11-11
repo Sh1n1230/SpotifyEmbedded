@@ -10,10 +10,10 @@
 
 # デモ画面。スクリプトは同一オリジンの demo.js だけ
 /
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https://*.scdn.co https://*.spotifycdn.com data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /index.html
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src https://*.scdn.co https://*.spotifycdn.com data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 # 他人のサイトに読み込まれるスクリプト。COEP: require-corp のサイトでも読めるようにし、
 # 修正が届くまでの時間を決める（src/http/securityHeaders.ts の EMBED_SCRIPT_CACHE_CONTROL と同じ値）

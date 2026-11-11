@@ -157,7 +157,12 @@ describe('CLI（spotify-embedded）', () => {
       [['--count', '51'], '--count'],
       [['--theme', 'sepia'], '--theme'],
       [['--out'], '--out'],
+      [['--out='], '--out'],
+      [['--out', '--range', 'short_term'], '--out'],
+      [['--page-count', '0'], '--page-count'],
+      [['--no-mood=yes'], '--no-mood'],
       [['--verbose'], '--verbose'],
+      [['extra'], 'extra'],
     ])('%j', (args, mentioned) => {
       const run = runCli(['generate', ...args]);
 
@@ -167,6 +172,18 @@ describe('CLI（spotify-embedded）', () => {
       expect(readdirSync(run.cwd)).toEqual([]);
     }, 30_000);
   });
+
+  it('値は --name value と --name=value のどちらの形でも渡せる', () => {
+    // 設定が無いので取得の前に止まる。そこまで進めば、オプションはすべて読めている
+    const spaced = runCli(['generate', '--out', 'foo', '--limit', '30', '--count', '10', '--no-mood']);
+    const equals = runCli(['generate', '--out=foo', '--limit=30', '--count=10', '--page-count=20', '--refresh-ranking-mood', '--index']);
+
+    for (const run of [spaced, equals]) {
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain('Spotify の設定が見つかりません');
+      expect(run.stderr).not.toContain('不明なオプション');
+    }
+  }, 30_000);
 
   it('--limit 30・--count 10 のような正しい整数は今までどおり受け付ける', () => {
     // 後ろの --theme で止めて、--limit と --count は通ったことを確かめる

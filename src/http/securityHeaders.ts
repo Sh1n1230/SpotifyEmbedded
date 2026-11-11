@@ -15,6 +15,8 @@
  * | /embed.js             | EMBED_SCRIPT_CACHE_CONTROL |
  */
 
+import { IMAGE_CSP_SOURCES } from '../render/image.js';
+
 /** カメラ・位置情報などは一切使わないので閉じる。 */
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()';
 
@@ -30,7 +32,7 @@ export const DEMO_PAGE_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'unsafe-inline'",
-  'img-src https: data:',
+  `img-src ${IMAGE_CSP_SOURCES}`,
   "connect-src 'self'",
   "base-uri 'none'",
   "form-action 'none'",

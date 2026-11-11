@@ -34,10 +34,18 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
+      # snapshot.json は generate が次の実行へ持ち越すための内部の状態ファイルで、公開する出力ではない
+      # （update-spotify.yml は spotify-data ブランチから復元するので、Pages に無くても困らない）
+      - name: Collect public files
+        run: |
+          mkdir "$RUNNER_TEMP/site"
+          cp -R . "$RUNNER_TEMP/site/"
+          rm -rf "$RUNNER_TEMP/site/.git" "$RUNNER_TEMP/site/snapshot.json"
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: .
+          path: ${{ runner.temp }}/site
 
       - name: Deploy to GitHub Pages
         id: deployment

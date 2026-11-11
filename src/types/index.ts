@@ -142,8 +142,10 @@ export const TOP_TRACKS_RANGES = ['short_term', 'medium_term', 'long_term'] as c
 export type TopTracksRange = (typeof TOP_TRACKS_RANGES)[number];
 
 /**
- * 取得件数。Spotify 側は 1〜50 の任意値を許すが、3段階に固定している
- * （任意の件数を受け付けるかは #515）。
+ * 取得件数。Spotify 側は 1〜50 の任意値を許すが、意図して3段階に固定している:
+ * - 見せる件数は別のオプション（--count・--page-count、1〜50）で自由に決められるので、取得件数を細かく刻む必要が無い
+ * - 最小を 10 にすることで、ランキングのムード文の根拠（上位 10 曲、RANKING_MOOD_BASIS_SIZE）が limit に依らず揃う
+ * - top-tracks.json の `limit` が取りうる値を3つに限ることで、利用側の分岐と検証を単純に保つ
  */
 export const TOP_TRACKS_LIMITS = [10, 30, 50] as const;
 export type TopTracksLimit = (typeof TOP_TRACKS_LIMITS)[number];

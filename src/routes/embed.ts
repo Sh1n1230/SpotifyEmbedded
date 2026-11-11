@@ -13,7 +13,7 @@ import { Hono, type Context } from 'hono';
 import { collectNowPlaying } from '../core/collect.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderEmbedPage } from '../render/page.js';
-import { albumArtAtSize, fetchImageDataUri } from '../render/image.js';
+import { IMAGE_CSP_SOURCES, albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
 import { liveMoodOptions } from '../http/background.js';
@@ -39,7 +39,7 @@ function sendSvg(c: Context, svg: string): Response {
 
 /**
  * /embed の CSP。スクリプトはライブ更新の1本だけを nonce で許す。
- * ジャケ写は Spotify の CDN（ホストが複数ある）から https で読む。
+ * ジャケ写は Spotify の CDN（IMAGE_CSP_SOURCES）からだけ読む。
  * frame-ancestors は付けない: 他サイトの iframe に入るためのページなので。
  */
 function embedCsp(nonce: string): string {
@@ -47,7 +47,7 @@ function embedCsp(nonce: string): string {
     "default-src 'none'",
     `script-src 'nonce-${nonce}'`,
     "style-src 'unsafe-inline'",
-    'img-src https: data:',
+    `img-src ${IMAGE_CSP_SOURCES}`,
     "connect-src 'self'",
     "base-uri 'none'",
     "form-action 'none'",
