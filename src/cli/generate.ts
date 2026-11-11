@@ -224,7 +224,9 @@ export async function generate(options: GenerateOptions): Promise<void> {
         ? fetchImageDataUri(albumArtAtSize(snapshot.track.album_art_url, 300))
         : Promise.resolve(null),
       mapWithLimit(fetchedTopTracks?.tracks.slice(0, options.count) ?? [], IMAGE_CONCURRENCY, (track) =>
-        track.album_art_url ? fetchImageDataUri(albumArtAtSize(track.album_art_url, 64)) : Promise.resolve(null)
+        track.album_art_url
+          ? fetchImageDataUri(albumArtAtSize(track.album_art_url, rankingArtSize(options.count)))
+          : Promise.resolve(null)
       ),
     ])
   );
@@ -577,6 +579,18 @@ function isUnchanged(path: string, content: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * ランキング SVG に焼き込むジャケ写のサイズ。44px で描くので、2倍の画面では 88px が要り、64px 版だとぼやける。
+ * SVG は data URI で焼き込むしかなく（camo）、srcset のようにブラウザに選ばせられないので、件数で決める:
+ * 300px 版は1枚 15〜30KB 程度（base64 で 20〜40KB）で、RANKING_ART_HIRES_MAX_COUNT 件までなら SVG は 0.5MB に収まる。
+ * それより多い件数（最大 50）では 1MB を超えて README の表示が遅くなるので、64px 版（1枚 2〜3KB）にする。
+ */
+export const RANKING_ART_HIRES_MAX_COUNT = 10;
+
+export function rankingArtSize(count: number): 300 | 64 {
+  return count <= RANKING_ART_HIRES_MAX_COUNT ? 300 : 64;
 }
 
 /** ジャケ写の同時取得数。最大51枚を一度に取りに行かない。 */

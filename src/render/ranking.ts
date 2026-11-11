@@ -17,6 +17,7 @@ import { rangeLabelEn, rangeLabelJa } from '../core/topTracksParams.js';
 import { THEMES, FONT_STACK, formatDateJa, type ThemeName } from './theme.js';
 import { escapeXml, svgIdSuffix, truncateToWidth, wrapToWidth } from './text.js';
 import { trackCredit } from './card.js';
+import { STRINGS } from './strings.js';
 
 export interface RankingInput {
   tracks: TopTrackEntry[];
@@ -68,7 +69,7 @@ export function renderRankingCard(input: RankingInput): string {
 
   const height = headerHeight + Math.max(tracks.length, 1) * ROW_HEIGHT + 12;
   const fetchedAt = new Date(input.fetchedAt);
-  const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} 時点`;
+  const dateLabel = Number.isNaN(fetchedAt.getTime()) ? '' : `${formatDateJa(fetchedAt)} ${STRINGS.asOf}`;
 
   // 同じページに複数のランキングをインラインで置いても id が衝突しないよう、内容から決まる接尾辞を付ける
   const idSuffix = svgIdSuffix(input.theme ?? 'dark', range, ...tracks.map((track) => track.id));
@@ -78,16 +79,16 @@ export function renderRankingCard(input: RankingInput): string {
           renderRow(track, i, headerHeight, input.artDataUris?.[i] ?? null, theme, idSuffix)
         )
         .join('\n    ')
-    : `<text x="${PAD}" y="${headerHeight + 30}" font-size="13" fill="${theme.muted}">データがありません</text>`;
+    : `<text x="${PAD}" y="${headerHeight + 30}" font-size="13" fill="${theme.muted}">${STRINGS.noData}</text>`;
 
   const title = `${rangeLabelJa(range)}のトップトラック${tracks.length}件${dateLabel ? `（${dateLabel}）` : ''}${input.mood?.text ? `: ${input.mood.text}` : ''}`;
   // role="img" の中の <text> は支援技術に公開されない（WAI-ARIA の img role は Children Presentational）。
   // 曲名とアーティストは <desc> に並べ、aria-describedby で結び付ける（SVG-AAM）。
   const description = tracks.length
     ? tracks.map((track) => `${track.rank}位 ${trackCredit(track)}`).join('。')
-    : 'データがありません';
+    : STRINGS.noData;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" aria-labelledby="rank-title-${idSuffix}" aria-describedby="rank-desc-${idSuffix}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${height}" viewBox="0 0 ${WIDTH} ${height}" role="img" lang="ja" aria-labelledby="rank-title-${idSuffix}" aria-describedby="rank-desc-${idSuffix}">
   <title id="rank-title-${idSuffix}">${escapeXml(title)}</title>
   <desc id="rank-desc-${idSuffix}">${escapeXml(description)}</desc>
   <defs>

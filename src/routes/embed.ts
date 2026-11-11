@@ -12,9 +12,9 @@
 import { Hono, type Context } from 'hono';
 import { collectNowPlaying } from '../core/collect.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
-import { renderEmbedPage } from '../render/page.js';
+import { parseMaxWidth, renderEmbedPage } from '../render/page.js';
 import { IMAGE_CSP_SOURCES, albumArtAtSize, fetchImageDataUri } from '../render/image.js';
-import { resolveTheme } from '../render/theme.js';
+import { resolvePageTheme, resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
 import { liveMoodOptions } from '../http/background.js';
 import { SpotifyAuthError } from '../spotify/client.js';
@@ -158,7 +158,9 @@ function sendEmbedPage(c: Context, fetched: NowPlayingResponse | null): Response
       nowPlaying,
       state,
       since: nowPlaying.fetched_at,
-      theme: resolveTheme(c.req.query('theme')),
+      // auto は閲覧者の OS のダーク・ライトに合わせる（/badge.svg は1枚の SVG なので auto を受け付けない）
+      theme: resolvePageTheme(c.req.query('theme')),
+      maxWidth: parseMaxWidth(c.req.query('max_width')),
       transparent: c.req.query('transparent') === 'true',
       // ページ自身が定期的に取得し直す。iframe を貼り替える必要はない。
       liveEndpoint: '/api/now-playing',

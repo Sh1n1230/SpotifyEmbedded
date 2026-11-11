@@ -10,7 +10,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { createApp } from '../app.js';
-import { renderEmbedPage } from '../render/page.js';
+import { parseMaxWidth, renderEmbedPage } from '../render/page.js';
+import { eqBarCss } from '../render/card.js';
+import { STALE_AFTER_FAILURES, STRINGS } from '../render/strings.js';
 import { THEMES } from '../render/theme.js';
 import type { NowPlayingResponse } from '../types/index.js';
 import { NOW, NOW_ISO, ART_640, respondWith, jsonOk, callsTo, aSpotifyTrack, givenNowPlaying, must } from './support.js';
@@ -215,6 +217,29 @@ describe('/embed のライブ更新', () => {
     expect(nowPlayingCalls()).toHaveLength(2);
   });
 
+  it('失敗が3回続いたら、見出しを UNAVAILABLE にしてイコライザを止め、成功したら戻す', async () => {
+    givenLiveResponses(502, 502, 502, aNowPlaying('A', 'ムード'));
+    const page = openEmbed(aNowPlaying('A', 'ムード'));
+
+    await vi.advanceTimersByTimeAsync(30_000 + 60_000);
+    expect(page.byId('label-text')?.textContent).toBe('NOW PLAYING');
+    expect(page.byId('label')?.hasAttribute('data-playing')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(nowPlayingCalls()).toHaveLength(3);
+    expect(page.byId('label-text')?.textContent).toBe('UNAVAILABLE');
+    expect(page.byId('label')?.hasAttribute('data-playing')).toBe(false);
+    expect(page.byId('card')?.getAttribute('aria-label')).toBe('取得できませんでした');
+    expect(document.title).toBe('取得できませんでした');
+    // 何が取れなくなったのかが分かるよう、曲名は残す
+    expect(page.byId('track')?.textContent).toBe('A');
+
+    await vi.advanceTimersByTimeAsync(240_000);
+    expect(page.byId('label-text')?.textContent).toBe('NOW PLAYING');
+    expect(page.byId('label')?.hasAttribute('data-playing')).toBe(true);
+    expect(page.byId('card')?.getAttribute('aria-label')).toContain('再生中: ムード — A');
+  });
+
   it('続けて失敗したら間隔を倍々に伸ばし、成功したら元に戻す', async () => {
     givenLiveResponses(502, 502, aNowPlaying('A', 'ムード'));
     openEmbed(aNowPlaying('A', 'ムード'));
@@ -334,6 +359,39 @@ describe('embed.js（ワンタグ埋め込み）', () => {
       await vi.advanceTimersByTimeAsync(60_000);
       expect(card.text()).toContain('NOW PLAYING');
       expect(card.text()).not.toContain('取得できませんでした');
+    });
+
+    it('失敗が3回続いたら、前の曲を NOW PLAYING のまま出し続けず「取得できませんでした」に切り替え、成功したら戻す', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'), 502, 502, 502, aNowPlaying('B', '次のムード'));
+
+      const card = embed();
+      await settle();
+      // 30 秒後・その 60 秒後の失敗までは、前回のカードを残す
+      await vi.advanceTimersByTimeAsync(30_000 + 60_000);
+      expect(nowPlayingCalls()).toHaveLength(3);
+      expect(card.text()).toContain('NOW PLAYING');
+
+      // 3回目の失敗（さらに 120 秒後）で切り替える
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(nowPlayingCalls()).toHaveLength(4);
+      expect(card.text()).toContain('UNAVAILABLE');
+      expect(card.text()).toContain('取得できませんでした');
+      expect(card.text()).not.toContain('NOW PLAYING');
+      expect(card.host.shadowRoot!.querySelector('.eq')).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(240_000);
+      expect(card.text()).toContain('NOW PLAYING');
+      expect(card.text()).toContain('次のムード');
+    });
+
+    it('アーティストが空の曲は、アーティストの行を作らず、読み上げを「曲名 / 」で終わらせない', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード', { artist: '' }));
+
+      const card = embed();
+      await settle();
+
+      expect(card.host.shadowRoot!.querySelector('.artist')).toBeNull();
+      expect(card.card()?.getAttribute('aria-label')).toBe('再生中: ムード — A（Spotifyで開く）');
     });
 
     it('2回目以降の失敗では、前回のカードをそのまま残す', async () => {
@@ -657,15 +715,86 @@ describe('ライブ更新の周期と再試行（3つのスクリプトで同じ
       givenLiveResponses(aNowPlaying('A', 'ムード'));
       runEmbed({ 'data-transparent': 'true' });
       await settle();
-      expect(shadowStyle()).toContain('background: transparent');
-      expect(shadowStyle()).not.toContain(`background: ${THEMES.dark.bg}`);
+      expect(shadowStyle()).toContain('--se-bg: transparent');
+      expect(shadowStyle()).not.toContain(`--se-bg: ${THEMES.dark.bg}`);
     });
 
     it('data-transparent が true 以外なら theme の背景を塗る', async () => {
       givenLiveResponses(aNowPlaying('A', 'ムード'));
       runEmbed({ 'data-transparent': '1' });
       await settle();
-      expect(shadowStyle()).toContain(`background: ${THEMES.dark.bg}`);
+      expect(shadowStyle()).toContain(`--se-bg: ${THEMES.dark.bg}`);
+    });
+
+    it('data-theme="auto" なら、ダークを既定にして、閲覧者がライトを選んでいるときだけライトの色に差し替える', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed({ 'data-theme': 'auto' });
+      await settle();
+
+      const style = shadowStyle();
+      expect(style).toContain(`.root { --se-bg: ${THEMES.dark.bg};`);
+      expect(style).toContain(`@media (prefers-color-scheme: light) { .root { --se-bg: ${THEMES.light.bg};`);
+    });
+
+    it('dark・light を指定したときは、閲覧者の設定で色を変えない', async () => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed({ 'data-theme': 'dark' });
+      await settle();
+
+      expect(shadowStyle()).not.toContain('prefers-color-scheme');
+    });
+
+    it.each([
+      [undefined, '460px'],
+      ['600', '600px'],
+      ['full', '100%'],
+      // /embed の ?max_width= と同じ規則: 範囲に丸め、数字でなければ既定
+      ['100', '240px'],
+      ['99999', '1920px'],
+      ['50%', '460px'],
+    ])('data-max-width=%j ならカードの最大幅は %s', async (value, expected) => {
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed(value === undefined ? {} : { 'data-max-width': value });
+      await settle();
+
+      expect(shadowStyle()).toContain(`max-width: ${expected};`);
+      expect(parseMaxWidth(value)).toBe(expected === '100%' ? 'full' : Number.parseInt(expected, 10));
+    });
+
+    it('カードの中身は日本語として読み上げられる（英語のページに貼られても）', async () => {
+      document.documentElement.lang = 'en';
+      givenLiveResponses(aNowPlaying('A', 'ムード'));
+      runEmbed();
+      await settle();
+
+      const root = document.querySelector('.spotify-embedded')?.shadowRoot?.querySelector('.root');
+      expect(root?.getAttribute('lang')).toBe('ja');
+      document.documentElement.removeAttribute('lang');
+    });
+
+    it('固定の文言・再生中インジケータの動き・失敗のしきい値は、サーバー側の描画（src/render）と同じ', () => {
+      const source = readRepoFile('../../public/embed.js');
+      const inScript = (value: string) => `'${value}'`;
+
+      for (const key of [
+        'nowPlaying',
+        'lastPlayed',
+        'nothingPlaying',
+        'unavailableLabel',
+        'idle',
+        'unavailable',
+        'speechPlaying',
+        'speechLastPlayed',
+        'openInSpotify',
+        'noArt',
+      ] as const) {
+        expect(source, key).toContain(`${key}: ${inScript(STRINGS[key])}`);
+      }
+      // バーごとの高さ・周期・伸び縮みの幅（card.ts の EQ_BARS から作った CSS）
+      for (const rule of eqBarCss('.eq i').split('\n').map((line) => line.trim())) {
+        expect(source, rule).toContain(inScript(rule));
+      }
+      expect(source).toContain(`var STALE_AFTER_FAILURES = ${STALE_AFTER_FAILURES};`);
     });
 
     it('data-target の要素が最後まで見つからなければ、理由を console.warn に出す', () => {

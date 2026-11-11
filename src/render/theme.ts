@@ -43,6 +43,16 @@ export function resolveTheme(name: string | undefined): ThemeName {
 }
 
 /**
+ * iframe 用ページ（/embed）のテーマ。auto は閲覧者の OS（iframe では埋め込み元の要素の color-scheme）の
+ * ダーク・ライトに合わせる。SVG は1枚の中で切り替えないので、auto は受け付けない（resolveTheme は dark にする）。
+ */
+export type PageThemeName = ThemeName | 'auto';
+
+export function resolvePageTheme(name: string | undefined): PageThemeName {
+  return name === 'auto' ? 'auto' : resolveTheme(name);
+}
+
+/**
  * 日本語が確実に出るフォントスタック。SVGは閲覧者の環境で描画されるため、
  * ここで指定できるのはあくまで優先順位。
  */

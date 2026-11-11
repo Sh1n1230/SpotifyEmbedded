@@ -8,6 +8,7 @@
 import type { TrackSummary, MoodResult } from '../types/index.js';
 import { THEMES, FONT_STACK, formatDateTimeJa, type ThemeName } from './theme.js';
 import { escapeXml, svgIdSuffix, wrapToWidth, truncateToWidth } from './text.js';
+import { STRINGS } from './strings.js';
 
 export type PlaybackState =
   /** 再生中 */
@@ -43,10 +44,10 @@ export interface CardInput {
   unavailable?: boolean | undefined;
 }
 
-/** 取得に失敗したときの表示。/embed（page.ts）とも共有する。 */
-export const UNAVAILABLE_LABEL = 'UNAVAILABLE';
-export const UNAVAILABLE_TEXT = '取得できませんでした';
-const IDLE_TEXT = '再生していません';
+/** 取得に失敗したときの表示。/embed（page.ts）とも共有する。文言は strings.ts にまとめている */
+export const UNAVAILABLE_LABEL = STRINGS.unavailableLabel;
+export const UNAVAILABLE_TEXT = STRINGS.unavailable;
+const IDLE_TEXT = STRINGS.idle;
 
 const WIDTH = 460;
 const HEIGHT = 160;
@@ -78,7 +79,7 @@ export function renderNowPlayingCard(input: CardInput): string {
 
   const ariaLabel = unavailable ? idleText : buildAriaLabel(shownState, track, mood, input.since, labelOptions);
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="${escapeXml(ariaLabel)}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" lang="ja" aria-label="${escapeXml(ariaLabel)}">
   <title>${escapeXml(ariaLabel)}</title>
   <rect x="0.5" y="0.5" width="${WIDTH - 1}" height="${HEIGHT - 1}" rx="12" fill="${bgFill}" stroke="${theme.border}"/>
   ${hasArt ? renderArt(input.artDataUri ?? null, theme.placeholder, theme.sub, idSuffix) : ''}
@@ -107,9 +108,9 @@ export function sinceText(since: string | undefined, now: string | undefined): s
 /** カードと埋め込みページで共通の見出し。日時として読めない since は時刻を省く。 */
 export function playbackLabel(state: PlaybackState, since: string | undefined, options: LabelOptions = {}): string {
   const when = sinceText(since, options.now);
-  if (state === 'playing') return options.observedTime && when ? `NOW PLAYING · ${when}` : 'NOW PLAYING';
-  if (state === 'recent') return when ? `LAST PLAYED · ${when}` : 'LAST PLAYED';
-  return 'NOTHING PLAYING';
+  if (state === 'playing') return options.observedTime && when ? `${STRINGS.nowPlaying} · ${when}` : STRINGS.nowPlaying;
+  if (state === 'recent') return when ? `${STRINGS.lastPlayed} · ${when}` : STRINGS.lastPlayed;
+  return STRINGS.nothingPlaying;
 }
 
 /**
@@ -123,8 +124,10 @@ export function trackCredit(track: Pick<TrackSummary, 'name' | 'artist'>): strin
 /** 読み上げの先頭の「再生中」「最後に再生（10/16 21:04）」。カードと埋め込みページで共通。 */
 export function playbackSpeechPrefix(state: PlaybackState, since: string | undefined, options: LabelOptions = {}): string {
   const when = sinceText(since, options.now);
-  if (state === 'playing') return options.observedTime && when ? `再生中（${when} 時点）` : '再生中';
-  return `最後に再生${when ? `（${when}）` : ''}`;
+  if (state === 'playing') {
+    return options.observedTime && when ? `${STRINGS.speechPlaying}（${when} ${STRINGS.asOf}）` : STRINGS.speechPlaying;
+  }
+  return `${STRINGS.speechLastPlayed}${when ? `（${when}）` : ''}`;
 }
 
 /** 「no art」の文字色は、枠（placeholder）の上で 4.5:1 を満たす sub を使う（muted はライトテーマで 4.0:1 しかない） */
@@ -136,7 +139,7 @@ function renderArt(dataUri: string | null, placeholder: string, textColor: strin
   }
 
   return `<rect x="${PAD}" y="${PAD}" width="${ART_SIZE}" height="${ART_SIZE}" rx="8" fill="${placeholder}"/>
-  <text x="${PAD + ART_SIZE / 2}" y="${PAD + ART_SIZE / 2 + 5}" font-family="${FONT_STACK}" font-size="13" fill="${textColor}" text-anchor="middle" aria-hidden="true">no art</text>`;
+  <text x="${PAD + ART_SIZE / 2}" y="${PAD + ART_SIZE / 2 + 5}" font-family="${FONT_STACK}" font-size="13" fill="${textColor}" text-anchor="middle" aria-hidden="true">${STRINGS.noArt}</text>`;
 }
 
 function renderLabel(
@@ -159,9 +162,9 @@ function renderLabel(
 
 /**
  * 再生中インジケータの3本のバー。高さは [始め, 中間] で、始めと中間を行き来する。
- * /embed・embed.js の CSS アニメーション（.eq span）と同じ動き。
+ * /embed（page.ts は eqBarCss() で同じ値から CSS を作る）・embed.js（同じ値を持ち、一致は spec で確かめる）と同じ動き。
  */
-const EQ_BARS = [
+export const EQ_BARS = [
   { dx: 0, dur: '0.9s', heights: [4, 12] },
   { dx: 5.5, dur: '1.25s', heights: [11, 4] },
   { dx: 11, dur: '0.75s', heights: [6, 13] },
@@ -198,6 +201,23 @@ function equalizer(x: number, baselineY: number, color: string): string {
     <g class="spotify-embedded-eq">
       ${bars.join('\n      ')}
     </g>`;
+}
+
+/**
+ * HTML（/embed・静的モードの index.html）用の、バーごとの CSS。SVG と同じく高さは最大値に固定し、
+ * transform: scaleY() で伸び縮みさせる（height を動かすと毎フレームレイアウトが走る。transform は合成だけで済む）。
+ * @param selector 3本のバーの要素（例: '.eq span'）
+ */
+export function eqBarCss(selector: string): string {
+  const rules = EQ_BARS.map(({ dur, heights }, i) => {
+    const height = Math.max(...heights);
+    const [from, mid] = heights.map((h) => (h / height).toFixed(3));
+    return (
+      `${selector}:nth-child(${i + 1}) { height: ${height}px; animation: eq${i} ${dur} ease-in-out infinite; }\n` +
+      `  @keyframes eq${i} { 0%, 100% { transform: scaleY(${from}); } 50% { transform: scaleY(${mid}); } }`
+    );
+  });
+  return rules.join('\n  ');
 }
 
 function renderTrackBody(track: TrackSummary, mood: MoodResult | null, theme: Theme): string {
