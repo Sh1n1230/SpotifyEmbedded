@@ -13,13 +13,13 @@ CI（`.github/workflows/ci.yml`）と同じ検査を、同じ順番で手元で�
 npm ci --ignore-scripts
 npm run typecheck
 npm run lint
-npm test               # カバレッジも見るなら npm run test:coverage（coverage/ に出力）
+npm test               # CI は npm run test:coverage で、カバレッジの下限も確かめる（coverage/ に出力）
 npm run build
 ```
 
 依存パッケージの install スクリプトは実行しません（どれも無しで動きます）。
 
-CI はこのほかに、Workers 向けのバンドル（`npx wrangler deploy --dry-run`）、Docker イメージのビルドと起動、`npm pack` した成果物のインストールと起動も確かめます。
+CI はこのほかに、Workers 向けのバンドル（`npx wrangler deploy --dry-run`）、Docker イメージのビルドと起動、`npm pack` した成果物のインストールと起動、Windows（Node 24）でのテストと `npm pack` 後の起動も確かめます。
 
 `npm run setup` は、自分の Spotify の認証情報を使うときだけ実行してください。`.env`、`data/auth.json`、refresh_token、API キー、生成した個人のスナップショットは絶対にコミットしないでください。
 
@@ -49,7 +49,7 @@ npx vitest src/spec/mood.test.ts          # 変更を監視して実行し直す
 | Workers | `.dev.vars.example` を `.dev.vars` にコピーして `npm run dev:worker` | `/health` と失敗時のカード |
 | Docker | `docker build -t spotify-embedded .` のあと `docker run -p 3000:3000 --env-file .env spotify-embedded` | ダミーの値で `/health` と失敗時のカード |
 
-振る舞いを変える PR では、その振る舞いを表すテストを追加・更新してください。カバレッジは目安としてレポートを残すだけで、下限は設けていません。
+振る舞いを変える PR では、その振る舞いを表すテストを追加・更新してください。カバレッジには下限（`vitest.config.ts` の `thresholds`）があり、全体の値がそれを下回ると CI が失敗します。網羅率を上げるための値ではなく、テストの無い経路を大きく足す変更を止めるための値で、実測より数ポイント下に置いています。
 
 ## プルリクエスト
 
@@ -81,7 +81,8 @@ Dependabot（`.github/dependabot.yml`）は npm の minor / patch を1つの PR 
 2. `npm outdated` でメジャーが上がっている依存を洗い出す
 3. 1つずつ上げ、リリースノートの破壊的変更を読んで直し、CI と同じ検査（上の「開発の始め方」）を通す
 4. `package.json` の `overrides` もこのとき見直す。固定の理由と外す条件は [`docs/dependencies.md`](docs/dependencies.md) にある
-5. 利用者に影響があれば `CHANGELOG.md` に書く
+5. `wrangler.jsonc` の `compatibility_date` もこのとき見直す。Cloudflare の [Compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/) で、今の日付から新しい日付までに既定で有効になったフラグを確かめ、`npx wrangler deploy --dry-run` と spec が通ることを確かめる
+6. 利用者に影響があれば `CHANGELOG.md` に書く
 
 脆弱性はメジャーかどうかに関係なく、Dependabot alerts（有効）で通知されます。
 
@@ -97,11 +98,13 @@ Dependabot（`.github/dependabot.yml`）は npm の minor / patch を1つの PR 
 
 ## リリース
 
-リリースはセマンティックバージョニングのタグから作られます。`package.json` と `package-lock.json` の `version` を更新し、`CHANGELOG.md` の `[Unreleased]` をその版の見出し（`## [1.0.1] - 日付`）に変えたうえで、`v1.0.1` のようなタグを push します。
+リリースはセマンティックバージョニングのタグから作られます。`package.json`・`package-lock.json` の `version` と `src/version.ts` の `VERSION`（`/health` と User-Agent に出る。一致は spec で確かめている）を更新し、`CHANGELOG.md` の `[Unreleased]` をその版の見出し（`## [1.0.1] - 日付`）に変えたうえで、`v1.0.1` のようなタグを push します。
 
 ```bash
 git tag v1.0.1
 git push origin v1.0.1
 ```
 
-Release のワークフローは、タグと `package.json`・`package-lock.json` の `version` が一致しないとき、`CHANGELOG.md` にその版の見出しが無いときに失敗します。通れば、CI と同じ型検査・lint・テスト・ビルドを行い、npm パッケージのアーカイブを添付して、GitHub Release のリリースノートを自動生成します。
+Release のワークフローは、タグと `package.json`・`package-lock.json` の `version` が一致しないとき、`CHANGELOG.md` にその版の見出しが無いときに失敗します。通れば、CI と同じ型検査・lint・テスト・ビルドを行い、npm パッケージのアーカイブと SBOM（`sbom.spdx.json`）を添付して、GitHub Release のリリースノートを自動生成します。アーカイブにはビルドの来歴（artifact attestation）を付けるので、利用者は `gh attestation verify spotify-embedded-<版>.tgz --repo Sh1n1230/SpotifyEmbedded` で、このリポジトリのワークフローが作ったものかを確かめられます。
+
+タグは `v1.2.3` と、プレリリースの `v1.2.3-rc.1` の形だけを受け付けます。版に `-` を含むタグはプレリリースとして作られ、Latest にはなりません（`CHANGELOG.md` の見出しは `## [1.2.3-rc.1]` のように、その版のものが要ります）。

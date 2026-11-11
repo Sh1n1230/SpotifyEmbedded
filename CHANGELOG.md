@@ -8,8 +8,23 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-11
+
 ### アップグレード時に確かめること
 
+- Spotify のレート制限に達したとき、`/api/now-playing` は 429 ではなく **503**（`Retry-After` つき、`code: "spotify_rate_limited"`）を返します。429 は、このAPI自身のレート制限（利用者の送りすぎ）だけになります。ステータスで分岐している利用側は確かめてください
+- エラーの JSON に `code` が加わりました（`{ "error": "...", "code": "spotify_timeout" }`）。本文を完全一致で比べている利用側は、`code` で分岐するようにしてください。必須の設定が無いときは 500 ではなく 503（`code: "not_configured"`）を返します
+- `/health` の応答に `version` が加わりました（`{ "status": "ok", "version": "1.8.0" }`）
+- `generate` は、`--count`（と新しい `--page-count`）が `--limit` を超える指定をエラーにします（これまでは警告を出して続行していました）
+- 静的モードの `index.html` に `noindex` が入り、`robots.txt`（`Disallow: /`）を書き出すようになりました。検索エンジンに載せてよい場合は `generate --index` を付けます
+- `snapshot.json` を GitHub Pages に公開しなくなりました（`spotify-data` ブランチには今までどおりあります）。Pages の URL から読んでいた場合は、`last-played.json` などの公開のファイルを使ってください
+- 静的モードの再生中のカードの見出しが `NOW PLAYING · 10/16 21:04`（観測した時刻つき、日本時間）になりました。年が違う曲には年が付きます
+- ムード文の保存のキーにモデル名とプロンプトの版が入りました。アップグレード直後は、保存済みの文（Workers KV・メモリ）を使わずに1回ずつ作り直します（古いキーは24時間で消えます）
+- `LLM_BASE_URL` が `http://` のリモートなど送れない値のときは、曲ごとにエラーを出さず、LLM 未設定と同じく動きます（起動時・最初のリクエスト・`generate` の冒頭で一度だけ案内します）
+- `/embed`・デモ画面・静的モードの `index.html` の CSP の `img-src` を、Spotify の CDN（`*.scdn.co`・`*.spotifycdn.com`）に絞りました
+- npm パッケージから `main` を外しました（ライブラリとしての入口はありません。`import 'spotify-embedded'` はできなくなります。CLI は今までどおりです）
+- Node 版は、拾われなかった例外・Promise の拒否で、原因を1行で出して終了します（再起動は Docker などの実行環境に任せます）
+- `wrangler.jsonc` の `compatibility_date` を 2026-10-01 に上げました。フォークで `wrangler.jsonc` を変えている場合は取り込みのときに確かめてください
 - `LLM_BASE_URL` を設定せずに `OPENAI_API_KEY`・`OPENROUTER_API_KEY`・`GROQ_API_KEY` だけを設定していた場合、キーの送り先がそのサービスになります（これまでは既定の Gemini に送っていました）。プリセットに無い送り先（Groq・OpenRouter・ローカルなど）では `LLM_MODEL` が必須になり、無いとムード文なしで動き、起動時に案内します
 - `PORT` は 1〜65535 の整数だけを受け付けます（`3000abc` を 3000 として読まず、`0` も受け付けません）
 - `CORS_ORIGIN` の、パス付きなどオリジンとして読めない値は使われません。`*` とほかのオリジンを混ぜると `*` は無視されます（起動時に警告します）
@@ -17,6 +32,21 @@
 
 ### 追加
 
+- `/embed?theme=auto`・`embed.js` の `data-theme="auto"`（閲覧者の OS のダーク・ライトの設定に合わせる）
+- `/embed?max_width=`・`embed.js` の `data-max-width`（カードの最大幅。`full` で親の幅いっぱい）
+- 公開スキーマの JSON Schema（`schema/now-playing.schema.json`・`top-tracks.schema.json`・`last-played.schema.json`）
+- `generate --page-count`（iframe 用ページのランキングだけ別の件数にする）・`--refresh-ranking-mood`・`--index`。値は `--out=dir` の形でも渡せる
+- リポジトリの Variables `RANKING_RANGE`・`RANKING_COUNT` で、定期実行のランキングの期間と件数を変えられる
+- 環境変数 `NOW_PLAYING_CACHE_SECONDS`（ライブAPIのキャッシュの秒数）・`LLM_MAX_TOKENS`・`LLM_TEMPERATURE`
+- `npm run setup` で Groq・OpenRouter をプリセットから選べる。設定済みの Spotify の Client ID / Secret を入れ替えられる
+- 埋め込み用のパスに `Cross-Origin-Resource-Policy: cross-origin`（COEP を有効にしたサイトにも埋め込める）
+- `RateLimit-Policy`・`RateLimit` ヘッダー（現行の草案の形。これまでの3つのヘッダーも併記）と、`Access-Control-Expose-Headers`
+- `/api/now-playing` の `Cache-Control`（成功は `public, max-age=0, must-revalidate`、エラーは `no-store`）、`/embed.js` の `Cache-Control`（5分）
+- 外部（Spotify・LLM・ジャケ写）へのリクエストに `User-Agent: spotify-embedded/<版>` を付ける
+- LLM の呼び出しごとの、モデル・所要時間・トークン数のログ。Node 版のアクセスログ（パス・ステータス・所要時間。IP アドレスは出さない）
+- Release に SBOM（`sbom.spdx.json`）と、アーカイブの artifact attestation（`gh attestation verify` で確かめられる）を付ける。`v1.2.3-rc.1` のようなタグはプレリリースとして作る
+- 静的モードの `index.html` に description とファビコン
+- SVG カードと `embed.js` のカードに `lang="ja"`（英語のページに貼っても日本語として読み上げられる）
 - Node 版・Docker・Workers の例外のスタックが、ソースマップで `src/*.ts` の行を指す
 - `HOST` 環境変数（Node 版の待ち受けるホスト）
 - ローカルの LLM（Ollama など）では `LLM_API_KEY` が無くてもムード文を作れる
@@ -26,6 +56,21 @@
 
 ### 変更
 
+- ライブAPIは、ムード文の生成を最大5秒だけ待つ。間に合わなければ `mood: null` で応答し、次の取得から載せる（遅い LLM のために曲情報や画像を遅らせない）
+- Spotify の 429 を受けたら、`Retry-After` の間は Spotify を呼ばない。`invalid_grant`・`invalid_client` の後は、認証情報が変わるまでトークンの更新を再試行しない
+- 認証情報の前後の空白・改行を取り除いて読む（貼り付けで付いた改行で `invalid_client` にならない）
+- `/embed`・`embed.js` は、取得の失敗が3回続いたら「UNAVAILABLE」の表示に切り替える（前の曲を NOW PLAYING のまま出し続けない）
+- 静的モードは、ランキングの取得だけが失敗した回も再生状況を更新する（ランキングのファイルは前回のまま残す）
+- 静的モードは、前回と同じ曲を再生中なら前回のムード文を使う（LLM を呼ばず、文も実行ごとに変わらない）。中身の同じファイルは書き直さない
+- ランキングのムード文の記録を、作らない回（`--no-mood`・LLM 未設定・上位曲が0件）でも消さない
+- ランキング SVG のジャケ写は、10件までなら 300px 版を焼き込む（高解像度の画面でぼやけない）。iframe 用ページのランキングは `srcset` で選ばせる
+- 再生中インジケータの動きを SVG と HTML で揃え、`transform` で動かす
+- `npm run setup` と `/auth/login` は、毎回 Spotify の承認画面を出す（別のアカウントに切り替えられる）。完了時に Workers の Secrets の更新を案内する
+- 認可コードの交換の失敗を、Spotify の `error`（`invalid_client`・`invalid_grant` など）ごとに案内する
+- CORS のプリフライトで許可するメソッドを `GET`・`HEAD`・`OPTIONS` だけにする
+- Workers では、進行中の取得の Promise をリクエストの間で共有しない。KV への書き込みは `waitUntil` に預けて応答を待たせない。`CORS_ORIGIN` が `*` のときの案内は、Workers では警告ではなく情報として出す
+- Docker の `HEALTHCHECK` は Node を起動せず `wget` を使う
+- `GOOGLE_API_KEY` を LLM のキーとして使うときは、起動時にその旨を知らせる
 - ムード文のキャッシュが満杯のときは、最も長く読まれていない曲のものを捨てて入れる（満杯の後の曲を毎回 LLM で作り直していた）
 - OpenAI には `max_completion_tokens` を送り、`temperature` を受け付けないモデルでは外して送り直す（推論モデルでもムード文が出る）
 - ライブ更新（/embed・embed.js・デモ画面）は、429・503 の `Retry-After` の間は取得しない（タブを隠して戻したときも含む）
@@ -38,6 +83,10 @@
 
 ### 修正
 
+- 2026年2月の Web API の変更で `GET /artists` が削除された環境で、ジャンルの取得を毎回試して失敗し続けることがあった（404・410 でも以降は呼ばない）
+- LLM の応答が出力の上限で途中で切れていても（`finish_reason: "length"`）、そのままムード文にしていた
+- アーティストが空の曲で、カードに空の行が出て、読み上げが「曲名 / 」で終わっていた
+- Workers で Secrets が欠けていると、理由の分からない 500 を返し続けていた
 - `update-spotify.yml` は、`spotify-data` ブランチに `snapshot.json` が無いときに空のファイルを残していた（読み込みの警告が出て、`refresh_ranking_mood` を付けた手動実行は失敗していた）
 - 壊れた `data/auth.json` の読み込みの失敗で、ファイルの中身の一部（秘密情報の断片）がログに出ることがあった
 - `npm run setup` の接続確認を本番と同じプロンプトと検査にする（形式で捨てられるモデルを、接続の失敗と分けて知らせる）。LLM の番号の入力は `1abc` などを聞き直す

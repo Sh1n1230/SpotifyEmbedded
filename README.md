@@ -173,6 +173,24 @@ const res = await fetch('https://<username>.github.io/SpotifyEmbedded/now-playin
 | `last-played.json` / `.yaml` | カード画像と同じ「最後に聴いた曲」（`track` / `mood` / `played_at`）。静的モード限定 |
 | `top-tracks.json` / `.yaml` | ランキングデータ（静的モード限定） |
 | `index.html` / `index-light.html` | iframe用HTMLページ（ダーク / ライト） |
+| `robots.txt` | 検索エンジンに載せないための指定（`--index` を付けると書かない。下の「検索エンジンへの掲載」） |
+
+JSON の形は [JSON Schema](schema/)（`now-playing.schema.json`・`top-tracks.schema.json`・`last-played.schema.json`）で検証できます。YAML も同じ形です。
+
+`snapshot.json` は次の実行へ状態を持ち越すための内部のファイルで、`spotify-data` ブランチには置かれますが、GitHub Pages には公開しません。形は予告なく変わるので、データとして使うときは上の表のファイルを参照してください。
+
+YAML（`now-playing.yaml`・`last-played.yaml`・`top-tracks.yaml`）は、YAML をデータとして読める静的サイトジェネレーター向けです。たとえば Hugo や Jekyll では、ビルドの前にデータのフォルダへ取得しておくと、テンプレートから参照できます。
+
+```bash
+# Hugo: data/spotify.yaml として置くと、テンプレートで {{ .Site.Data.spotify.track.name }} と書ける
+curl -fsS -o data/spotify.yaml https://<username>.github.io/SpotifyEmbedded/last-played.yaml
+# Jekyll: _data/spotify.yaml として置くと {{ site.data.spotify.track.name }}
+curl -fsS -o _data/spotify.yaml https://<username>.github.io/SpotifyEmbedded/last-played.yaml
+```
+
+カードの見出しの時刻（`NOW PLAYING · 10/16 21:04`・`LAST PLAYED · 10/16 21:04`）は**日本時間**です（表示は日本語向けのため固定しています）。生成した年と違う年の曲には年が付きます（`LAST PLAYED · 2025/10/16 21:04`）。静的モードは数時間おきの生成なので、再生中のカードにも「いつの情報か」を出しています。
+
+**検索エンジンへの掲載**: 既定では、聴いている曲が検索結果に出ないよう、`index.html` に `noindex` を入れ、`robots.txt`（`Disallow: /`）を書きます。ただし `robots.txt` はホストの直下でだけ効くため、GitHub Pages のプロジェクトサイト（`<username>.github.io/SpotifyEmbedded/`）では効きません（独自ドメインや `<username>.github.io` のリポジトリでは効きます）。JSON・SVG には `noindex` を入れられないので、URL がどこかからリンクされると検索エンジンに拾われることがあります。載せてよい場合は `--index` を付けます。
 
 楽曲の再生が停止している状態では、Spotifyの再生履歴（`recently-played`）から最後に聴き終えた楽曲を取得して表示します。ワークフローの実行が数時間おきでも、その間に聴いた曲を取りこぼしません。履歴を取得できない場合も、直前の観測結果を `snapshot.json` から引き継ぐため、非再生状態のプレースホルダーにはなりません。
 
@@ -207,9 +225,18 @@ npm run generate -- --no-mood         # LLM設定なしで実行
 | `--out <dir>` | `./out` | 出力先ディレクトリ |
 | `--range <name>` | `short_term` | 集計期間（[ランキングの集計期間](#ランキングの集計期間)） |
 | `--limit <n>` | `50` | Spotify から取得する件数（`10` / `30` / `50`） |
-| `--count <n>` | `5` | ランキングの表示件数（1〜50） |
+| `--count <n>` | `5` | ランキングの表示件数（1〜50）。`--limit` を超える指定はエラーになります |
+| `--page-count <n>` | `--count` と同じ | iframe 用ページ（`index.html`）のランキングの表示件数（1〜50）。README 用の SVG は5件、サイト用のページは10件、のように分けられます |
 | `--theme <name>` | `both` | テーマ指定（`dark` / `light` / `both`） |
-| `--no-mood` | — | AIムード文の生成をスキップ |
+| `--no-mood` | — | AIムード文の生成をスキップ（保存済みのランキングのムード文は消さず、次の通常の実行で使い回します） |
+| `--refresh-ranking-mood` | — | ランキングのムード文を、顔ぶれの変化に関係なく作り直す |
+| `--index` | — | 検索エンジンに載せてよい（`noindex` と `robots.txt` を書かない） |
+
+値は `--out ./public` と `--out=./public` のどちらの形でも渡せます。
+
+`--limit` を `10` / `30` / `50` の3つに限っているのは意図したものです。見せる件数は `--count`・`--page-count` で自由に決められるので取得件数を細かく刻む必要が無く、最小を 10 にすることでランキングのムード文の根拠（上位10曲）が `--limit` に依らず揃います。
+
+ランキングの取得だけが失敗した回（Spotify の一時的な障害など）は、再生状況のファイルを更新し、ランキングのファイル（`ranking*.svg`・`top-tracks.*`）は前回のまま残します。中身が前回と同じファイルは書き直しません。ランキング SVG のジャケ写は、表示件数が 10 件までなら高解像度の画面でもぼやけない 300px 版、それより多ければ SVG が大きくなりすぎないよう 64px 版を焼き込みます。
 
 `--theme` によって、書き出すファイルの名前が次のように変わります（ライトだけのときは、iframe 用のページを `index.html` に書きます）。
 
@@ -222,6 +249,8 @@ npm run generate -- --no-mood         # LLM設定なしで実行
 ランキング SVG の高さは内容で変わります（`50 + 件数 × 56 + 12`。ムード文があれば行数ごとに 22 と余白の 6 を足します）。README に `width` だけで貼ると、`--count` やムード文の行数で周りの位置が変わります。
 
 出力ファイル名は集計期間によらず共通（`ranking.svg` / `top-tracks.json`）です。指定した集計期間は JSON/YAML の `range` フィールドに記録されます。GitHub Actions では手動実行（Run workflow）時に期間と件数を指定できます。
+
+定期実行の期間と件数を変えたいときは、ワークフローのファイルを書き換えずに、リポジトリの **Settings → Secrets and variables → Actions → Variables** に `RANKING_RANGE`（`short_term` / `medium_term` / `long_term`）と `RANKING_COUNT`（1〜50）を登録します。優先順位は「手動実行の入力 > Variables > 既定値（`short_term`・`5`）」です。
 
 ### ランキングの集計期間
 
@@ -273,7 +302,8 @@ npm run dev        # http://127.0.0.1:3000
 | 属性 | 既定値 | 説明 |
 |---|---|---|
 | `data-target` | (スクリプトの直後) | 描画先のCSSセレクタ |
-| `data-theme` | `dark` | テーマ（`dark` / `light`） |
+| `data-theme` | `dark` | テーマ（`dark` / `light` / `auto`）。`auto` は閲覧者の OS のダーク・ライトの設定に合わせます |
+| `data-max-width` | `460` | カードの最大幅（px、240〜1920）。`full` で親の幅いっぱいに広げます |
 | `data-transparent` | `false` | `true` で背景を透過 |
 | `data-refresh` | `30` | 更新間隔（秒、10〜3600） |
 
@@ -310,11 +340,19 @@ if (data.is_playing) {
 
 LLM が未設定の場合やムード文の生成に失敗した場合は、再生中でも `mood` が `null` になります。曲情報はそのまま利用できます。
 
+ライブAPIは、曲が変わった直後のムード文の生成を最大5秒だけ待ちます。間に合わなければ `mood: null` で応答し、生成は続けて、次の取得（既定で30秒後）から載せます。遅い LLM のために曲情報や README の画像が遅れないようにするためです。
+
+`/embed` と `embed.js` は、取得の失敗が3回続くと、前の曲を「NOW PLAYING」のまま出し続けずに「UNAVAILABLE」の表示に切り替えます（取得できるようになれば元に戻ります）。
+
+`album_art_url` は 300px 以上の最大サイズ（通常は 640px 版）です。小さく表示するときは、URL のパスの `ab67616d0000b273`（640px）を `ab67616d00001e02`（300px）か `ab67616d00004851`（64px）に置き換えると、そのサイズの画像を取得できます。
+
 ---
 
 ## APIリファレンス
 
-`GET /api/now-playing` は JSON（デフォルト）と YAML（`?format=yaml` または `Accept: application/yaml`）に対応しています。エラー応答は常に JSON です。
+`GET /api/now-playing` は JSON（デフォルト）と YAML（`?format=yaml` または `Accept: application/yaml`）に対応しています。エラー応答は常に JSON です。YAML は登録済みのメディアタイプ `application/yaml`（RFC 9512）で返すので、多くのブラウザでは表示されずにダウンロードになります。中身を確かめるときは `curl 'https://your-api.example.com/api/now-playing?format=yaml'` を使ってください。
+
+成功の応答は `Cache-Control: public, max-age=0, must-revalidate`（保存してよいが、使う前に必ず問い合わせる）、エラーの応答は `Cache-Control: no-store` です。応答の形は [JSON Schema](schema/now-playing.schema.json) で検証できます。
 
 ### `GET /api/now-playing`
 
@@ -347,16 +385,26 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 
 #### エラー応答
 
-| ステータス | 本文 | 意味 |
-|---|---|---|
-| 429 | `{ "error": "Too many requests, please try again later." }` | このAPIのレート制限（`Retry-After` つき） |
-| 429 | `{ "error": "Spotify rate limit exceeded", "retry_after": N }` | Spotify のレート制限（`Retry-After` つき） |
-| 502 | `{ "error": "Spotify authentication failed. ..." }` | refresh_token の失効など |
-| 502 | `{ "error": "Spotify API request failed", "spotify_status": N }` | Spotify の失敗 |
-| 502 | `{ "error": "Could not reach Spotify" }` | Spotify に接続できない |
-| 504 | `{ "error": "Spotify API timed out" }` | Spotify の時間切れ |
-| 404 | `{ "error": "Not found" }` | 未定義のパス |
-| 500 | `{ "error": "Internal server error" }` | 想定外のエラー |
+エラーの本文は `{ "error": "<人向けの文>", "code": "<機械向けのコード>" }` です。`error` の文は変わることがあるので、分岐には `code` を使ってください。
+
+| ステータス | `code` | `error`（とその他のキー） | 意味 |
+|---|---|---|---|
+| 429 | `rate_limited` | `Too many requests, please try again later.` | このAPIのレート制限（`Retry-After` つき）。送る頻度を下げてください |
+| 503 | `spotify_rate_limited` | `Spotify rate limit exceeded`・`retry_after: N` | サーバーが Spotify のレート制限に達した（`Retry-After` つき）。利用者が送りすぎたわけではないので 429 ではなく 503 です。`Retry-After` の間、サーバーは Spotify を呼びません |
+| 503 | `not_configured` | `Server is not configured. See server logs.` | サーバーに必須の設定（Secrets）が無い。運用者がログを確かめてください |
+| 502 | `spotify_auth_failed` | `Spotify authentication failed. ...` | refresh_token の失効など。設定を直すまで、サーバーはトークンの更新を再試行しません |
+| 502 | `spotify_error` | `Spotify API request failed`・`spotify_status: N` | Spotify の失敗 |
+| 502 | `spotify_unreachable` | `Could not reach Spotify` | Spotify に接続できない |
+| 504 | `spotify_timeout` | `Spotify API timed out` | Spotify の時間切れ |
+| 404 | `not_found` | `Not found` | 未定義のパス |
+| 400 | `bad_request` | （理由） | リクエストの誤り |
+| 500 | `internal_error` | `Internal server error` | 想定外のエラー |
+
+`/badge.svg` と `/embed` は JSON を返せないので、`X-Spotify-Embedded-Error` ヘッダーで示します（下記）。`rate_limited` は上の `rate_limited` に、`spotify_unavailable` はそれ以外のすべてに対応します。
+
+Node 版は、残りの回数をレート制限のヘッダーで返します。`RateLimit-Policy: "default";q=100;w=60` と `RateLimit: "default";r=42;t=37` は現行の草案（[draft-ietf-httpapi-ratelimit-headers-11](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)）の形で、`RateLimit-Limit`・`RateLimit-Remaining`・`RateLimit-Reset` は draft-03 以前の形です（移行のために併記しています）。これらと `Retry-After`・`X-Spotify-Embedded-Error` は `Access-Control-Expose-Headers` に含めているので、他のオリジンの JavaScript からも読めます。
+
+`GET /health` は `{ "status": "ok", "version": "1.8.0" }` のように、動いている版を返します。
 
 ### ランキング（`top-tracks.json`、静的モードのみ）
 
@@ -368,9 +416,11 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 
 | パス | 内容 | クエリパラメータ |
 |---|---|---|
-| `GET /embed` | iframe用HTML | `theme` `transparent` `refresh`（秒、10〜3600、既定30） |
+| `GET /embed` | iframe用HTML | `theme`（`dark` / `light` / `auto`。`auto` は閲覧者の OS の設定に合わせる） `transparent` `refresh`（秒、10〜3600、既定30） `max_width`（px、240〜1920、既定460。`full` で親の幅いっぱい） |
 | `GET /badge.svg` | now-playingカード画像（背景は透過。ライトの背景に貼るときは `theme=light`） | `theme` |
 | `GET /embed.js` | JavaScript埋め込みスクリプト | — |
+
+`/badge.svg`・`/embed`・`/embed.js`・`/api/now-playing` は `Cross-Origin-Resource-Policy: cross-origin` を返すので、`Cross-Origin-Embedder-Policy: require-corp` を有効にしたサイトにも埋め込めます。`/embed.js` は `Cache-Control: public, max-age=300, must-revalidate` で配ります（修正は5分以内に届きます）。ジャケ写は Spotify の CDN（`*.scdn.co`・`*.spotifycdn.com`）からだけ読み込みます。
 
 `/badge.svg` と `/embed` は失敗しても 200 でカードを返し、理由を `X-Spotify-Embedded-Error` ヘッダーで示します。
 
@@ -422,6 +472,8 @@ npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_M
 - Workers環境ではファイルシステムが利用できないため、`data/auth.json` は読み込めません。設定値はすべてWranglerのシークレット機能で環境変数として設定します。
 - 認証用エンドポイント（`npm run auth` / `/auth/*`）はローカル実行専用です。セキュリティ上、Workers環境では有効化しないでください。
 
+> `CORS_ORIGIN` を設定しないまま（`*`）だと、どのサイトからでも API を呼べる旨の案内が Workers Logs に出ます。Workers の実行環境（isolate）は頻繁に作り直され、そのたびに1回出るので、警告ではなく情報（info）のレベルで出しています。埋め込み先のオリジンを `CORS_ORIGIN` に設定すると出なくなります。Secrets の入れ忘れも、最初のリクエストでログに出ます（`/api/now-playing` は 503 を返します）。
+
 ### Docker（Fly.io / Cloud Run / VPS）
 
 ```bash
@@ -450,7 +502,10 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得したリフレッシュトークン |
 | `LLM_API_KEY` | | — | 未設定時はムード文なしで動作。`LLM_BASE_URL` がローカル（`localhost`・`127.0.0.1`・`[::1]`）のサーバーなら無くてもよい |
 | `LLM_BASE_URL` | | API キーの名前で決まる（下記） | OpenAI互換のエンドポイント（末尾の `/chat/completions` は付けない。クエリは保つ）。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く）。URL に `user:pass@` を含めない |
-| `LLM_MODEL` | | 送り先のプリセットの既定（Gemini は `gemini-3.1-flash-lite`、OpenAI は `gpt-4o-mini`） | 使用モデル。プリセットに無い送り先（Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
+| `LLM_MODEL` | | 送り先のプリセットの既定（Gemini は `gemini-3.1-flash-lite`、OpenAI は `gpt-4o-mini`） | 使用モデル。既定のモデルの無い送り先（Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
+| `LLM_MAX_TOKENS` | | `80` | ムード文の生成の出力の上限（16〜4096）。推論を止められないモデルで応答が空になるときに上げる |
+| `LLM_TEMPERATURE` | | `0.7` | ムード文の生成の temperature（0〜2） |
+| `NOW_PLAYING_CACHE_SECONDS` | | `30` | ライブAPIが再生状況をメモリに保持する秒数（5〜300）。この間は Spotify を呼ばない。曲の切り替わりを早く反映したければ短く、Spotify の利用枠を節約したければ長くする |
 | `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:<PORT>/auth/callback` | Dashboard の登録値と一致させる（`PORT` を変えると既定値も変わる。`npm run auth` が起動時に表示する） |
 | `PORT` | | `3000` | サーバーの待受ポート（1〜65535 の整数。それ以外は起動時に案内して終了する） |
 | `HOST` | | すべてのインターフェース（`npm run auth` では `127.0.0.1`） | Node版の待ち受けるホスト（例: `127.0.0.1` でループバックだけ）。Docker では未設定のままにする |
@@ -459,6 +514,8 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
 | `NODE_ENV` | | — | `production` で本番相当として扱う（今は、`CORS_ORIGIN` が `*` のままなら起動時に警告することにだけ使う。Docker の既定は `production`） |
 | `ENABLE_AUTH_ROUTES` | | `false` | `true`（または `1`・`yes`・`on`）で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
+
+認証情報（`SPOTIFY_*`・`LLM_API_KEY` など）の前後の空白と改行は取り除いて読みます（貼り付けで末尾に改行が付いても `invalid_client` になりません）。
 
 設定値は **環境変数 → `data/auth.json`** の優先順位で解決されます。環境変数が優先されるため、`.env` ファイルのみで設定を行っている既存の構成にもそのまま適用されます。
 
@@ -470,6 +527,10 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `OPENAI_API_KEY` | `https://api.openai.com/v1` |
 | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
 | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` |
+
+`GOOGLE_API_KEY` は Maps・YouTube など Gemini 以外の Google API でも使われる名前なので、これを LLM のキーとして読んだときは、起動時（Workers は最初のリクエスト、`generate` は実行の冒頭）にその旨をログに出します。別の目的のキーの場合は、`LLM_API_KEY` か `GEMINI_API_KEY` に Gemini のキーを設定してください。
+
+`npm run setup` では Gemini・OpenAI・Groq・OpenRouter をプリセットから選べます（Groq と OpenRouter は提供するモデルの入れ替わりが早いので既定のモデルを持たず、モデル名を入力します）。
 
 GitHub Actions（静的モード）のワークフローは `LLM_API_KEY`・`LLM_BASE_URL`・`LLM_MODEL` の名前の Secrets だけを渡すので、別名では登録しないでください（`npm run setup` の自動登録はこの名前を使います）。
 
@@ -485,7 +546,7 @@ Ollama などローカルの LLM を使う場合は、`LLM_BASE_URL=http://local
 
 Spotify Web APIでは、2024年11月以降に作成された開発者アプリケーションに対して `/audio-features`（テンポやエネルギーなどの楽曲特徴量エンドポイント）の提供を終了しました。本プロジェクトではこれに代わり、アーティストのジャンル情報（`/artists`）、人気度（`popularity`）、および楽曲名・アーティスト名・アルバム名をLLMへ与えてムード文を推論する構成としています。
 
-ただしAPIのアクセス制限は拡大しており、現在新規作成されたアプリケーションでは `genres` と `popularity` の取得も制限されています（`/artists?ids=` のバッチ取得は 403 Forbidden が返り、単体取得でも `genres` フィールドが除外されます）。extended quota mode が承認された一部のアプリケーションでは現在も返却されるため機能自体は維持していますが、実行プロセス内で一度 403 エラーを検知した場合は以降のリクエストを抑止し、不要なHTTP往復の発生を防いでいます。
+ただしAPIのアクセス制限は拡大しており、現在新規作成されたアプリケーションでは `genres` と `popularity` の取得も制限されています（`/artists?ids=` のバッチ取得は 403 Forbidden が返り、単体取得でも `genres` フィールドが除外されます）。さらに 2026年2月の Web API の変更で、Development Mode のアプリケーションからはバッチ取得の `GET /artists` そのものが削除されました（[Web API Changelog - February 2026](https://developer.spotify.com/documentation/web-api/references/changes/february-2026)）。extended quota mode が承認された一部のアプリケーションでは現在も返却されるため機能自体は維持していますが、実行プロセス内で一度「使えない」ことを示す応答（403、またはエンドポイントの削除を示す 404・410）を検知した場合は以降のリクエストを抑止し、不要なHTTP往復の発生を防いでいます（429・5xx・タイムアウトは一時的な失敗として、次の機会にまた試します）。
 
 したがって多くの環境において、ムード推論の入力として実際に利用されるのは楽曲名・アーティスト名・アルバム名の3項目となります。取得できなかった項目はプロンプトから該当行を除外しています（「不明」などの欠損表現をプロンプトに含めると、生成されるムード文がその語彙に引きずられるためです）。
 
@@ -495,11 +556,14 @@ Spotify Web APIでは、2024年11月以降に作成された開発者アプリ�
 
 そこで本ツールでは、ムード文のキャッシュ失効を「ランキングの構成楽曲」に連動させています。
 
+- ムード文は、`--limit` や `--count` に関係なく、常に上位10曲から作ります（見出しに「トップ50」と出ていても、根拠は上位10曲です）。
 - 生成時点の上位10曲のIDを、生成根拠としてムード文とともに記録します。
 - 最新の上位10曲のうち、前回の生成根拠に含まれていなかった新規楽曲が3曲以上に達した段階で再生成を行います（同一楽曲内の順位変動はトリガーとしません）。
 - 比較対象は「直前の取得データ」ではなく「現行ムード文を生成した時点の構成」です。1曲ずつの緩やかな変化であっても、変化が累積すれば確実に再生成が実行されます。
 - この生成根拠は `snapshot.json` に保存し、GitHub Actions の実行をまたいで保持されます（判定ロジックは `src/core/rankingMood.ts`）。
 - LLM呼び出しの失敗などによって再生成が行えなかった場合は既存のムード文を維持し、次回の更新サイクルで再試行します。
+- ムード文を作らない回（`--no-mood`・LLM 未設定・上位曲が0件・ランキングの取得の失敗）でも、記録は消さずに残します。
+- 顔ぶれに関係なく作り直したいときは `--refresh-ranking-mood`（Actions では Run workflow の `refresh_ranking_mood`）を使います。
 
 ### 似たプロジェクトとの違い
 
