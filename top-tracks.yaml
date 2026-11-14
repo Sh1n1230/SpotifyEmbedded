@@ -1,0 +1,557 @@
+range: short_term
+limit: 50
+fetched_at: '2026-11-14T20:33:53.974Z'
+mood:
+  text: 最近、内省的なメロディと重厚なビートに浸っているようです
+  generated_at: '2026-11-05T15:44:36.299Z'
+tracks:
+  - rank: 1
+    id: 2k6OpEcFV2VvXdVmPRNCiw
+    name: Let Her Go (feat. James Blake)
+    artist: Don Toliver, James Blake
+    album: Love Sick
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2736d5a148417ab9b8a43041c1f
+    duration_ms: 192720
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2k6OpEcFV2VvXdVmPRNCiw
+    preview_url: null
+  - rank: 2
+    id: 4tocSkaXR2pd43y3Pu2Nm1
+    name: GET GLUE 64BARS
+    artist: G PLANTS
+    album: GET GLUE 64BARS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27396be2db070dcdc029c84fa9d
+    duration_ms: 224683
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4tocSkaXR2pd43y3Pu2Nm1
+    preview_url: null
+  - rank: 3
+    id: 7efEmmrLI7aSPzi8m6gg9k
+    name: Downer's Inner Circle
+    artist: G PLANTS
+    album: Downer's Inner Circle
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273deffbd1f845ceff2abc81913
+    duration_ms: 195488
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7efEmmrLI7aSPzi8m6gg9k
+    preview_url: null
+  - rank: 4
+    id: 6P9tyHxFUy3chrOlwNsdf6
+    name: Ryuchijo
+    artist: G PLANTS
+    album: Ryuchijo
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2730010322010ba7467efb83d54
+    duration_ms: 230543
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6P9tyHxFUy3chrOlwNsdf6
+    preview_url: null
+  - rank: 5
+    id: 6HexNTb392JS071DoTGo0y
+    name: Hummingbird (Metro Boomin & James Blake)
+    artist: Metro Boomin, James Blake
+    album: 'METRO BOOMIN PRESENTS SPIDER-MAN: ACROSS THE SPIDER-VERSE (SOUNDTRACK FROM AND INSPIRED BY THE MOTION PICTURE)'
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2736ed9aef791159496b286179f
+    duration_ms: 319493
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6HexNTb392JS071DoTGo0y
+    preview_url: null
+  - rank: 6
+    id: 2fkSgFVdcwNN2bJZd9Gl7n
+    name: 儚い (feat. JUMADIBA)
+    artist: Ivy, Nyture, JUMADIBA
+    album: マケナイ 裏
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273787749bfa5f989ae708b3049
+    duration_ms: 104470
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2fkSgFVdcwNN2bJZd9Gl7n
+    preview_url: null
+  - rank: 7
+    id: 1Vn4C8zBO7b2pZPQ8L0oZO
+    name: Chapter 16 (feat. Kano)
+    artist: Dave, Kano
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 380816
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1Vn4C8zBO7b2pZPQ8L0oZO
+    preview_url: null
+  - rank: 8
+    id: 6CU9Y4Sq2hOz2EqWjJIY71
+    name: NOISE (feat. Benjazzy & Jin Dogg)
+    artist: DJ TATSUKI, Benjazzy, Jin Dogg
+    album: '23'
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f1ffb8aa757483964a0eb23b
+    duration_ms: 193026
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6CU9Y4Sq2hOz2EqWjJIY71
+    preview_url: null
+  - rank: 9
+    id: 76gcXhY3Zv6wW0BTe9nHJo
+    name: TIL FURTHER NOTICE (feat. James Blake & 21 Savage)
+    artist: Travis Scott, James Blake, 21 Savage
+    album: UTOPIA
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27304481c826dd292e5e4983b3f
+    duration_ms: 314836
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/76gcXhY3Zv6wW0BTe9nHJo
+    preview_url: null
+  - rank: 10
+    id: 2xA8AFeN5Q2vO4RKTvW4Ig
+    name: WYB?
+    artist: SpiderWeb
+    album: Boi Tape Vol.1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273167d9d06e47d9eeadfb76af8
+    duration_ms: 144658
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2xA8AFeN5Q2vO4RKTvW4Ig
+    preview_url: null
+  - rank: 11
+    id: 0Q5x5NQ2ub5SRd0YsaZWdL
+    name: Foot Forward
+    artist: James Blake
+    album: Friends That Break Your Heart
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27338d030048ec770b15633dbc1
+    duration_ms: 153238
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0Q5x5NQ2ub5SRd0YsaZWdL
+    preview_url: null
+  - rank: 12
+    id: 0PRduxqXvtIlqGoFuQrJzQ
+    name: coco freestyle
+    artist: MIKADO
+    album: Re:Born Tape
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273ed4f9004dfcb7b2662f1d4ee
+    duration_ms: 163200
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0PRduxqXvtIlqGoFuQrJzQ
+    preview_url: null
+  - rank: 13
+    id: 6OakIaj4T039vJ8V2AJiWa
+    name: History (feat. James Blake)
+    artist: Dave, James Blake
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 246960
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6OakIaj4T039vJ8V2AJiWa
+    preview_url: null
+  - rank: 14
+    id: 2QqJTIlGKRLJC3onkavYEz
+    name: Flex (feat. Juice WRLD)
+    artist: Polo G, Juice WRLD
+    album: THE GOAT
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273339f780dfdbc38558ea0761d
+    duration_ms: 163902
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2QqJTIlGKRLJC3onkavYEz
+    preview_url: null
+  - rank: 15
+    id: 6Ed1q0X8oSKSm4IIhiQbYg
+    name: Daylight
+    artist: Joji, Diplo
+    album: Daylight
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2730e991b59cee17246a5e604d0
+    duration_ms: 163905
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6Ed1q0X8oSKSm4IIhiQbYg
+    preview_url: null
+  - rank: 16
+    id: 4BPD1faJFGZUzTjidyRfKT
+    name: Diamonds Are Forever (feat. MIKADO & DADA)
+    artist: DJ TATSUKI, MIKADO, DADA
+    album: '26'
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273606c98d54d141d2bbbd36e50
+    duration_ms: 230026
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4BPD1faJFGZUzTjidyRfKT
+    preview_url: null
+  - rank: 17
+    id: 62sXIT6kAdOgcWqnhEZaRL
+    name: Say What You Will
+    artist: James Blake
+    album: Friends That Break Your Heart
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27338d030048ec770b15633dbc1
+    duration_ms: 280993
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/62sXIT6kAdOgcWqnhEZaRL
+    preview_url: null
+  - rank: 18
+    id: 0q75NwOoFiARAVp4EXU4Bs
+    name: Love Galore (feat. Travis Scott)
+    artist: SZA, Travis Scott
+    album: Ctrl
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27306d56b057cce5797538a16d5
+    duration_ms: 275085
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0q75NwOoFiARAVp4EXU4Bs
+    preview_url: null
+  - rank: 19
+    id: 42wHN9abYuROUfA7RJVAql
+    name: MIHARA
+    artist: SpiderWeb
+    album: Boi Tape Vol.1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273167d9d06e47d9eeadfb76af8
+    duration_ms: 161332
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/42wHN9abYuROUfA7RJVAql
+    preview_url: null
+  - rank: 20
+    id: 1lsKRJ2ZsJAW7aGura54eQ
+    name: Yamai (feat. LUNV LOYAL & YTG)
+    artist: DJ TATSUKI, Lunv Loyal, YTG
+    album: '26'
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273606c98d54d141d2bbbd36e50
+    duration_ms: 192546
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1lsKRJ2ZsJAW7aGura54eQ
+    preview_url: null
+  - rank: 21
+    id: 6rY5FAWxCdAGllYEOZMbjW
+    name: SLOW DANCING IN THE DARK
+    artist: Joji
+    album: BALLADS 1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2734cc52cd7a712842234e4fce2
+    duration_ms: 209273
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6rY5FAWxCdAGllYEOZMbjW
+    preview_url: null
+  - rank: 22
+    id: 13qnP4SOuaCXhmiO5KaRKi
+    name: ビジョン
+    artist: BABYWOODROSE
+    album: Addicted
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2738311890bc0b2155cc64e9730
+    duration_ms: 134611
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/13qnP4SOuaCXhmiO5KaRKi
+    preview_url: null
+  - rank: 23
+    id: 52nN09QoPlRF9M9JidvpWt
+    name: Classic
+    artist: BABYWOODROSE
+    album: Addicted
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2738311890bc0b2155cc64e9730
+    duration_ms: 186930
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/52nN09QoPlRF9M9JidvpWt
+    preview_url: null
+  - rank: 24
+    id: 02BcXEH1zJYbXSabPtNlKf
+    name: Lose My Mind (feat. Doja Cat) [From F1® The Movie]
+    artist: Don Toliver, Doja Cat, F1 The Album
+    album: Lose My Mind (feat. Doja Cat) [From F1® The Movie]
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273d4c0243b55cdf7394323e710
+    duration_ms: 209051
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/02BcXEH1zJYbXSabPtNlKf
+    preview_url: null
+  - rank: 25
+    id: 7HkOwm4wmvTsKbe405RhE3
+    name: 175 Months
+    artist: Dave
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 274000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7HkOwm4wmvTsKbe405RhE3
+    preview_url: null
+  - rank: 26
+    id: 7vG8zjbeQmwCe4azzU77oU
+    name: BUDS MONTAGE
+    artist: 舐達麻, BADSAIKUSH, DELTA9KID, GPLANTS
+    album: BUDS MONTAGE
+    album_art_url: https://i.scdn.co/image/ab67616d0000b27321d8e5d38b85a71516645e6c
+    duration_ms: 286759
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7vG8zjbeQmwCe4azzU77oU
+    preview_url: null
+  - rank: 27
+    id: 3ii14NIY31m1EZsxtORmjq
+    name: Boi Pt.1
+    artist: SpiderWeb
+    album: Boi Tape Vol.1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273167d9d06e47d9eeadfb76af8
+    duration_ms: 192585
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3ii14NIY31m1EZsxtORmjq
+    preview_url: null
+  - rank: 28
+    id: 064NMVv1SUTN1e2fbG4MKt
+    name: No Weapons (feat. Jim Legxacy)
+    artist: Dave, Jim Legxacy
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 198256
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/064NMVv1SUTN1e2fbG4MKt
+    preview_url: null
+  - rank: 29
+    id: 3oTuTpF1F3A7rEC6RKsMRz
+    name: Raindance (feat. Tems)
+    artist: Dave, Tems
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 219743
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3oTuTpF1F3A7rEC6RKsMRz
+    preview_url: null
+  - rank: 30
+    id: 2Xk2KjZojZogBK2STpw6IG
+    name: GONZA
+    artist: SpiderWeb
+    album: Boi Tape Vol.1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273167d9d06e47d9eeadfb76af8
+    duration_ms: 184931
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2Xk2KjZojZogBK2STpw6IG
+    preview_url: null
+  - rank: 31
+    id: 4lhOzoYujY5YD3anyw68hp
+    name: Selfish (feat. James Blake)
+    artist: Dave, James Blake
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 271898
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4lhOzoYujY5YD3anyw68hp
+    preview_url: null
+  - rank: 32
+    id: 7AXHZylhc2mgBKchDEJ1XL
+    name: My 27th Birthday
+    artist: Dave
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 471666
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/7AXHZylhc2mgBKchDEJ1XL
+    preview_url: null
+  - rank: 33
+    id: 20il6hcSjzlCMntd0tIuFk
+    name: 秘密
+    artist: 二宮和也
+    album: One
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273b6efcb64ff775ac09430d5ee
+    duration_ms: 282036
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/20il6hcSjzlCMntd0tIuFk
+    preview_url: null
+  - rank: 34
+    id: 0FGRz6asyUOpTylt60xEXd
+    name: Walk Out Music
+    artist: James Blake
+    album: Trying Times
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273884dd01508605dca727d8993
+    duration_ms: 200299
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0FGRz6asyUOpTylt60xEXd
+    preview_url: null
+  - rank: 35
+    id: 2DRHi6w6vTAlH7pxmlx5WI
+    name: Penelope
+    artist: Rex Orange County
+    album: Dream Fatigue
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2739227aad7e74dca81fa9ff0ba
+    duration_ms: 174000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2DRHi6w6vTAlH7pxmlx5WI
+    preview_url: null
+  - rank: 36
+    id: 0BiXEKLDn6bG3OgZcwNYuM
+    name: Marvellous
+    artist: Dave
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 181050
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/0BiXEKLDn6bG3OgZcwNYuM
+    preview_url: null
+  - rank: 37
+    id: 1mdY7BAmjQ2DLsjGKG33az
+    name: 100MILLION (feat. BADSAIKUSH) - REMIX
+    artist: 舐達麻, BADSAIKUSH
+    album: GODBREATH BUDDHACESS (THE RE-UP EDITION)
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2739ef4c4ffb8965e7b476b9bde
+    duration_ms: 254574
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1mdY7BAmjQ2DLsjGKG33az
+    preview_url: null
+  - rank: 38
+    id: 4crUyIrhzkiaBIbM4LjUFX
+    name: Fairchild
+    artist: Dave, Nicole Blakk
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 346506
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4crUyIrhzkiaBIbM4LjUFX
+    preview_url: null
+  - rank: 39
+    id: 6SItZN2qDJ6TlEFoT7hH8B
+    name: MACADAMIA
+    artist: Ivy
+    album: KEWSER
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2736225eb9d5b0b1b9e397768f6
+    duration_ms: 123816
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/6SItZN2qDJ6TlEFoT7hH8B
+    preview_url: null
+  - rank: 40
+    id: 2VWvQ7NlOwl1t7e76A66t4
+    name: AIRPLANE MODE
+    artist: Lunv Loyal, YTG, ViryKnot
+    album: AKATSUKI
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273402060984350a30faf737260
+    duration_ms: 143571
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2VWvQ7NlOwl1t7e76A66t4
+    preview_url: null
+  - rank: 41
+    id: 2zzyJ9lzN6agtRt6j3QeMH
+    name: Say My Name (feat. Ryohu & MUD) - Remix
+    artist: IO, Ryohu, MUD, Neetz
+    album: JUST ALBUM RELOADED
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273da9740d26bf74d4551a17afe
+    duration_ms: 293967
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/2zzyJ9lzN6agtRt6j3QeMH
+    preview_url: null
+  - rank: 42
+    id: 00WLowvlN5cjkYpQV6pjo4
+    name: Die For You
+    artist: Joji
+    album: SMITHEREENS
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273cdd1a8a427b3f81f4f4f4f7d
+    duration_ms: 211666
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/00WLowvlN5cjkYpQV6pjo4
+    preview_url: null
+  - rank: 43
+    id: 32KHL95ZViJy80VF0DFD9E
+    name: 1942 (feat. MonyHorse & CFN Malik) - Remix
+    artist: IO, MonyHorse, CFN MALIK, LLouis
+    album: JUST ALBUM RELOADED
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273da9740d26bf74d4551a17afe
+    duration_ms: 210436
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/32KHL95ZViJy80VF0DFD9E
+    preview_url: null
+  - rank: 44
+    id: 3HsJQpi43e4l2SbqL0ACGo
+    name: Spotlight (feat. Kohjiya & Tete) - Remix
+    artist: IO, Kohjiya, Tete, KORK
+    album: Spotlight (feat. Kohjiya & Tete) [Remix]
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2733f088189c9dab675f5a0372a
+    duration_ms: 178106
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3HsJQpi43e4l2SbqL0ACGo
+    preview_url: null
+  - rank: 45
+    id: 3qpbRVi19oJw1jMRSaNFPN
+    name: The Boy Who Played the Harp
+    artist: Dave
+    album: The Boy Who Played the Harp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273fecaa7826bb0cbe139a8cb83
+    duration_ms: 277765
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3qpbRVi19oJw1jMRSaNFPN
+    preview_url: null
+  - rank: 46
+    id: 3smwj2r54M7bozpn2ruNRZ
+    name: Prrr (feat. Harmm)
+    artist: Ivy, Harmm
+    album: KEWSER
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2736225eb9d5b0b1b9e397768f6
+    duration_ms: 168807
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/3smwj2r54M7bozpn2ruNRZ
+    preview_url: null
+  - rank: 47
+    id: 52ooD6LHuXFubM6d1CDD93
+    name: YEAH RIGHT
+    artist: Joji
+    album: BALLADS 1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2734cc52cd7a712842234e4fce2
+    duration_ms: 174357
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/52ooD6LHuXFubM6d1CDD93
+    preview_url: null
+  - rank: 48
+    id: 1uXP7P8KC1k3wBT2LWn9ez
+    name: Domestic (feat. Saggypants Shimba & Ivy)
+    artist: YeYan, Saggypants Shimba, Ivy
+    album: YeYan Camp
+    album_art_url: https://i.scdn.co/image/ab67616d0000b2731ca2c6761846a43694381119
+    duration_ms: 128000
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/1uXP7P8KC1k3wBT2LWn9ez
+    preview_url: null
+  - rank: 49
+    id: 4VQH4VluDUOsOuDxccTeyN
+    name: Sanctuary
+    artist: Joji
+    album: Nectar
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273f733e50079838090eebc3fe4
+    duration_ms: 180018
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/4VQH4VluDUOsOuDxccTeyN
+    preview_url: null
+  - rank: 50
+    id: 68gVZ7zRqaNuZvB9dyW9dW
+    name: ノースリADC
+    artist: SpiderWeb, Nyture
+    album: Boi Tape Vol.1
+    album_art_url: https://i.scdn.co/image/ab67616d0000b273167d9d06e47d9eeadfb76af8
+    duration_ms: 181714
+    popularity: null
+    genres: []
+    spotify_url: https://open.spotify.com/track/68gVZ7zRqaNuZvB9dyW9dW
+    preview_url: null

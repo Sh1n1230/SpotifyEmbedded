@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src https://*.scdn.co https://*.spotifycdn.com data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="description" content="Spotify の再生状況とムード文を表示する埋め込みカード（SpotifyEmbedded）">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%2216%22%20fill%3D%22%231db954%22%2F%3E%3Crect%20x%3D%228.5%22%20y%3D%2213%22%20width%3D%223.5%22%20height%3D%2210%22%20rx%3D%221.75%22%20fill%3D%22%23fff%22%2F%3E%3Crect%20x%3D%2214.25%22%20y%3D%228%22%20width%3D%223.5%22%20height%3D%2215%22%20rx%3D%221.75%22%20fill%3D%22%23fff%22%2F%3E%3Crect%20x%3D%2220%22%20y%3D%2215%22%20width%3D%223.5%22%20height%3D%228%22%20rx%3D%221.75%22%20fill%3D%22%23fff%22%2F%3E%3C%2Fsvg%3E">
+<title>Last Played: Diamonds Are Forever (feat. MIKADO &amp; DADA) / DJ TATSUKI, MIKADO, DADA</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --fg: #11151a;
+    --sub: #39424d;
+    --muted: #6b7681;
+    --accent: #15803d;
+    --border: #e4e8ed;
+    --placeholder: #eceff3;
+    --max-width: 460px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', 'Segoe UI', 'Yu Gothic UI', sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    padding: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .card {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    max-width: var(--max-width);
+    text-decoration: none;
+    color: inherit;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+    transition: border-color 0.18s ease, transform 0.18s ease;
+  }
+
+  a.card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  a.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .art, .art-placeholder {
+    width: 112px;
+    height: 112px;
+    flex: none;
+    border-radius: 8px;
+    object-fit: cover;
+    background: var(--placeholder);
+  }
+
+  .art-placeholder {
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    /* 枠（placeholder）の上で 4.5:1 を満たす色（muted はライトテーマで 4.0:1 しかない） */
+    color: var(--sub);
+  }
+
+  .body { min-width: 0; padding-top: 2px; }
+
+  .label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  /* 再生中かどうかは #label の data-playing で表す。
+     ライブ更新のスクリプトが属性を付け外しするだけで済むようにしている。 */
+  .label[data-playing] { color: var(--accent); }
+
+  /* 再生中インジケータ。SVG カード（card.ts の EQ_BARS）と同じ動き。高さは固定し、transform で伸び縮みさせる */
+  .eq { display: none; align-items: flex-end; gap: 2px; height: 13px; }
+  .label[data-playing] .eq { display: flex; }
+  .eq span {
+    width: 3px;
+    border-radius: 1.5px;
+    background: var(--accent);
+    transform-origin: 50% 100%;
+  }
+  .eq span:nth-child(1) { height: 12px; animation: eq0 0.9s ease-in-out infinite; }
+  @keyframes eq0 { 0%, 100% { transform: scaleY(0.333); } 50% { transform: scaleY(1.000); } }
+  .eq span:nth-child(2) { height: 11px; animation: eq1 1.25s ease-in-out infinite; }
+  @keyframes eq1 { 0%, 100% { transform: scaleY(1.000); } 50% { transform: scaleY(0.364); } }
+  .eq span:nth-child(3) { height: 13px; animation: eq2 0.75s ease-in-out infinite; }
+  @keyframes eq2 { 0%, 100% { transform: scaleY(0.462); } 50% { transform: scaleY(1.000); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .eq span:nth-child(n) { animation: none; transform: scaleY(0.667); }
+    a.card:hover { transform: none; }
+  }
+
+  /* ムード文が主役。曲名はその出典として下に置く。 */
+  .mood {
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    overflow-wrap: anywhere;
+  }
+
+  .track { font-size: 12.5px; color: var(--sub); margin-top: 10px; }
+  .artist { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .track, .artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ムードが無い場合は曲名を主役サイズに昇格させる */
+  .card[data-no-mood] .track { font-size: 17px; font-weight: 700; color: var(--fg); margin-top: 0; white-space: normal; overflow-wrap: anywhere; }
+
+  .idle { font-size: 17px; font-weight: 700; color: var(--muted); }
+
+  .ranking { max-width: var(--max-width); margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+  .ranking-head { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .ranking-head-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ranking-mood { font-size: 15px; font-weight: 700; line-height: 1.4; margin-top: 8px; overflow-wrap: anywhere; }
+  .ranking-title { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--accent); }
+  .ranking-date { font-size: 10px; color: var(--muted); }
+  .ranking ol { list-style: none; }
+  .ranking li { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+  .ranking li + li { border-top: 1px solid var(--border); }
+  .rank { font-size: 13px; font-weight: 700; color: var(--muted); width: 16px; text-align: right; flex: none; }
+  .ranking img, .rank-art-placeholder { display: block; width: 40px; height: 40px; border-radius: 5px; flex: none; background: var(--placeholder); }
+  .ranking .meta { min-width: 0; }
+  .ranking .name { font-size: 13px; font-weight: 600; }
+  .ranking .by { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ranking .name, .ranking .by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ranking a { color: inherit; text-decoration: none; }
+  .ranking a:hover .name { color: var(--accent); }
+</style>
+</head>
+<body>
+<a class="card" id="card" href="https://open.spotify.com/track/4BPD1faJFGZUzTjidyRfKT" target="_blank" rel="noopener noreferrer" aria-label="最後に再生（11/14 18:21）: 煌めく夜に浸っているようです — Diamonds Are Forever (feat. MIKADO &amp; DADA) / DJ TATSUKI, MIKADO, DADA（Spotifyで開く）">
+  <img class="art" id="art" src="https://i.scdn.co/image/ab67616d00001e02606c98d54d141d2bbbd36e50" alt="" decoding="async">
+  <div class="body">
+    <div class="label" id="label"><span class="eq"><span></span><span></span><span></span></span><span id="label-text">LAST PLAYED · 11/14 18:21</span></div>
+    <p class="mood" id="mood">煌めく夜に浸っているようです</p>
+    <p class="track" id="track">Diamonds Are Forever (feat. MIKADO &amp; DADA)</p>
+    <p class="artist" id="artist">DJ TATSUKI, MIKADO, DADA</p>
+  </div>
+</a>
+<section class="ranking" aria-labelledby="ranking-title">
+  <div class="ranking-head">
+    <div class="ranking-head-row">
+      <h2 class="ranking-title" id="ranking-title">TOP TRACKS · 4 WEEKS</h2>
+      <span class="ranking-date">2026-11-15 時点</span>
+    </div>
+    <p class="ranking-mood">最近、内省的なメロディと重厚なビートに浸っているようです</p>
+  </div>
+  <ol role="list">
+    <li>
+      <span class="rank">1</span>
+      <a href="https://open.spotify.com/track/2k6OpEcFV2VvXdVmPRNCiw" target="_blank" rel="noopener noreferrer" aria-label="1位 Let Her Go (feat. James Blake) / Don Toliver, James Blake（Spotifyで開く）" style="display:flex;gap:12px;align-items:center;min-width:0">
+        <img src="https://i.scdn.co/image/ab67616d000048516d5a148417ab9b8a43041c1f" srcset="https://i.scdn.co/image/ab67616d000048516d5a148417ab9b8a43041c1f 64w, https://i.scdn.co/image/ab67616d00001e026d5a148417ab9b8a43041c1f 300w" sizes="40px" alt="" width="40" height="40" loading="lazy" decoding="async">
+        <span class="meta">
+          <span class="name" style="display:block">Let Her Go (feat. James Blake)</span>
+          <span class="by" style="display:block">Don Toliver, James Blake</span>
+        </span>
+      </a>
+    </li>
+    <li>
+      <span class="rank">2</span>
+      <a href="https://open.spotify.com/track/4tocSkaXR2pd43y3Pu2Nm1" target="_blank" rel="noopener noreferrer" aria-label="2位 GET GLUE 64BARS / G PLANTS（Spotifyで開く）" style="display:flex;gap:12px;align-items:center;min-width:0">
+        <img src="https://i.scdn.co/image/ab67616d0000485196be2db070dcdc029c84fa9d" srcset="https://i.scdn.co/image/ab67616d0000485196be2db070dcdc029c84fa9d 64w, https://i.scdn.co/image/ab67616d00001e0296be2db070dcdc029c84fa9d 300w" sizes="40px" alt="" width="40" height="40" loading="lazy" decoding="async">
+        <span class="meta">
+          <span class="name" style="display:block">GET GLUE 64BARS</span>
+          <span class="by" style="display:block">G PLANTS</span>
+        </span>
+      </a>
+    </li>
+    <li>
+      <span class="rank">3</span>
+      <a href="https://open.spotify.com/track/7efEmmrLI7aSPzi8m6gg9k" target="_blank" rel="noopener noreferrer" aria-label="3位 Downer&apos;s Inner Circle / G PLANTS（Spotifyで開く）" style="display:flex;gap:12px;align-items:center;min-width:0">
+        <img src="https://i.scdn.co/image/ab67616d00004851deffbd1f845ceff2abc81913" srcset="https://i.scdn.co/image/ab67616d00004851deffbd1f845ceff2abc81913 64w, https://i.scdn.co/image/ab67616d00001e02deffbd1f845ceff2abc81913 300w" sizes="40px" alt="" width="40" height="40" loading="lazy" decoding="async">
+        <span class="meta">
+          <span class="name" style="display:block">Downer&apos;s Inner Circle</span>
+          <span class="by" style="display:block">G PLANTS</span>
+        </span>
+      </a>
+    </li>
+    <li>
+      <span class="rank">4</span>
+      <a href="https://open.spotify.com/track/6P9tyHxFUy3chrOlwNsdf6" target="_blank" rel="noopener noreferrer" aria-label="4位 Ryuchijo / G PLANTS（Spotifyで開く）" style="display:flex;gap:12px;align-items:center;min-width:0">
+        <img src="https://i.scdn.co/image/ab67616d000048510010322010ba7467efb83d54" srcset="https://i.scdn.co/image/ab67616d000048510010322010ba7467efb83d54 64w, https://i.scdn.co/image/ab67616d00001e020010322010ba7467efb83d54 300w" sizes="40px" alt="" width="40" height="40" loading="lazy" decoding="async">
+        <span class="meta">
+          <span class="name" style="display:block">Ryuchijo</span>
+          <span class="by" style="display:block">G PLANTS</span>
+        </span>
+      </a>
+    </li>
+    <li>
+      <span class="rank">5</span>
+      <a href="https://open.spotify.com/track/6HexNTb392JS071DoTGo0y" target="_blank" rel="noopener noreferrer" aria-label="5位 Hummingbird (Metro Boomin &amp; James Blake) / Metro Boomin, James Blake（Spotifyで開く）" style="display:flex;gap:12px;align-items:center;min-width:0">
+        <img src="https://i.scdn.co/image/ab67616d000048516ed9aef791159496b286179f" srcset="https://i.scdn.co/image/ab67616d000048516ed9aef791159496b286179f 64w, https://i.scdn.co/image/ab67616d00001e026ed9aef791159496b286179f 300w" sizes="40px" alt="" width="40" height="40" loading="lazy" decoding="async">
+        <span class="meta">
+          <span class="name" style="display:block">Hummingbird (Metro Boomin &amp; James Blake)</span>
+          <span class="by" style="display:block">Metro Boomin, James Blake</span>
+        </span>
+      </a>
+    </li>
+  </ol>
+</section>
+
+</body>
+</html>
