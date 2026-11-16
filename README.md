@@ -344,6 +344,8 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 
 ## APIリファレンス
 
+ヘッダー・レート制限・エラー応答の追加のキーなどの詳細は [`docs/api.md`](docs/api.md) を参照してください。
+
 ### `GET /api/now-playing`
 
 再生中の楽曲情報およびムード文を返却します。JSON（既定）および YAML（`?format=yaml` または `Accept: application/yaml`）に対応しています。
