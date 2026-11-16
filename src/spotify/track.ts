@@ -45,6 +45,7 @@ export function toTrackSummary(item: CatalogTrack): TrackSummary {
     album: item.album.name,
     album_art_url: pickAlbumArt(item.album.images),
     duration_ms: item.duration_ms,
+    explicit: item.explicit === true,
     // popularity は 2024年11月以降のアプリでは返らない。欠けていても
     // キー自体はスキーマに残す（利用側の分岐を増やさないため）。
     popularity: item.popularity ?? null,

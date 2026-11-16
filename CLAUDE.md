@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Run the same checks as CI, in order: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`
 (see CONTRIBUTING.md). `dev:worker` reads secrets from `.dev.vars`; `setup` is interactive OAuth (writes `.env` +
-`data/auth.json`, optionally gh secrets); `auth` is legacy.
+`data/auth.json`, optionally gh secrets). The old `npm run auth` / `/auth/*` routes were removed in v1.9.0 — `setup` is the only OAuth path.
 
 ## Two delivery modes
 
@@ -55,6 +55,9 @@ The same core powers both. This split is the product's core idea — don't colla
   stale threshold; `browser.test.ts` checks they match
 - `src/runtime.ts` — runtime differences the layers below the routes need. On Workers the entry turns off sharing of
   in-flight promises (now-playing fetch, token refresh, mood generation) across requests; only cached values are shared
+- `src/http/` is the live-API layer only (CORS, rate limit, responses, security headers). Layers below it
+  (`spotify/`, `llm/`, `render/`, `core/`, `cli/`) must not import from it; shared helpers they need
+  (`discardBody`, `USER_AGENT`, `forLog`) live in `src/util/`
 - `src/http/background.ts` — the live API waits at most 5s for a mood (`LIVE_MOOD_DEADLINE_MS`), then answers
   `mood: null` and lets generation finish (`ctx.waitUntil` on Workers). The CLI waits to the end
 - `src/version.ts` — `VERSION`, bumped together with `package.json` at release (a spec checks they match)
@@ -87,9 +90,11 @@ The same core powers both. This split is the product's core idea — don't colla
 - **`X-Frame-Options`**: DENY everywhere except `/embed`, which exists to be iframed. On Workers,
   `public/` is served by Static Assets before the Worker runs, so its headers live in
   `public/_headers`
+- On Workers an unknown path (e.g. `/embed.jsx`, `/index.htm`) falls through Static Assets to the Worker and gets
+  the same JSON 404 (checked on production, 2026-11-16)
 - **Workers**: secrets reach `process.env` via `nodejs_compat`, so `config.ts` works unchanged;
   `data/auth.json` is unavailable there. Import `dotenv` only in the Node entries
-  (`src/index.ts`, `src/cli/index.ts`; `src/authServer.ts` reaches it through `src/index.ts`)
+  (`src/index.ts`, `src/cli/index.ts`)
 - `generate` keeps going when only the ranking fetch fails (ranking files stay as they were), and keeps the
   `ranking_mood` record in `snapshot.json` on runs that don't produce one (`--no-mood`, no LLM, zero tracks).
   `snapshot.json` is internal state (`schema_version`); it is not deployed to Pages.

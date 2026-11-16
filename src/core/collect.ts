@@ -10,7 +10,8 @@ import { fetchNowPlaying } from '../spotify/nowPlaying.js';
 import { fetchTopTracks } from '../spotify/topTracks.js';
 import { fetchRecentlyPlayed } from '../spotify/recentlyPlayed.js';
 import { generateMood, MOOD_PROMPT_VERSION } from '../llm/moodGenerator.js';
-import { hasLlmConfigured, resolveLlm } from '../llm/settings.js';
+import { currentLlmModel, hasLlmConfigured, resolveLlm } from '../llm/settings.js';
+import { toMoodResult } from './mood.js';
 import { sharesInFlightWork } from '../runtime.js';
 import {
   nowPlayingCache,
@@ -68,13 +69,6 @@ function cacheSet<V>(cache: TtlCache<V>, key: string, value: V): void {
   }
 }
 
-/** 外部ストアから読んだ値がムード文の形か（古い版が書いた値をそのまま使わない）。 */
-function isMoodResult(value: unknown): value is MoodResult {
-  if (!value || typeof value !== 'object') return false;
-  const mood = value as Record<string, unknown>;
-  return typeof mood['text'] === 'string' && typeof mood['generated_at'] === 'string';
-}
-
 /** 曲ごとのムード文の保持期間。メモリの moodCache と揃える。 */
 const MOOD_TTL_SECONDS = 86400;
 
@@ -86,7 +80,8 @@ async function readThrough<T>(
   cache: TtlCache<T>,
   key: string,
   durableKey: string,
-  isValid: (value: unknown) => value is T
+  /** 外部ストアの値を今の形に直す。形が違えば null（古い版が書いた値をそのまま使わない） */
+  parse: (value: unknown) => T | null
 ): Promise<T | null> {
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
@@ -94,8 +89,8 @@ async function readThrough<T>(
   const store = getDurableStore();
   if (!store) return null;
   try {
-    const stored = await store.get(durableKey);
-    if (!isValid(stored)) return null;
+    const stored = parse(await store.get(durableKey));
+    if (stored === null) return null;
     cacheSet(cache, key, stored);
     return stored;
   } catch (err) {
@@ -161,7 +156,7 @@ async function generateAndStoreMood(
       genres,
       popularity: track.popularity,
     });
-    const mood = { text, generated_at: new Date().toISOString() };
+    const mood: MoodResult = { text, generated_at: new Date().toISOString(), model: currentLlmModel() };
     await writeThrough(moodCache, key, `mood:${key}`, mood, MOOD_TTL_SECONDS, defer);
     return mood;
   } catch (err) {
@@ -180,7 +175,7 @@ async function moodFor(
   options: Pick<CollectOptions, 'moodDeadlineMs' | 'defer'> = {}
 ): Promise<MoodResult | null> {
   const key = moodKey(trackId);
-  const cached = await readThrough(moodCache, key, `mood:${key}`, isMoodResult);
+  const cached = await readThrough(moodCache, key, `mood:${key}`, toMoodResult);
   if (cached) return cached;
 
   let generation: Promise<MoodResult | null>;
@@ -251,6 +246,7 @@ async function fetchAndBuildNowPlaying(options: CollectOptions): Promise<NowPlay
 
   const response: NowPlayingResponse = {
     is_playing: data.isPlaying,
+    progress_ms: data.isPlaying ? data.progressMs : null,
     track: data.track,
     mood,
     fetched_at: new Date().toISOString(),

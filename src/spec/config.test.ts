@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-import { parseBooleanEnv, parseNowPlayingCacheSeconds } from '../config.js';
+import { parseNowPlayingCacheSeconds } from '../config.js';
 import {
   MissingConfigError,
   loadStoredAuth,
@@ -24,7 +24,6 @@ import {
   jsonOk,
   callsTo,
   headerOf,
-  bodyOf,
   aSpotifyTrack,
   givenNowPlaying,
   givenLlmReplies,
@@ -218,16 +217,8 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
         expect(llmUrlSent()).toBe(url);
       });
 
-      it('LLM_MODEL が無ければ、送り先のプリセットの既定のモデルを使う', async () => {
-        vi.stubEnv('OPENAI_API_KEY', 'alias-key');
-
-        await collectNowPlaying();
-
-        expect(bodyOf(must(callsTo('/chat/completions')[0], 'リクエスト'))['model']).toBe('gpt-4o-mini');
-      });
-
-      it('プリセットに無い送り先で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async () => {
-        vi.stubEnv('GROQ_API_KEY', 'alias-key');
+      it.each(['GROQ_API_KEY', 'OPENAI_API_KEY'])('既定のモデルの無い送り先（%s）で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async (name) => {
+        vi.stubEnv(name, 'alias-key');
 
         await collectNowPlaying();
 
@@ -373,31 +364,6 @@ describe('秘密情報を書いたファイルは、git にも Docker イメー�
     const ignore = patterns('.dockerignore');
 
     expect(ignore).toEqual(expect.arrayContaining(['.env', '.env.*', '!.env.example', '.dev.vars*', 'data']));
-  });
-});
-
-describe('真偽値の環境変数（ENABLE_AUTH_ROUTES など）', () => {
-  afterEach(() => {
-    delete process.env['SPEC_BOOLEAN'];
-  });
-
-  it.each(['true', 'TRUE', ' True ', '1', 'yes', 'on'])('%s は真', (value) => {
-    process.env['SPEC_BOOLEAN'] = value;
-    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(true);
-  });
-
-  it.each(['false', '0', 'no', 'off', ''])('%s は偽', (value) => {
-    process.env['SPEC_BOOLEAN'] = value;
-    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
-  });
-
-  it('読めない値は偽とし、警告を出す', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    process.env['SPEC_BOOLEAN'] = 'enabled';
-
-    expect(parseBooleanEnv('SPEC_BOOLEAN')).toBe(false);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('SPEC_BOOLEAN'));
-    warn.mockRestore();
   });
 });
 

@@ -91,6 +91,7 @@ function aNowPlaying(
 ): NowPlayingResponse {
   return {
     is_playing: true,
+    progress_ms: null,
     track: {
       id: name,
       name,
@@ -98,12 +99,13 @@ function aNowPlaying(
       album: 'After Hours',
       album_art_url: ART_640,
       duration_ms: 213_000,
+      explicit: false,
       popularity: null,
       spotify_url: `https://open.spotify.com/track/${name}`,
       preview_url: null,
       ...overrides,
     },
-    mood: moodText ? { text: moodText, generated_at: NOW_ISO } : null,
+    mood: moodText ? { text: moodText, generated_at: NOW_ISO, model: null } : null,
     fetched_at: NOW_ISO,
   };
 }
@@ -479,7 +481,7 @@ describe('デモ画面（public/demo.js）', () => {
   it('曲 → 停止 → 別の曲（ムード文もジャケ写も無し）で、各時点の表示が応答と一致する', async () => {
     givenLiveResponses(
       aNowPlaying('A', 'ムード'),
-      { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO },
       aNowPlaying('B', null, { album_art_url: '' })
     );
 

@@ -1,21 +1,18 @@
 /**
- * 外部 HTTP 呼び出しのタイムアウト。
+ * Spotify への HTTP 呼び出しのタイムアウト。
  *
  * 応答を返さないまま接続を保持されると、/badge.svg や /embed はその間ずっと待ち、
  * README の画像は camo プロキシに打ち切られて壊れる。進行中の取得は共有されるので
  * （collectNowPlaying）、ぶら下がった1本に後続のリクエストもすべて巻き込まれる。
  * 静的モードでも Actions のジョブが上限まで止まり続ける。
  *
- * LLM のタイムアウトは src/llm/client.ts が持つ（再試行の判断と一体のため）。
+ * LLM のタイムアウトは src/llm/client.ts（再試行の判断と一体のため）、ジャケ写は src/render/image.ts が持つ。
  */
 
-import { withUserAgent } from '../http/userAgent.js';
+import { withUserAgent } from '../util/userAgent.js';
 
 /** Spotify Web API とトークン更新。 */
 export const SPOTIFY_TIMEOUT_MS = 10_000;
-
-/** ジャケ写の取得。失敗してもプレースホルダを描くだけなので短めにする。 */
-export const IMAGE_TIMEOUT_MS = 5_000;
 
 export class SpotifyTimeoutError extends Error {
   constructor(target: string, timeoutMs: number) {

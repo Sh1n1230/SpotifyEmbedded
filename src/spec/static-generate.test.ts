@@ -126,7 +126,7 @@ describe('要件3: ランキングの静的な画像を得られる', () => {
         count: 5,
       });
       const html = renderEmbedPage({
-        nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: fetchedAt },
+        nowPlaying: { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: fetchedAt },
         topTracks: {
           range: 'short_term',
           limit: 10,
@@ -678,7 +678,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       await runGenerate();
 
       const nowPlaying = JSON.parse(read('now-playing.json')) as Record<string, unknown>;
-      expect(Object.keys(nowPlaying).sort()).toEqual(['fetched_at', 'is_playing', 'mood', 'track']);
+      expect(Object.keys(nowPlaying).sort()).toEqual(['fetched_at', 'is_playing', 'mood', 'progress_ms', 'track']);
       expect(nowPlaying['is_playing']).toBe(false);
       expect(nowPlaying['track']).toBeNull();
       expect(nowPlaying['mood']).toBeNull();
@@ -868,7 +868,7 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
 
     it('埋め込みページは、日時として読めない since でも時刻を省いて描ける', () => {
       const html = renderEmbedPage({
-        nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+        nowPlaying: { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO },
         state: 'recent',
         since: 'garbage',
       });
@@ -1243,7 +1243,7 @@ describe('公開スキーマの JSON Schema（schema/*.schema.json）', () => {
   });
 
   it('スキーマに無いキーや、型の違う値は弾く（スキーマが何でも通すものになっていない）', () => {
-    const valid = { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO };
+    const valid = { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO };
 
     expect(validators['now-playing'](valid)).toBe(true);
     expect(validators['now-playing']({ ...valid, extra: 1 })).toBe(false);

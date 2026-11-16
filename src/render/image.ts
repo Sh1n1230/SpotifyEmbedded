@@ -5,9 +5,11 @@
  * 描画しない。README に貼れる SVG にするには、画像そのものを base64 で
  * 焼き込む必要がある。
  */
-import { withUserAgent } from '../http/userAgent.js';
-import { IMAGE_TIMEOUT_MS } from '../spotify/timeout.js';
-import { discardBody } from '../http/body.js';
+import { withUserAgent } from '../util/userAgent.js';
+import { discardBody } from '../util/body.js';
+
+/** ジャケ写の取得の上限。失敗してもプレースホルダを描くだけなので短めにする。 */
+const IMAGE_TIMEOUT_MS = 5_000;
 
 /** これを超える画像は埋め込まない（SVGが肥大化してレンダリングが不安定になる）。 */
 const MAX_IMAGE_BYTES = 512 * 1024;

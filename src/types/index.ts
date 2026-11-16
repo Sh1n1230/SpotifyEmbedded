@@ -70,6 +70,7 @@ export interface SpotifyPlaybackState {
  * album: string
  * album_art_url: string  # ジャケ写URL (300px以上の最大サイズ)
  * duration_ms: number
+ * explicit: boolean           # 露骨な表現を含む曲か（Spotify の explicit）
  * popularity: number | null   # 0–100。Spotifyが返さない場合は null
  * spotify_url: string
  * preview_url: string | null
@@ -81,6 +82,11 @@ export interface TrackSummary {
   album: string;
   album_art_url: string;
   duration_ms: number;
+  /**
+   * 露骨な表現を含む曲か（Spotify の explicit）。v1.9.0 で追加。データとして返すだけで、カードの表示には使わない
+   * （伏せるかどうかは JSON を使う側が決める）。v1.8.0 以前の snapshot.json から引き継いだ曲は false になる。
+   */
+  explicit: boolean;
   /**
    * 0–100。2024年11月以降に作成されたSpotifyアプリでは API が返さないため
    * null になる。キー自体は常に存在させ、利用側の分岐を増やさない。
@@ -96,16 +102,23 @@ export interface TrackSummary {
  *
  * text: string           # 日本語ムード文 (例: "今ノリノリなようです")
  * generated_at: string   # ISO 8601
+ * model: string | null   # 生成に使った LLM のモデル名。v1.8.0 以前に作られた文は null
  */
 export interface MoodResult {
   text: string;
   generated_at: string;
+  /**
+   * 生成に使った LLM のモデル名。v1.9.0 で追加。モデルを変えた後に、表示中の文が新旧どちらで作られたかを確かめられる。
+   * v1.8.0 以前に作られて保存されていた文（snapshot.json・Workers KV）は null。
+   */
+  model: string | null;
 }
 
 /**
  * YAML schema for /api/now-playing:
  *
  * is_playing: boolean
+ * progress_ms: number | null   # fetched_at の時点の再生位置。再生していなければ null
  * track:
  *   id: string
  *   name: string
@@ -123,6 +136,13 @@ export interface MoodResult {
  */
 export interface NowPlayingResponse {
   is_playing: boolean;
+  /**
+   * fetched_at の時点の再生位置（ミリ秒）。v1.9.0 で追加。再生していなければ null。
+   * track.duration_ms と合わせて、利用側で進捗バーを描ける。ライブAPIはキャッシュした応答を返すことがあるので、
+   * 「今」の位置は progress_ms +（現在時刻 − fetched_at）で見積もる（一時停止やシークは反映されない）。
+   * 静的モードの now-playing.json では、生成した時点の値になる。カードの表示には使わない。
+   */
+  progress_ms: number | null;
   track: TrackSummary | null;
   mood: MoodResult | null;
   fetched_at: string;

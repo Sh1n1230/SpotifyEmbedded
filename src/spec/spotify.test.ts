@@ -124,7 +124,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
     expect(result.track?.name).toBe('Midnight Drive');
     expect(result.track?.artist).toBe('Neon District');
     expect(result.fetched_at).toBe(NOW_ISO);
-    expect(Object.keys(result)).toEqual(['is_playing', 'track', 'mood', 'fetched_at']);
+    expect(Object.keys(result)).toEqual(['is_playing', 'progress_ms', 'track', 'mood', 'fetched_at']);
     expect(Object.keys(must(result.track, '曲')).sort()).toEqual(TRACK_SUMMARY_KEYS);
   });
 
@@ -160,7 +160,7 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
 
       const result = await collectNowPlaying();
 
-      expect(result).toMatchObject({ is_playing: false, track: null, mood: null });
+      expect(result).toMatchObject({ is_playing: false, progress_ms: null, track: null, mood: null });
       expect(callsTo('/artists')).toHaveLength(0);
       expect(callsTo('/chat/completions')).toHaveLength(0);
     });
@@ -387,11 +387,12 @@ describe('要件2: Spotify API を叩いて、今再生している曲を表示�
         album: 'After Hours',
         album_art_url: ART_300,
         duration_ms: 213_000,
+        explicit: false,
         popularity: null,
         spotify_url: 'https://open.spotify.com/track/track-1',
         preview_url: null,
       },
-      mood: { text: '今チルな気分になっています', generated_at: NOW_ISO },
+      mood: { text: '今チルな気分になっています', generated_at: NOW_ISO, model: null },
       theme: 'dark',
     });
 
@@ -913,7 +914,7 @@ describe('Spotify の応答を読めないとき・届かないとき', () => {
     const res = await createApp().request('/api/now-playing');
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ is_playing: false, track: null });
+    expect(await res.json()).toMatchObject({ is_playing: false, progress_ms: null, track: null });
   });
 
   it('/artists の応答が JSON でなくても、ジャンル無しで曲情報を返し、次の呼び出しでまた試す', async () => {

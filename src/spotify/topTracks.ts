@@ -26,6 +26,8 @@ export async function fetchTopTracks(
   // トップトラックにローカルファイルは入らないが、公開スキーマ（id は文字列）を守るため通す
   const tracks = Array.isArray(data?.items) ? data.items.filter(isCatalogTrack) : [];
 
+  // ジャンルは表示する件数ではなく、取得した全曲に付ける（top-tracks.json は全曲に genres を持つ約束）。
+  // 取れない環境（ほとんどのアプリ）では最初の1回で打ち切られ、以降は呼ばない（artists.ts）
   const allArtistIds = Array.from(
     new Set(tracks.flatMap((t) => t.artists.map((a) => a.id)))
   );

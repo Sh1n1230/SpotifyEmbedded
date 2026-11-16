@@ -33,15 +33,16 @@ export const PROVIDERS: ProviderPreset[] = [
     signupUrl: 'https://aistudio.google.com/apikey',
     note: '無料枠あり',
   },
+  // Gemini 以外は既定のモデルを持たない: 提供するモデルの入れ替わりが早く、古い名前を既定にすると 404 になる
+  // （OpenAI の gpt-4o-mini は 2027-01-14 に停止予定）
   {
     id: 'openai',
     label: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o-mini',
+    defaultModel: '',
     signupUrl: 'https://platform.openai.com/api-keys',
-    note: '従量課金',
+    note: '従量課金。モデル名は https://platform.openai.com/docs/models から選ぶ',
   },
-  // 既定のモデルは持たない: どちらも提供するモデルの入れ替わりが早く、古い名前を既定にすると 404 になる
   {
     id: 'groq',
     label: 'Groq',

@@ -56,7 +56,8 @@
       "additionalProperties": false,
       "required": [
         "text",
-        "generated_at"
+        "generated_at",
+        "model"
       ],
       "properties": {
         "text": {
@@ -66,6 +67,13 @@
         "generated_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "生成に使った LLM のモデル名。v1.8.0 以前に作られた文は null。v1.9.0 で追加"
         }
       }
     },
@@ -79,6 +87,7 @@
         "album",
         "album_art_url",
         "duration_ms",
+        "explicit",
         "popularity",
         "spotify_url",
         "preview_url",
@@ -108,6 +117,10 @@
         "duration_ms": {
           "type": "integer",
           "minimum": 0
+        },
+        "explicit": {
+          "type": "boolean",
+          "description": "露骨な表現を含む曲か（Spotify の explicit）。v1.9.0 で追加"
         },
         "popularity": {
           "type": [

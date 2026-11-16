@@ -19,13 +19,10 @@ import { escapeXml } from '../render/text.js';
 import {
   NOW,
   respondWith,
-  jsonOk,
   callsTo,
-  headerOf,
   aSpotifyTrack,
   givenNowPlaying,
   expectValidXml,
-  must,
 } from './support.js';
 
 describe('ライブAPIは公開エンドポイントとして余計なものを漏らさない', () => {
@@ -196,184 +193,11 @@ describe('ライブAPIは公開エンドポイントとして余計なものを�
     });
   });
 
-  describe('/auth（ENABLE_AUTH_ROUTES=true のときだけ）', () => {
-    beforeEach(() => {
-      vi.stubEnv('ENABLE_AUTH_ROUTES', 'true');
-      // app.request() のホスト（localhost）と同じにする。違うと /auth/login はそちらへ移る（下のテスト）
-      vi.stubEnv('SPOTIFY_REDIRECT_URI', 'http://localhost/auth/callback');
-    });
-
-    it('Redirect URI と違うホストで開いたら、Redirect URI のホストの /auth/login へ移ってから state を置く', async () => {
-      vi.stubEnv('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:3000/auth/callback');
-
-      const res = await createApp().request('http://localhost:3000/auth/login');
-
-      expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('http://127.0.0.1:3000/auth/login');
-      expect(res.headers.get('set-cookie')).toBeNull();
-    });
-
-    it('Client ID が無ければ、設定の案内を返す', async () => {
-      vi.stubEnv('SPOTIFY_CLIENT_ID', '');
-
-      const res = await createApp().request('/auth/login');
-
-      expect(res.status).toBe(400);
-      expect(await res.text()).toContain('SPOTIFY_CLIENT_ID が設定されていません');
-    });
-
-    it('state はブラウザごとの Cookie に持ち、応答はキャッシュさせない', async () => {
-      const res = await createApp().request('/auth/login');
-
-      expect(res.status).toBe(302);
-      expect(res.headers.get('cache-control')).toBe('no-store');
-      const cookie = res.headers.get('set-cookie') ?? '';
-      expect(cookie).toMatch(/spotify_oauth_state=[0-9a-f]{32}/);
-      expect(cookie).toContain('HttpOnly');
-      // Spotify からのトップレベルの遷移で戻るので、Strict だと Cookie が送られず必ず Invalid state になる
-      expect(cookie).toMatch(/SameSite=Lax/i);
-      const state = /spotify_oauth_state=([0-9a-f]+)/.exec(cookie)![1];
-      expect(res.headers.get('location')).toContain(`state=${state}`);
-    });
-
-    it('別のブラウザが始めた state では通らない', async () => {
-      const app = createApp();
-      const login = await app.request('/auth/login');
-      const state = /spotify_oauth_state=([0-9a-f]+)/.exec(login.headers.get('set-cookie')!)![1];
-
-      // Cookie を持たない（= 別のブラウザ）コールバック
-      const res = await app.request(`/auth/callback?code=c&state=${state}`);
-
-      expect(res.status).toBe(400);
-      expect(callsTo('accounts.spotify.com/api/token')).toHaveLength(0);
-    });
-
-    /** /auth/login で発行された state と Cookie を持って、コールバックに戻ってくる。 */
-    async function callback(query: (state: string) => string): Promise<Response> {
-      const app = createApp();
-      const login = await app.request('/auth/login');
-      const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
-      const state = /spotify_oauth_state=([0-9a-f]+)/.exec(cookie)![1]!;
-      return app.request(`/auth/callback?${query(state)}`, { headers: { Cookie: cookie } });
+  it('/auth/* は無い（v1.9.0 で廃止）', async () => {
+    for (const path of ['/auth/login', '/auth/callback?code=c&state=s']) {
+      expect((await createApp().request(path)).status).toBe(404);
     }
-
-    const HOSTILE_TOKEN = '<script>"x"</script>&\'';
-
-    function givenCodeExchange(refreshToken = HOSTILE_TOKEN): void {
-      respondWith((url) =>
-        url.includes('accounts.spotify.com/api/token')
-          ? jsonOk({ access_token: 'a', refresh_token: refreshToken, expires_in: 3600 })
-          : null
-      );
-    }
-
-    describe('正しい state と code で戻ってきたとき', () => {
-      it('トークンエンドポイントへ認可コードを Basic 認証つきの form で送る', async () => {
-        givenCodeExchange();
-
-        await callback((state) => `code=the-code&state=${state}`);
-
-        const call = must(callsTo('accounts.spotify.com/api/token')[0], 'リクエスト');
-        expect(call.url).toBe('https://accounts.spotify.com/api/token');
-        expect(call.init?.method).toBe('POST');
-        expect(headerOf(call, 'Content-Type')).toBe('application/x-www-form-urlencoded');
-        expect(headerOf(call, 'Authorization')).toBe(
-          `Basic ${Buffer.from('spec-client-id:spec-client-secret').toString('base64')}`
-        );
-        const body = call.init?.body as URLSearchParams;
-        expect(Object.fromEntries(body)).toEqual({
-          grant_type: 'authorization_code',
-          code: 'the-code',
-          redirect_uri: 'http://localhost/auth/callback',
-        });
-        // 応答しない相手を待ち続けない（Spotify API・トークン更新と同じ）
-        expect(call.init?.signal).toBeInstanceOf(AbortSignal);
-      });
-
-      it('refresh_token は HTML エスケープして表示し、生の HTML としては出さない', async () => {
-        givenCodeExchange();
-
-        const res = await callback((state) => `code=c&state=${state}`);
-        const html = await res.text();
-
-        expect(res.status).toBe(200);
-        expect(html).not.toContain(HOSTILE_TOKEN);
-        expect(html).not.toContain('<script>"x"');
-        expect(html).toContain('&lt;script&gt;&quot;x&quot;&lt;/script&gt;&amp;&apos;');
-      });
-
-      it('既定では伏せて表示し、全文は「全文を表示」の中にだけ置く', async () => {
-        givenCodeExchange('AQDexampleRefreshTokenValueXYZ');
-
-        const html = await (await callback((state) => `code=c&state=${state}`)).text();
-
-        expect(html).toContain('SPOTIFY_REFRESH_TOKEN=AQDe…eXYZ');
-        expect(html).toMatch(/<details>[\s\S]*AQDexampleRefreshTokenValueXYZ[\s\S]*<\/details>/);
-        expect(html.split('AQDexampleRefreshTokenValueXYZ')).toHaveLength(2);
-        expect(html).toContain('他人に見せず');
-      });
-
-      it('refresh_token をサーバーのログに出さない', async () => {
-        givenCodeExchange('secret-refresh-token-value');
-
-        await callback((state) => `code=c&state=${state}`);
-
-        const logged = [console.log, console.warn, console.error]
-          .flatMap((fn) => vi.mocked(fn).mock.calls)
-          .map((args) => args.map(String).join(' '))
-          .join('\n');
-        expect(logged).not.toContain('secret-refresh-token-value');
-      });
-
-      it('state の Cookie を消し、応答はキャッシュさせず、コピー用のスクリプトだけを許す CSP を付ける', async () => {
-        givenCodeExchange();
-
-        const res = await callback((state) => `code=c&state=${state}`);
-        const csp = res.headers.get('content-security-policy') ?? '';
-        const html = await res.text();
-
-        expect(res.headers.get('set-cookie')).toMatch(/spotify_oauth_state=;.*Max-Age=0/);
-        expect(res.headers.get('cache-control')).toBe('no-store');
-        const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
-        expect(nonce).toBeTruthy();
-        expect(html).toContain(`<script nonce="${nonce}">`);
-        expect(csp).toContain("default-src 'none'");
-        expect(csp).toContain("frame-ancestors 'none'");
-      });
-    });
-
-    it('承認を拒否された（error=access_denied）ら、理由を示して交換はしない', async () => {
-      const res = await callback((state) => `error=access_denied&state=${state}`);
-
-      expect(res.status).toBe(400);
-      expect(await res.text()).toContain('access_denied');
-      expect(callsTo('accounts.spotify.com/api/token')).toHaveLength(0);
-    });
-
-    it('state が一致しなければ、error があっても state のエラーになる', async () => {
-      const res = await callback(() => 'error=access_denied&state=wrong');
-
-      expect(res.status).toBe(400);
-      expect(await res.text()).toContain('state が一致しません');
-    });
-
-    it('認可コードの交換に失敗したら、直す場所の分かる説明を 502 で返す（Spotify の本文や Secret は含めない）', async () => {
-      respondWith((url) =>
-        url.includes('accounts.spotify.com/api/token')
-          ? new Response('{"error":"invalid_grant","error_description":"upstream-detail"}', { status: 400 })
-          : null
-      );
-
-      const res = await callback((state) => `code=c&state=${state}`);
-      const text = await res.text();
-
-      expect(res.status).toBe(502);
-      expect(res.headers.get('content-type')).toContain('text/plain');
-      expect(res.headers.get('cache-control')).toBe('no-store');
-      expect(text).toContain('Redirect URI');
-      expect(text).not.toContain('upstream-detail');
-      expect(text).not.toContain('spec-client-secret');
-    });
+    expect(callsTo('accounts.spotify.com')).toHaveLength(0);
   });
 
   it('escapeXml は XML で表せない U+FFFE/U+FFFF と孤立サロゲートを落とす', () => {
@@ -466,12 +290,12 @@ describe('ライブAPIの応答の形', () => {
   it.each([
     ['再生中', aSpotifyTrack()],
     ['停止中', null],
-  ])('%s でも /api/now-playing の最上位のキーは静的モードと同じ4つだけ', async (_label, track) => {
+  ])('%s でも /api/now-playing の最上位のキーは静的モードと同じ5つだけ', async (_label, track) => {
     givenNowPlaying(track);
 
     const res = await createApp().request('/api/now-playing');
 
-    expect(Object.keys((await res.json()) as object).sort()).toEqual(['fetched_at', 'is_playing', 'mood', 'track']);
+    expect(Object.keys((await res.json()) as object).sort()).toEqual(['fetched_at', 'is_playing', 'mood', 'progress_ms', 'track']);
   });
 });
 
