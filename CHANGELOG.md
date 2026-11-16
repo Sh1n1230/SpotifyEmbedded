@@ -14,6 +14,7 @@
 
 - `npm run auth` と `/auth/*`（`ENABLE_AUTH_ROUTES`）を削除しました。refresh_token の取得は `npm run setup` だけです。`ENABLE_AUTH_ROUTES` が設定に残っていても何も起きません（消してかまいません）
 - `/api/now-playing`・`now-playing.json` の最上位に `progress_ms`、曲（`track`・`tracks[]`）に `explicit`、ムード文（`mood`）に `model` が加わりました。キーを完全一致で検証している利用側は、[JSON Schema](schema/) を取り直してください
+- OpenAI のプリセットの既定モデル（`gpt-4o-mini`）を無くしました。OpenAI が 2027-01-14 に停止を予定しているためです。OpenAI を使っていて `LLM_MODEL` を設定していない場合は、モデル名を設定してください（無いとムード文なしで動き、起動時に案内します）
 - `HOST` を設定しない Node 版は、常にすべてのインターフェースで待ち受けます（`npm run auth` のときだけループバックにする分岐が無くなりました）
 
 ### 追加

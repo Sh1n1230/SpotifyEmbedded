@@ -24,7 +24,6 @@ import {
   jsonOk,
   callsTo,
   headerOf,
-  bodyOf,
   aSpotifyTrack,
   givenNowPlaying,
   givenLlmReplies,
@@ -218,16 +217,8 @@ describe('設定は「環境変数 → data/auth.json」の順に解決し、.en
         expect(llmUrlSent()).toBe(url);
       });
 
-      it('LLM_MODEL が無ければ、送り先のプリセットの既定のモデルを使う', async () => {
-        vi.stubEnv('OPENAI_API_KEY', 'alias-key');
-
-        await collectNowPlaying();
-
-        expect(bodyOf(must(callsTo('/chat/completions')[0], 'リクエスト'))['model']).toBe('gpt-4o-mini');
-      });
-
-      it('プリセットに無い送り先で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async () => {
-        vi.stubEnv('GROQ_API_KEY', 'alias-key');
+      it.each(['GROQ_API_KEY', 'OPENAI_API_KEY'])('既定のモデルの無い送り先（%s）で LLM_MODEL が無ければ、ほかのサービスのモデル名を送らない', async (name) => {
+        vi.stubEnv(name, 'alias-key');
 
         await collectNowPlaying();
 

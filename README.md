@@ -65,7 +65,7 @@ http://127.0.0.1:3000/auth/callback
 | | エンドポイント | 既定モデル | 備考 |
 |---|---|---|---|
 | **Google Gemini（推奨）** | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.1-flash-lite` | 無料枠あり |
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | 従量課金 |
+| OpenAI | `https://api.openai.com/v1` | —（`LLM_MODEL` が必須） | 従量課金 |
 | その他 | 任意のOpenAI互換URL | — | — |
 
 > **Gemini を利用する場合の注意**
@@ -508,7 +508,7 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `SPOTIFY_REFRESH_TOKEN` | ✓ | — | `npm run setup` が取得したリフレッシュトークン |
 | `LLM_API_KEY` | | — | 未設定時はムード文なしで動作。`LLM_BASE_URL` がローカル（`localhost`・`127.0.0.1`・`[::1]`）のサーバーなら無くてもよい |
 | `LLM_BASE_URL` | | API キーの名前で決まる（下記） | OpenAI互換のエンドポイント（末尾の `/chat/completions` は付けない。クエリは保つ）。API キーを平文で送らないよう `https://` に限る（`http://` は `localhost`・`127.0.0.1`・`[::1]` だけ使える。それ以外はムード文なしで動く）。URL に `user:pass@` を含めない |
-| `LLM_MODEL` | | 送り先のプリセットの既定（Gemini は `gemini-3.1-flash-lite`、OpenAI は `gpt-4o-mini`） | 使用モデル。既定のモデルの無い送り先（Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
+| `LLM_MODEL` | | Gemini は `gemini-3.1-flash-lite` | 使用モデル。Gemini 以外の送り先（OpenAI・Groq・OpenRouter・ローカルなど）では必須（無いとムード文なしで動き、起動時に案内する） |
 | `LLM_MAX_TOKENS` | | `80` | ムード文の生成の出力の上限（16〜4096）。推論を止められないモデルで応答が空になるときに上げる |
 | `LLM_TEMPERATURE` | | `0.7` | ムード文の生成の temperature（0〜2） |
 | `NOW_PLAYING_CACHE_SECONDS` | | `30` | ライブAPIが再生状況をメモリに保持する秒数（5〜300）。この間は Spotify を呼ばない。曲の切り替わりを早く反映したければ短く、Spotify の利用枠を節約したければ長くする |

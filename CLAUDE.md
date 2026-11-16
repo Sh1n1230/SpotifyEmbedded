@@ -90,6 +90,8 @@ The same core powers both. This split is the product's core idea — don't colla
 - **`X-Frame-Options`**: DENY everywhere except `/embed`, which exists to be iframed. On Workers,
   `public/` is served by Static Assets before the Worker runs, so its headers live in
   `public/_headers`
+- On Workers an unknown path (e.g. `/embed.jsx`, `/index.htm`) falls through Static Assets to the Worker and gets
+  the same JSON 404 (checked on production, 2026-11-16)
 - **Workers**: secrets reach `process.env` via `nodejs_compat`, so `config.ts` works unchanged;
   `data/auth.json` is unavailable there. Import `dotenv` only in the Node entries
   (`src/index.ts`, `src/cli/index.ts`)
