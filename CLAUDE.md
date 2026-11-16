@@ -55,7 +55,8 @@ The same core powers both. This split is the product's core idea — don't colla
   stale threshold; `browser.test.ts` checks they match
 - `src/runtime.ts` — runtime differences the layers below the routes need. On Workers the entry turns off sharing of
   in-flight promises (now-playing fetch, token refresh, mood generation) across requests; only cached values are shared
-- `src/http/` is the live-API layer only (CORS, rate limit, responses, security headers). Layers below it
+- `src/http/` is the live-API layer only (rate limit, responses, security headers). `CORS_ORIGIN` parsing is
+  config, so it lives in `src/corsOrigins.ts` next to `config.ts` (`config.ts` must not import from `src/http/`). Layers below it
   (`spotify/`, `llm/`, `render/`, `core/`, `cli/`) must not import from it; shared helpers they need
   (`discardBody`, `USER_AGENT`, `forLog`) live in `src/util/`
 - `src/http/background.ts` — the live API waits at most 5s for a mood (`LIVE_MOOD_DEADLINE_MS`), then answers
