@@ -144,6 +144,7 @@ router.get('/embed', async (c) => sendEmbedPage(c, await nowPlayingOrNull(c)));
 function sendEmbedPage(c: Context, fetched: NowPlayingResponse | null): Response {
   const nowPlaying: NowPlayingResponse = fetched ?? {
     is_playing: false,
+    progress_ms: null,
     track: null,
     mood: null,
     fetched_at: new Date().toISOString(),

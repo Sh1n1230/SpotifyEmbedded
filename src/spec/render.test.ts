@@ -85,6 +85,7 @@ describe('iframe 用ページ（/embed・静的モードの index.html）のサ�
   function aNowPlaying(overrides: Partial<NonNullable<NowPlayingResponse['track']>> = {}): NowPlayingResponse {
     return {
       is_playing: true,
+      progress_ms: null,
       track: {
         id: 'track-1',
         name: 'Midnight Drive',
@@ -92,6 +93,7 @@ describe('iframe 用ページ（/embed・静的モードの index.html）のサ�
         album: 'After Hours',
         album_art_url: ART_640,
         duration_ms: 213_000,
+        explicit: false,
         popularity: null,
         spotify_url: 'https://open.spotify.com/track/track-1',
         preview_url: null,
@@ -124,7 +126,7 @@ describe('iframe 用ページ（/embed・静的モードの index.html）のサ�
 
   it('ランキングでジャケ写の無い曲は、src の空の <img> ではなく同じ大きさの枠を置く', () => {
     const html = renderEmbedPage({
-      nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      nowPlaying: { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO },
       topTracks: {
         range: 'short_term',
         limit: 10,
@@ -171,13 +173,6 @@ describe('npm run dev のポート衝突の案内は、そのプラットフォ�
 
   it('使用中のポートが 3001 なら、別のポート（3002）を例に出す', () => {
     expect(portInUseHelp(3001, 'linux').join('\n')).toContain('PORT=3002 npm run dev');
-  });
-
-  it('npm run auth で起動したときは npm run auth を例に出し、Redirect URI も変えるよう案内する', () => {
-    const text = portInUseHelp(3000, 'linux', 'auth').join('\n');
-
-    expect(text).toContain('PORT=3001 npm run auth');
-    expect(text).toContain('SPOTIFY_REDIRECT_URI');
   });
 
   it.each(['darwin', 'linux'] as const)('%s では従来どおり PORT=… と lsof を出す', (platform) => {
@@ -269,6 +264,7 @@ describe('now-playing カードの再生中インジケータは、OS の「視�
         album: 'After Hours',
         album_art_url: ART_640,
         duration_ms: 213_000,
+        explicit: false,
         popularity: null,
         spotify_url: 'https://open.spotify.com/track/track-1',
         preview_url: null,
@@ -417,6 +413,7 @@ describe('SVG の描画の細部', () => {
     album: 'After Hours',
     album_art_url: ART_640,
     duration_ms: 213_000,
+    explicit: false,
     popularity: null,
     spotify_url: 'https://open.spotify.com/track/track-1',
     preview_url: null,
@@ -475,7 +472,7 @@ describe('SVG の描画の細部', () => {
 
   it('ムード文の無いカードの曲名は、空白の無い長い名前でも枠の中で折り返す（/embed と embed.js）', () => {
     const embedJs = readFileSync(new URL('../../public/embed.js', import.meta.url), 'utf8');
-    const html = renderEmbedPage({ nowPlaying: { is_playing: true, track, mood: null, fetched_at: NOW_ISO }, state: 'playing' });
+    const html = renderEmbedPage({ nowPlaying: { is_playing: true, progress_ms: null, track, mood: null, fetched_at: NOW_ISO }, state: 'playing' });
 
     expect(html).toMatch(/\.card\[data-no-mood\] \.track \{[^}]*overflow-wrap: anywhere/);
     expect(embedJs).toMatch(/\.card\.no-mood \.track \{[^}]*overflow-wrap: anywhere/);
@@ -517,7 +514,7 @@ describe('折り返しの細部', () => {
 });
 
 describe('透過の /embed の配色', () => {
-  const nowPlaying = { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO };
+  const nowPlaying = { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO };
 
   it('transparent なら color-scheme を light dark にし、埋め込み先と配色が違っても背景が透けるようにする', () => {
     const html = renderEmbedPage({ nowPlaying, state: 'idle', theme: 'dark', transparent: true });
@@ -592,7 +589,7 @@ describe('静的モードの再生中のカードは、いつの情報かが分�
 
   it('iframe 用ページも同じ見出しになる', () => {
     const html = renderEmbedPage({
-      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: since },
+      nowPlaying: { is_playing: true, progress_ms: null, track: aTopTrackEntry(), mood: null, fetched_at: since },
       state: 'playing',
       since,
       observedTime: true,
@@ -628,7 +625,7 @@ describe('アーティストが空の曲（Spotify が artists を空で返し�
 
   it('iframe 用ページはアーティストの行を隠し、タイトルと読み上げは曲名だけにする', () => {
     const html = renderEmbedPage({
-      nowPlaying: { is_playing: true, track, mood: null, fetched_at: NOW_ISO },
+      nowPlaying: { is_playing: true, progress_ms: null, track, mood: null, fetched_at: NOW_ISO },
       topTracks: { range: 'short_term', limit: 10, fetched_at: NOW_ISO, mood: null, tracks: [track] },
       state: 'playing',
     });
@@ -644,7 +641,7 @@ describe('アーティストが空の曲（Spotify が artists を空で返し�
 describe('ページの説明・ファビコン・画像の取得先', () => {
   const page = (overrides: Partial<Parameters<typeof renderEmbedPage>[0]> = {}) =>
     renderEmbedPage({
-      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
+      nowPlaying: { is_playing: true, progress_ms: null, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
       state: 'playing',
       ...overrides,
     });
@@ -679,7 +676,7 @@ describe('ランキング SVG の見出しは、ムード文の行数が変わ�
     const svg = renderRankingCard({
       tracks: [aTopTrackEntry()],
       fetchedAt: NOW_ISO,
-      mood: moodText ? { text: moodText, generated_at: NOW_ISO } : null,
+      mood: moodText ? { text: moodText, generated_at: NOW_ISO, model: null } : null,
     });
     const moodYs = [...svg.matchAll(/y="(\d+)" font-size="15"/g)].map((match) => Number(match[1]));
     const lineY = Number(/<line [^>]*y1="(\d+)"/.exec(svg)?.[1]);
@@ -731,6 +728,7 @@ describe('now-playing の SVG カードの組み方', () => {
     album: 'アルバム',
     album_art_url: '',
     duration_ms: 1,
+    explicit: false,
     popularity: null,
     spotify_url: 'https://open.spotify.com/track/t',
     preview_url: null,
@@ -741,7 +739,7 @@ describe('now-playing の SVG カードの組み方', () => {
   const LONG = 'とても長い文字列がカードの幅に収まらずに二行目まで折り返されていくことを確かめます';
 
   it('ムード文が1行なら y=82、曲名とアーティストはその下の決まった位置', () => {
-    const svg = renderNowPlayingCard({ track, mood: { text: '静かな夜のようです', generated_at: NOW_ISO }, state: 'playing' });
+    const svg = renderNowPlayingCard({ track, mood: { text: '静かな夜のようです', generated_at: NOW_ISO, model: null }, state: 'playing' });
 
     expect(yOf(svg, '静かな夜のようです')).toBe(82);
     expect(yOf(svg, '短い曲')).toBe(124);
@@ -749,7 +747,7 @@ describe('now-playing の SVG カードの組み方', () => {
   });
 
   it('ムード文が2行なら y=72 から2行', () => {
-    const svg = renderNowPlayingCard({ track, mood: { text: LONG, generated_at: NOW_ISO }, state: 'playing' });
+    const svg = renderNowPlayingCard({ track, mood: { text: LONG, generated_at: NOW_ISO, model: null }, state: 'playing' });
 
     expect(svg.match(/font-size="19"/g)).toHaveLength(2);
     expect(svg).toMatch(/y="72"[^>]*font-size="19"/);
@@ -790,7 +788,7 @@ describe('iframe 用ページのランキング', () => {
   const entries = Array.from({ length: 60 }, (_, index) => aTopTrackEntry({ rank: index + 1, id: `t${index}`, name: `曲${index + 1}` }));
   const page = (rankingCount: number | undefined, overrides: object = {}) =>
     renderEmbedPage({
-      nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      nowPlaying: { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO },
       state: 'idle',
       rankingCount,
       topTracks: { range: 'medium_term', tracks: entries, mood: null, fetched_at: '2026-09-21T15:00:00.000Z', ...overrides },
@@ -846,7 +844,7 @@ describe('ページの読み上げ', () => {
   const entries = [aTopTrackEntry({ rank: 1, name: '曲A', artist: '人A' })];
   const page = (overrides: object = {}) =>
     renderEmbedPage({
-      nowPlaying: { is_playing: false, track: null, mood: null, fetched_at: NOW_ISO },
+      nowPlaying: { is_playing: false, progress_ms: null, track: null, mood: null, fetched_at: NOW_ISO },
       state: 'idle',
       topTracks: { range: 'short_term', tracks: entries, mood: null, fetched_at: NOW_ISO },
       ...overrides,
@@ -858,6 +856,7 @@ describe('ページの読み上げ', () => {
     album: 'A',
     album_art_url: '',
     duration_ms: 1,
+    explicit: false,
     popularity: null,
     spotify_url: 'https://open.spotify.com/track/t',
     preview_url: null,
@@ -903,7 +902,7 @@ describe('<script> に埋め込む値', () => {
 describe('/embed は閲覧者の設定と置き場所に合わせられる', () => {
   const page = (overrides: Partial<Parameters<typeof renderEmbedPage>[0]> = {}) =>
     renderEmbedPage({
-      nowPlaying: { is_playing: true, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
+      nowPlaying: { is_playing: true, progress_ms: null, track: aTopTrackEntry(), mood: null, fetched_at: NOW_ISO },
       topTracks: { range: 'short_term', limit: 10, fetched_at: NOW_ISO, mood: null, tracks: [aTopTrackEntry()] },
       state: 'playing',
       ...overrides,

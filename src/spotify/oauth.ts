@@ -21,7 +21,7 @@ export interface OAuthApp {
 /**
  * 認可の URL。show_dialog=true を付け、承認済みのアプリでも毎回 Spotify の承認画面を出す。
  * 付けないと、やり直してもブラウザでログイン中のアカウントのまま即座に戻り、別のアカウントに切り替えられない
- * （承認画面には、今のアカウントの表示と切り替えのリンクがある）。この URL を使うのは setup と /auth/login の
+ * （承認画面には、今のアカウントの表示と切り替えのリンクがある）。この URL を使うのは setup の
  * 「取り直す」操作だけなので、常に付ける。
  * https://developer.spotify.com/documentation/web-api/tutorials/code-flow
  */

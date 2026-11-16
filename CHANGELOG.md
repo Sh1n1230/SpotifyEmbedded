@@ -8,6 +8,28 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-16
+
+### アップグレード時に確かめること
+
+- `npm run auth` と `/auth/*`（`ENABLE_AUTH_ROUTES`）を削除しました。refresh_token の取得は `npm run setup` だけです。`ENABLE_AUTH_ROUTES` が設定に残っていても何も起きません（消してかまいません）
+- `/api/now-playing`・`now-playing.json` の最上位に `progress_ms`、曲（`track`・`tracks[]`）に `explicit`、ムード文（`mood`）に `model` が加わりました。キーを完全一致で検証している利用側は、[JSON Schema](schema/) を取り直してください
+- `HOST` を設定しない Node 版は、常にすべてのインターフェースで待ち受けます（`npm run auth` のときだけループバックにする分岐が無くなりました）
+
+### 追加
+
+- `progress_ms`（`fetched_at` の時点の再生位置。再生していなければ `null`）
+- `track.explicit`（Spotify の explicit。v1.8.0 以前の `snapshot.json` から引き継いだ曲は `false`）
+- `mood.model`（生成に使った LLM のモデル名。v1.8.0 以前に作られた文は `null`）
+
+### 修正
+
+- `@hono/node-server` を 2.1.6 に上げました（パスの `\` の扱いと、WebSocket の upgrade 中の `ECONNRESET` の修正）
+
+### 内部
+
+- 下の層（Spotify・LLM・描画）が使う小さな共通処理を `src/http/` から `src/util/` に移しました（`src/http/` はライブAPIの層だけにします）
+
 ## [1.8.0] - 2026-11-11
 
 ### アップグレード時に確かめること
@@ -267,7 +289,9 @@
 
 - リリースの成果物のパッケージングを直す
 
-[Unreleased]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/Sh1n1230/SpotifyEmbedded/compare/v1.5.0...v1.6.0

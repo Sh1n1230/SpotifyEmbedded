@@ -1,6 +1,6 @@
 import { getAccessToken, SpotifyAuthError } from './auth.js';
 import { fetchWithTimeout, readBodyText, SPOTIFY_TIMEOUT_MS } from './timeout.js';
-import { discardBody } from '../http/body.js';
+import { discardBody } from '../util/body.js';
 
 import { SpotifyApiError, SpotifyRateLimitError, parseRetryAfter } from './errors.js';
 

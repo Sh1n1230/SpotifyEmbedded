@@ -126,7 +126,7 @@ describe('要件5: LLM は任意機能であり、何が起きても曲情報は
   it('ムード文のキャッシュが満杯でも新しい曲のものが入り、同じ曲では LLM を呼び直さない', async () => {
     givenLlmConfigured();
     givenLlmReplies('今チルな気分になっています');
-    for (let index = 0; index < 200; index += 1) moodCache.set(`old-${index}`, { text: 'x', generated_at: NOW_ISO });
+    for (let index = 0; index < 200; index += 1) moodCache.set(`old-${index}`, { text: 'x', generated_at: NOW_ISO, model: null });
     givenNowPlaying(aSpotifyTrack());
 
     await collectNowPlaying({ bypassCache: true });
@@ -639,6 +639,7 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
       expect(result?.mood).toEqual({
         text: '最近は夜に似合う曲ばかり聴いているようです',
         generated_at: NOW_ISO,
+        model: 'spec-model',
       });
       const prompt = (bodyOf(must(rankingMoodCalls()[0], 'リクエスト'))['messages'] as { content: string }[])[1]!
         .content;
@@ -670,7 +671,7 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
       const again = await resolveFor(entries(...TOP10));
 
       expect(rankingMoodCalls()).toHaveLength(1);
-      expect(again?.mood).toEqual({ text: '一回目の文', generated_at: NOW_ISO });
+      expect(again?.mood).toEqual({ text: '一回目の文', generated_at: NOW_ISO, model: 'spec-model' });
     });
 
     it('取得件数（limit）が違っても、上位10曲が同じなら同じ文を使う', async () => {
@@ -748,7 +749,7 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
     const svg = renderRankingCard({
       tracks: [aTopTrackEntry()],
       fetchedAt: NOW_ISO,
-      mood: { text: '夜に似合う曲 & <深夜> ばかり聴いているようです', generated_at: NOW_ISO },
+      mood: { text: '夜に似合う曲 & <深夜> ばかり聴いているようです', generated_at: NOW_ISO, model: null },
     });
 
     expectValidXml(svg);
@@ -811,7 +812,7 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
       await runGenerate();
 
       const json = JSON.parse(read('top-tracks.json')) as { mood: unknown };
-      expect(json.mood).toEqual({ text: '一回目の文', generated_at: NOW_ISO });
+      expect(json.mood).toEqual({ text: '一回目の文', generated_at: NOW_ISO, model: 'spec-model' });
       expect(read('ranking.svg')).toContain('一回目の文');
       expect(read('index.html')).toContain('一回目の文');
 
@@ -819,7 +820,7 @@ describe('要件6: ランキングにもムード文が付くが、顔ぶれが�
       expect(snapshot.ranking_mood).toEqual({
         range: 'short_term',
         track_ids: TOP10.map((n) => `track-${n}`),
-        mood: { text: '一回目の文', generated_at: NOW_ISO },
+        mood: { text: '一回目の文', generated_at: NOW_ISO, model: 'spec-model' },
       });
     });
 
@@ -1101,7 +1102,7 @@ describe('GOOGLE_API_KEY を LLM のキーとして使うときは、起動時�
 
 describe('外部への fetch には、アプリ名と版の User-Agent を付ける', () => {
   it('Spotify・LLM・ジャケ写の取得のすべてに付く', async () => {
-    const { USER_AGENT } = await import('../http/userAgent.js');
+    const { USER_AGENT } = await import('../util/userAgent.js');
     const { VERSION } = await import('../version.js');
     givenLlmConfigured();
     givenNowPlaying(aSpotifyTrack());

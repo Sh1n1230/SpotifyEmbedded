@@ -359,6 +359,7 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 ```json
 {
   "is_playing": true,
+  "progress_ms": 42000,
   "track": {
     "id": "5wujBwqG7INdStqGd4tRMX",
     "name": "Armed And Dangerous",
@@ -366,19 +367,25 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
     "album": "Goodbye & Good Riddance",
     "album_art_url": "https://i.scdn.co/image/...",
     "duration_ms": 169999,
+    "explicit": true,
     "popularity": null,
     "spotify_url": "https://open.spotify.com/track/...",
     "preview_url": null
   },
   "mood": {
     "text": "ダークな気分に浸っているようです",
-    "generated_at": "2026-09-19T13:35:14.667Z"
+    "generated_at": "2026-09-19T13:35:14.667Z",
+    "model": "gemini-3.1-flash-lite"
   },
   "fetched_at": "2026-09-19T13:35:14.669Z"
 }
 ```
 
-再生していない場合は `is_playing: false`、`track: null`、`mood: null` を返します。時刻（`fetched_at`・`mood.generated_at`）はすべて UTC の ISO 8601（`Z` 付き）です。
+再生していない場合は `is_playing: false`、`progress_ms: null`、`track: null`、`mood: null` を返します。ポッドキャストのエピソードとローカルファイルは曲として扱わず、再生していない場合と同じ応答になります。
+
+`progress_ms` は `fetched_at` の時点の再生位置です。応答はキャッシュされるので（既定30秒）、今の位置は `progress_ms +（現在時刻 − fetched_at）` で見積もってください（一時停止やシークは反映されません）。`mood.model` は生成に使った LLM のモデル名で、v1.8.0 以前に作られた文では `null` です。カードの表示には、`progress_ms`・`explicit`・`model` のどれも使いません。
+
+時刻（`fetched_at`・`mood.generated_at`）はすべて UTC の ISO 8601（`Z` 付き）です。
 
 > **`popularity` / `preview_url` / `genres` について**
 > Spotify側の仕様変更により、2024年11月以降に作成された開発者アプリケーションではこれらの項目がAPIから返却されません（アーティスト情報のバッチ取得 `/artists?ids=` は 403 Forbidden となります）。スキーマの後方互換性を保つためレスポンス内のキーは維持されますが、`popularity` と `preview_url` は常に `null`、`genres` は空配列となります。詳細な背景は[設計メモ](#audio-features-を使わない理由)を参照してください。
@@ -404,7 +411,7 @@ LLM が未設定の場合やムード文の生成に失敗した場合は、再�
 
 Node 版は、残りの回数をレート制限のヘッダーで返します。`RateLimit-Policy: "default";q=100;w=60` と `RateLimit: "default";r=42;t=37` は現行の草案（[draft-ietf-httpapi-ratelimit-headers-11](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)）の形で、`RateLimit-Limit`・`RateLimit-Remaining`・`RateLimit-Reset` は draft-03 以前の形です（移行のために併記しています）。これらと `Retry-After`・`X-Spotify-Embedded-Error` は `Access-Control-Expose-Headers` に含めているので、他のオリジンの JavaScript からも読めます。
 
-`GET /health` は `{ "status": "ok", "version": "1.8.0" }` のように、動いている版を返します。
+`GET /health` は `{ "status": "ok", "version": "1.9.0" }` のように、動いている版を返します。
 
 ### ランキング（`top-tracks.json`、静的モードのみ）
 
@@ -470,7 +477,6 @@ npx wrangler secret put LLM_API_KEY              # 任意（LLM_BASE_URL / LLM_M
 
 - 楽曲ごとのムード文はWorkers KVに永続化します。Workersの実行インスタンスはリクエスト終了後に破棄されやすいため、インメモリキャッシュのみでは同一楽曲に対するLLMの重複呼び出しを防げません。KV の無料枠の書き込みは1日1,000回で、超えると保存に失敗し、isolate が入れ替わるたびにムード文を作り直します（[KV の制限](https://developers.cloudflare.com/kv/platform/limits/)）。
 - Workers環境ではファイルシステムが利用できないため、`data/auth.json` は読み込めません。設定値はすべてWranglerのシークレット機能で環境変数として設定します。
-- 認証用エンドポイント（`npm run auth` / `/auth/*`）はローカル実行専用です。セキュリティ上、Workers環境では有効化しないでください。
 
 > `CORS_ORIGIN` を設定しないまま（`*`）だと、どのサイトからでも API を呼べる旨の案内が Workers Logs に出ます。Workers の実行環境（isolate）は頻繁に作り直され、そのたびに1回出るので、警告ではなく情報（info）のレベルで出しています。埋め込み先のオリジンを `CORS_ORIGIN` に設定すると出なくなります。Secrets の入れ忘れも、最初のリクエストでログに出ます（`/api/now-playing` は 503 を返します）。
 
@@ -506,14 +512,13 @@ docker run -p 3000:3000 --env-file .env spotify-embedded
 | `LLM_MAX_TOKENS` | | `80` | ムード文の生成の出力の上限（16〜4096）。推論を止められないモデルで応答が空になるときに上げる |
 | `LLM_TEMPERATURE` | | `0.7` | ムード文の生成の temperature（0〜2） |
 | `NOW_PLAYING_CACHE_SECONDS` | | `30` | ライブAPIが再生状況をメモリに保持する秒数（5〜300）。この間は Spotify を呼ばない。曲の切り替わりを早く反映したければ短く、Spotify の利用枠を節約したければ長くする |
-| `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:<PORT>/auth/callback` | Dashboard の登録値と一致させる（`PORT` を変えると既定値も変わる。`npm run auth` が起動時に表示する） |
+| `SPOTIFY_REDIRECT_URI` | | `http://127.0.0.1:<PORT>/auth/callback` | `npm run setup` が受ける Redirect URI。Dashboard の登録値と一致させる（`PORT` を変えると既定値も変わる） |
 | `PORT` | | `3000` | サーバーの待受ポート（1〜65535 の整数。それ以外は起動時に案内して終了する） |
-| `HOST` | | すべてのインターフェース（`npm run auth` では `127.0.0.1`） | Node版の待ち受けるホスト（例: `127.0.0.1` でループバックだけ）。Docker では未設定のままにする |
+| `HOST` | | すべてのインターフェース | Node版の待ち受けるホスト（例: `127.0.0.1` でループバックだけ）。Docker では未設定のままにする |
 | `CORS_ORIGIN` | | `*` | 許可するオリジン。カンマ区切りで複数書ける（例: `https://a.example,https://b.example`）。スキームとホスト（とポート）だけを書く（末尾の `/` は取り除く。パス付きなどオリジンとして読めない値は使わずに警告する）。`*` はほかのオリジンと一緒には使えない（混ぜると `*` を無視する）。本番では埋め込み先サイトに限定を推奨 |
 | `TRUSTED_PROXY_HEADER` | | — | Node版のレート制限でクライアントIPとして使うヘッダー（例: `fly-client-ip`・`x-forwarded-for`・`forwarded`。`forwarded`（RFC 7239）は最後の要素の `for=` を読む。値のポートは外す）。リバースプロキシ配下でのみ設定（ヘッダーは偽装できるため、プロキシが必ず上書きする構成に限る） |
 | `AUTH_STORE_PATH` | | `data/auth.json` | 認証情報の保存先 |
 | `NODE_ENV` | | — | `production` で本番相当として扱う（今は、`CORS_ORIGIN` が `*` のままなら起動時に警告することにだけ使う。Docker の既定は `production`） |
-| `ENABLE_AUTH_ROUTES` | | `false` | `true`（または `1`・`yes`・`on`）で `/auth/*` を有効化（`npm run auth` が設定する。ローカル専用） |
 
 認証情報（`SPOTIFY_*`・`LLM_API_KEY` など）の前後の空白と改行は取り除いて読みます（貼り付けで末尾に改行が付いても `invalid_client` になりません）。
 

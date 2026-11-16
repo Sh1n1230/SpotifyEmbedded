@@ -20,7 +20,6 @@ import {
 } from './http/securityHeaders.js';
 import { VERSION } from './version.js';
 import nowPlayingRouter from './routes/nowPlaying.js';
-import authRouter from './routes/auth.js';
 import embedRouter, { rateLimitedEmbedResponse } from './routes/embed.js';
 
 export type { RateLimiter } from './http/rateLimit.js';
@@ -131,8 +130,6 @@ export function createApp(options: AppOptions = {}): Hono {
 
   // /embed, /badge.svg
   app.route('/', embedRouter);
-
-  if (config.server.enableAuthRoutes) app.route('/auth', authRouter);
 
   app.onError(handleError);
   // 未定義のパスも、ほかのエラーと同じく JSON で返す。ランキングはライブAPIでは出さない（静的モード専用）

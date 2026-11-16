@@ -4,8 +4,8 @@
  * 専用SDKを使わないのは、OpenAI / OpenRouter / Gemini / ローカルのサーバーを
  * 同じコードで扱うため。必要なのは `POST {baseUrl}/chat/completions` ひとつ。
  */
-import { discardBody } from '../http/body.js';
-import { USER_AGENT } from '../http/userAgent.js';
+import { discardBody } from '../util/body.js';
+import { USER_AGENT } from '../util/userAgent.js';
 import { llmBaseUrlProblem } from './endpoint.js';
 
 export interface ChatMessage {

@@ -23,7 +23,8 @@ import { llmKeyNotice, resolveLlm } from '../llm/settings.js';
 import { missingAuthValues } from '../authStore.js';
 import { isTopTracksRange } from '../core/topTracksParams.js';
 import { VERSION } from '../version.js';
-import { forLog } from '../http/log.js';
+import { toMoodResult } from '../core/mood.js';
+import { forLog } from '../util/log.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { renderRankingCard } from '../render/ranking.js';
 import { renderEmbedPage } from '../render/page.js';
@@ -433,6 +434,7 @@ function snapshotToResponse(
   if (snapshot.state === 'playing') return nowPlaying;
   return {
     is_playing: false,
+    progress_ms: null,
     track: snapshot.track,
     mood: snapshot.mood,
     fetched_at: nowPlaying.fetched_at,
@@ -463,11 +465,31 @@ function readSnapshot(outDir: string): Snapshot | null {
     }
     // 壊れていたら無視して作り直す（1回余分に LLM を呼ぶだけで済む）。
     if (!isRankingMoodRecord(parsed.ranking_mood)) parsed.ranking_mood = null;
-    return parsed;
+    return upgradeSnapshot(parsed);
   } catch (err) {
     console.warn('[generate] %s を読めませんでした。無視します:', SNAPSHOT_FILE, err);
     return null;
   }
+}
+
+/**
+ * 古い版が書いた snapshot.json を、今の公開スキーマの形に揃える（ここから last-played.json などに出るため）。
+ * v1.8.0 以前のものには track.explicit と mood.model が無い。分からないので explicit は false、model は null にする。
+ */
+function upgradeSnapshot(snapshot: Snapshot): Snapshot {
+  const track = snapshot.track
+    ? { ...snapshot.track, explicit: (snapshot.track as Partial<TrackSummary>).explicit === true }
+    : null;
+  const rankingMood = snapshot.ranking_mood
+    ? { ...snapshot.ranking_mood, mood: toMoodResult(snapshot.ranking_mood.mood) ?? snapshot.ranking_mood.mood }
+    : null;
+  return { ...snapshot, track: track ? orderTrack(track) : null, mood: toMoodResult(snapshot.mood), ranking_mood: rankingMood };
+}
+
+/** 公開スキーマのキーの順番（explicit は duration_ms の後）に並べ直す。 */
+function orderTrack(track: TrackSummary): TrackSummary {
+  const { id, name, artist, album, album_art_url, duration_ms, explicit, ...rest } = track;
+  return { id, name, artist, album, album_art_url, duration_ms, explicit, ...rest };
 }
 
 function isSnapshot(value: unknown): value is Snapshot {

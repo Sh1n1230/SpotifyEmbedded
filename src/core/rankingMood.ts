@@ -16,6 +16,7 @@
  *   generate が snapshot.json に持ち越す。
  */
 import { generateRankingMood } from '../llm/moodGenerator.js';
+import { currentLlmModel } from '../llm/settings.js';
 import { rangeLabelJa } from './topTracksParams.js';
 import type { MoodResult, TopTrackEntry, TopTracksRange } from '../types/index.js';
 
@@ -76,7 +77,11 @@ export async function resolveRankingMood(
       periodLabel: rangeLabelJa(range),
       tracks: tracks.slice(0, RANKING_MOOD_BASIS_SIZE),
     });
-    return { range, track_ids: trackIds, mood: { text, generated_at: new Date().toISOString() } };
+    return {
+      range,
+      track_ids: trackIds,
+      mood: { text, generated_at: new Date().toISOString(), model: currentLlmModel() },
+    };
   } catch (err) {
     console.error(
       '[mood] ランキングのムード文を更新できませんでした:',

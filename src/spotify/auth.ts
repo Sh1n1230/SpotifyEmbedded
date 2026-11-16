@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { authValueSource, saveStoredAuth } from '../authStore.js';
 import { SpotifyApiError, SpotifyRateLimitError, parseRetryAfter } from './errors.js';
 import { fetchWithTimeout, readBodyText, SPOTIFY_TIMEOUT_MS } from './timeout.js';
-import { discardBody } from '../http/body.js';
+import { discardBody } from '../util/body.js';
 import { sharesInFlightWork } from '../runtime.js';
 
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';

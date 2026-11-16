@@ -28,7 +28,7 @@
 | | 例 |
 |---|---|
 | **対象** | このリポジトリのコード・GitHub Actions のワークフローの脆弱性 |
-| **対象外** | README で避けるよう書いている構成で起きること（`CORS_ORIGIN=*` のままの公開、プロキシの裏でない環境での `TRUSTED_PROXY_HEADER`、公開環境での `ENABLE_AUTH_ROUTES`）、Spotify や LLM のサービス側の問題 |
+| **対象外** | README で避けるよう書いている構成で起きること（`CORS_ORIGIN=*` のままの公開、プロキシの裏でない環境での `TRUSTED_PROXY_HEADER`）、Spotify や LLM のサービス側の問題 |
 
 ## 認証情報の扱い
 

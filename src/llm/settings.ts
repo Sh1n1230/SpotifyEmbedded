@@ -64,6 +64,12 @@ export function resolveLlm(): LlmResolution {
   return { kind: 'ready', settings: { baseUrl, apiKey, model } };
 }
 
+/** いまの設定で生成に使うモデル名。生成できない設定なら null。ムード文に「どのモデルで作ったか」を残すために使う。 */
+export function currentLlmModel(): string | null {
+  const llm = resolveLlm();
+  return llm.kind === 'ready' ? llm.settings.model : null;
+}
+
 /** ムード文を生成できる状態か。 */
 export function hasLlmConfigured(): boolean {
   return resolveLlm().kind === 'ready';
