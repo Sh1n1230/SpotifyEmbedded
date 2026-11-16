@@ -6,7 +6,7 @@ as requirements. Shared fetch mock, fixtures and the common `beforeEach` live in
 `fetch` layer, never by replacing modules — which URL, query and headers we hit is part of
 what's being verified. Fixtures default to a post-Nov-2024 app (restricted fields absent).
 
-- The Spotify access token, the in-flight refresh and the `/artists` 403 latch are module-level
+- The Spotify access token, the in-flight refresh and the `/artists` unavailable latch are module-level
   state; `beforeEach` resets them (`resetAccessToken`, `resetArtistGenreAvailability`), so every
   test starts without a token.
 - CLI specs spawn `src/cli/index.ts` through `TSX_LOADER` (tsx's public entry, from `support.ts`) in an empty temp
