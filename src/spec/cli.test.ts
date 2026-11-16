@@ -442,7 +442,8 @@ describe('setup の部品', () => {
         ? jsonOk({ access_token: 'a', refresh_token: 'fresh-refresh-token', expires_in: 3600 })
         : null
     );
-    const port = 41_000 + (process.pid % 20_000);
+    // 決め打ちの番号は Windows の予約済みの範囲に当たることがある（EACCES）ので、OS に選ばせる
+    const port = await freePort();
     const redirectUri = `http://127.0.0.1:${port}/auth/callback`;
     let authorizeUrl = '';
     const flow = runOAuthFlow({ clientId: 'id', clientSecret: 'secret', redirectUri }, (url) => {
