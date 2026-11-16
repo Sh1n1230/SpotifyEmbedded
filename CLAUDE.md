@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Run the same checks as CI, in order: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`
 (see CONTRIBUTING.md). `dev:worker` reads secrets from `.dev.vars`; `setup` is interactive OAuth (writes `.env` +
-`data/auth.json`, optionally gh secrets). The old `npm run auth` / `/auth/*` routes were removed in v1.9.0 — `setup` is the only OAuth path.
+`data/auth.json`, optionally gh secrets) and the only OAuth path.
 
 ## Two delivery modes
 
@@ -35,8 +35,8 @@ The same core powers both. This split is the product's core idea — don't colla
 - `src/spotify/` — API client (native fetch), token auto-refresh (concurrent callers share one
   refresh; a rotated refresh_token is used in-process and written back only to `data/auth.json`),
   nowPlaying, topTracks, recentlyPlayed, oauth, `track.ts` (the single raw→`TrackSummary`
-  mapping) and `artists.ts` (the single genre-lookup path; latches off on 403 or a response
-  without genres, never on transient failures)
+  mapping) and `artists.ts` (the single genre-lookup path; latches off on 403/404/410 or a
+  response without genres, never on transient failures)
 - `src/llm/` — OpenAI-compatible chat client (`client.ts`), provider presets (`providers.ts`),
   and the Japanese mood prompt (`moodGenerator.ts`). Any OpenAI-format endpoint works;
   the presets are input helpers, not an integration list. No provider SDK.
@@ -70,7 +70,7 @@ The same core powers both. This split is the product's core idea — don't colla
   returns 403, single-artist responses omit `genres`, and `popularity` / `preview_url` are
   absent from both `/me/player/currently-playing` and `/me/top/tracks`. `src/spotify/artists.ts`
   keeps the genre lookup for extended-quota apps but latches "unavailable" after the first 403, 404 or 410
-  (the Feb 2026 change removed batch `GET /artists` from Development Mode apps; which status it returns is unverified)
+  (the Feb 2026 change removed batch `GET /artists` from Development Mode apps; it returns 403, checked 2026-11-16)
   or a response with no genres, so it stops retrying. `TrackSummary.popularity` is `number | null`; the key always exists.
 - Mood inference therefore usually has only track/artist/album names. `moodGenerator` drops
   absent signals from the prompt rather than writing "不明" — a stated-but-empty hint skews output.
