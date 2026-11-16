@@ -29,5 +29,5 @@ jobs:
             --exclude '127\.0\.0\.1'
             --exclude 'localhost'
             --exclude 'spotify-embedded\.<subdomain>'
-            README.md CONTRIBUTING.md SECURITY.md docs/dependencies.md
+            README.md CONTRIBUTING.md SECURITY.md docs/dependencies.md docs/api.md
           fail: true
