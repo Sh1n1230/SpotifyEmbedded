@@ -12,7 +12,7 @@ import { config } from './config.js';
 import { missingAuthValues } from './authStore.js';
 import { llmKeyNotice, resolveLlm } from './llm/settings.js';
 import { clientKey, memoryRateLimiter, warnIfUnknown } from './http/rateLimit.js';
-import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning } from './corsOrigins.js';
 import { portInUseHelp } from './http/portInUse.js';
 import { forLog } from './util/log.js';
 import { DEMO_PAGE_CSP, EMBED_SCRIPT_CACHE_CONTROL } from './http/securityHeaders.js';

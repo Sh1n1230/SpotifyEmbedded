@@ -1,5 +1,5 @@
 import { requireAuthValue } from './authStore.js';
-import { parseCorsOrigins } from './http/cors.js';
+import { parseCorsOrigins } from './corsOrigins.js';
 
 /** ポートの既定値 */
 const DEFAULT_PORT = 3000;

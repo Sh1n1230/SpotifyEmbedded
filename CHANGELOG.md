@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### 内部
+
+- `CORS_ORIGIN` の解釈を `src/http/cors.ts` から `src/corsOrigins.ts` に移しました（設定が `src/http/` に依存しないようにする）
+
 ## [1.9.0] - 2026-11-16
 
 ### アップグレード時に確かめること

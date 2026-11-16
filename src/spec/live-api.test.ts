@@ -14,7 +14,7 @@ import {
   HSTS,
   PERMISSIONS_POLICY,
 } from '../http/securityHeaders.js';
-import { analyzeCorsOrigins, openCorsWarning, parseCorsOrigins } from '../http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning, parseCorsOrigins } from '../corsOrigins.js';
 import { escapeXml } from '../render/text.js';
 import {
   NOW,

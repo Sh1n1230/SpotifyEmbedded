@@ -10,7 +10,7 @@
 import type { ExecutionContext, KVNamespace, RateLimit } from '@cloudflare/workers-types';
 import { createApp } from './app.js';
 import { bindingRateLimiter } from './http/rateLimit.js';
-import { analyzeCorsOrigins, openCorsWarning } from './http/cors.js';
+import { analyzeCorsOrigins, openCorsWarning } from './corsOrigins.js';
 import { config } from './config.js';
 import { setDurableStore, type DurableStore } from './cache/index.js';
 import { MissingConfigError, missingAuthValues } from './authStore.js';
