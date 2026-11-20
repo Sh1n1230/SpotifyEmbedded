@@ -185,27 +185,43 @@ export async function generate(options: GenerateOptions): Promise<void> {
   // iframe 用ページには、取れなかった回も前回のランキングを出す（無ければランキングなし）
   const topTracks = fetchedTopTracks ?? readPreviousTopTracks(outDir);
 
-  // 停止中は、前回の観測より後に聴き終えた曲がないかを履歴で確かめる
-  const recent = nowPlaying.is_playing
-    ? null
-    : await timed('再生履歴', () =>
-        collectRecentlyPlayed({
-          skipMood: options.skipMood,
-          previous: previous?.track
-            ? { trackId: previous.track.id, mood: previous.mood, observedAt: previous.observed_at }
-            : null,
-        })
-      );
+  // ランキングのジャケ写は曲の一覧だけで決まるので、ここで取りに行き、下の再生履歴・ムード文の LLM の待ちと重ねる。
+  // 失敗は null（プレースホルダ）になるだけで投げない（fetchImageDataUri）
+  const rankingArtsPending = timed('ランキングのジャケ写', () =>
+    mapWithLimit(fetchedTopTracks?.tracks.slice(0, options.count) ?? [], IMAGE_CONCURRENCY, (track) =>
+      track.album_art_url
+        ? fetchImageDataUri(albumArtAtSize(track.album_art_url, rankingArtSize(options.count)))
+        : Promise.resolve(null)
+    )
+  );
+
+  // 再生履歴（停止中だけ）とランキングのムード文は互いに独立なので並行させる。どちらも LLM を呼びうる
+  const [recent, rankingMoodResult] = await Promise.all([
+    // 停止中は、前回の観測より後に聴き終えた曲がないかを履歴で確かめる
+    nowPlaying.is_playing
+      ? Promise.resolve(null)
+      : timed('再生履歴', () =>
+          collectRecentlyPlayed({
+            skipMood: options.skipMood,
+            previous: previous?.track
+              ? { trackId: previous.track.id, mood: previous.mood, observedAt: previous.observed_at }
+              : null,
+          })
+        ),
+    fetchedTopTracks && wantMood && fetchedTopTracks.tracks.length > 0
+      ? timed('ランキングのムード文', () =>
+          resolveRankingMood(fetchedTopTracks.range, fetchedTopTracks.tracks, previous?.ranking_mood ?? null, {
+            force: options.refreshRankingMood === true,
+          })
+        )
+      : Promise.resolve(undefined),
+  ]);
 
   // 記録（snapshot に残すもの）と、今回表示するものを分ける。作らない回・作れない回は記録を前回のまま残し、表示しない
   let rankingMood: RankingMoodRecord | null = previous?.ranking_mood ?? null;
   let shownRankingMood: MoodResult | null = null;
-  if (fetchedTopTracks && wantMood && fetchedTopTracks.tracks.length > 0) {
-    rankingMood = await timed('ランキングのムード文', () =>
-      resolveRankingMood(fetchedTopTracks.range, fetchedTopTracks.tracks, previous?.ranking_mood ?? null, {
-        force: options.refreshRankingMood === true,
-      })
-    );
+  if (fetchedTopTracks && rankingMoodResult !== undefined) {
+    rankingMood = rankingMoodResult;
     shownRankingMood = rankingMood?.mood ?? null;
     fetchedTopTracks.mood = shownRankingMood;
   }
@@ -219,19 +235,12 @@ export async function generate(options: GenerateOptions): Promise<void> {
   };
   logState(snapshot, resolved.source, shownRankingMood);
 
-  // ジャケ写は SVG に焼き込むため data URI 化する（GitHub の camo 対策）
-  const [cardArt, rankingArts] = await timed('ジャケ写', () =>
-    Promise.all([
-      snapshot.track?.album_art_url
-        ? fetchImageDataUri(albumArtAtSize(snapshot.track.album_art_url, 300))
-        : Promise.resolve(null),
-      mapWithLimit(fetchedTopTracks?.tracks.slice(0, options.count) ?? [], IMAGE_CONCURRENCY, (track) =>
-        track.album_art_url
-          ? fetchImageDataUri(albumArtAtSize(track.album_art_url, rankingArtSize(options.count)))
-          : Promise.resolve(null)
-      ),
-    ])
-  );
+  // ジャケ写は SVG に焼き込むため data URI 化する（GitHub の camo 対策）。カードの曲は snapshot が決まってから分かる
+  const cardArtUrl = snapshot.track?.album_art_url;
+  const [cardArt, rankingArts] = await Promise.all([
+    cardArtUrl ? timed('ジャケ写', () => fetchImageDataUri(albumArtAtSize(cardArtUrl, 300))) : Promise.resolve(null),
+    rankingArtsPending,
+  ]);
 
   const outputs = new Map<string, string>();
   const themes = options.theme === 'both' ? (['dark', 'light'] as const) : ([options.theme] as const);

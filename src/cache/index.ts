@@ -62,7 +62,7 @@ export class TtlCache<V = unknown> {
 
 // 既定は 30 秒。NOW_PLAYING_CACHE_SECONDS で変えられる（src/config.ts）
 export const nowPlayingCache = new TtlCache<NowPlayingResponse>(() => config.server.nowPlayingCacheSeconds);
-// Keyed by trackId. 満杯なら最も長く読まれていない曲のものを捨てて入れる。
+// キーはプロンプトの版・モデル名・曲 ID（collect.ts の moodKey）。満杯なら最も長く読まれていない曲のものを捨てて入れる。
 export const moodCache = new TtlCache<MoodResult>(86400, 200);
 // Keyed by image URL. ライブSVGはリクエストのたびにジャケ写を data URI 化
 // するため、画像バイト列を使い回す。

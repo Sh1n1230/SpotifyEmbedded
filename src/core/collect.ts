@@ -51,6 +51,11 @@ export interface CollectOptions {
    * CLI は実行ごとに新しいプロセスでメモリのキャッシュが空なので、これが無いと同じ曲でも毎回作り直す。
    */
   knownMood?: { trackId: string; mood: MoodResult } | null;
+  /**
+   * 再生中の曲が分かった時点（ムード文の生成より前）で呼ぶ。曲だけで始められる処理（/badge.svg のジャケ写の取得）を
+   * ムード文の生成と並行させるため。キャッシュや進行中の取得を使い回したときは呼ばない。ここで投げた例外は無視する。
+   */
+  onTrack?: (track: TrackSummary) => void;
 }
 
 export interface TopTracksOptions {
@@ -58,15 +63,6 @@ export interface TopTracksOptions {
   range?: TopTracksRange;
   /** 取得件数（10 / 30 / 50）。既定は 50。 */
   limit?: TopTracksLimit;
-}
-
-/** maxKeys 超過時に set が throw する。保存失敗は致命的ではない。 */
-function cacheSet<V>(cache: TtlCache<V>, key: string, value: V): void {
-  try {
-    cache.set(key, value);
-  } catch {
-    // キャッシュが満杯。次回は再取得になるだけなので無視する。
-  }
 }
 
 /** 曲ごとのムード文の保持期間。メモリの moodCache と揃える。 */
@@ -91,7 +87,7 @@ async function readThrough<T>(
   try {
     const stored = parse(await store.get(durableKey));
     if (stored === null) return null;
-    cacheSet(cache, key, stored);
+    cache.set(key, stored);
     return stored;
   } catch (err) {
     console.warn('[store] 読み込みに失敗しました:', err instanceof Error ? err.message : err);
@@ -111,7 +107,7 @@ async function writeThrough<V>(
   ttlSeconds: number | undefined,
   defer: CollectOptions['defer']
 ): Promise<void> {
-  cacheSet(cache, key, value);
+  cache.set(key, value);
   const store = getDurableStore();
   if (!store) return;
   const written = (async () => {
@@ -232,6 +228,13 @@ export async function collectNowPlaying(
 
 async function fetchAndBuildNowPlaying(options: CollectOptions): Promise<NowPlayingResponse> {
   const data = await fetchNowPlaying();
+  if (data.isPlaying && data.track && options.onTrack) {
+    try {
+      options.onTrack(data.track);
+    } catch {
+      // 先回りの処理の失敗で応答を落とさない
+    }
+  }
 
   // LLMが未設定なら、呼びに行かず静かに省く（曲情報だけで成立する）
   const wantMood = !options.skipMood && hasLlmConfigured();
@@ -254,7 +257,7 @@ async function fetchAndBuildNowPlaying(options: CollectOptions): Promise<NowPlay
 
   // skipMood の結果はムード文を欠くので、共有のキャッシュに入れない（in-flight を共有しないのと同じ理由。
   // 入れると、続く既定の呼び出しが30秒間ムード文なしになる）
-  if (!options.bypassCache && !options.skipMood) cacheSet(nowPlayingCache, 'now-playing', response);
+  if (!options.bypassCache && !options.skipMood) nowPlayingCache.set('now-playing', response);
   return response;
 }
 

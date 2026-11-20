@@ -213,6 +213,38 @@ describe('要件4: GitHub Actions から定期的にランキング画像を更�
       }
     });
 
+    it('ランキングのジャケ写は、ランキングのムード文の生成（LLM）を待たずに取りに行く', async () => {
+      givenNowPlaying(null);
+      givenTopTracks([aSpotifyTrack()]);
+      givenLlmConfigured();
+      // 本文を release まで返さない LLM の応答
+      let release = (): void => {};
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          release = () => {
+            controller.enqueue(
+              new TextEncoder().encode(JSON.stringify({ choices: [{ message: { content: '夜更けの選曲。' } }] }))
+            );
+            controller.close();
+          };
+        },
+      });
+      respondWith((url) =>
+        url.includes('/chat/completions')
+          ? new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })
+          : null
+      );
+
+      const pending = generate({ outDir, count: 5, range: 'short_term', limit: 50, theme: 'dark', skipMood: false });
+      await vi.waitFor(() => expect(callsTo('.scdn.co')).toHaveLength(1));
+      expect(callsTo('/chat/completions')).toHaveLength(1);
+      release();
+      await pending;
+
+      expect(read('ranking.svg')).toContain('data:image/jpeg;base64,');
+      expect(read('top-tracks.json')).toContain('夜更けの選曲');
+    });
+
     it('GitHub Actions ではジョブのサマリーに結果を書き、曲名の Markdown を無効にする', async () => {
       const summary = join(outDir, 'summary.md');
       vi.stubEnv('GITHUB_STEP_SUMMARY', summary);

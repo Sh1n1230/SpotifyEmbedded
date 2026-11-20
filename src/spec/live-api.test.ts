@@ -22,8 +22,10 @@ import {
   callsTo,
   aSpotifyTrack,
   givenNowPlaying,
+  givenLlmConfigured,
   expectValidXml,
 } from './support.js';
+import { setShareInFlightWork } from '../runtime.js';
 
 describe('ライブAPIは公開エンドポイントとして余計なものを漏らさない', () => {
   it('キャッシュ切れの瞬間の同時アクセスは、Spotify を1回だけ叩いて結果を共有する', async () => {
@@ -787,7 +789,7 @@ describe('ライブAPIのレート制限の数え方（Node 版のメモリ実�
 });
 
 describe('ライブAPIのメモリキャッシュ（TtlCache）は、期限と上限を守る', () => {
-  // now-playing 30 秒、ムード文 24 時間・200 件、ジャケ写 24 時間・100 件がこれに乗っている。
+  // now-playing 30 秒、ムード文 24 時間・200 件、ジャケ写 24 時間・20 件がこれに乗っている。
   // 上限があるのでムード文やジャケ写のキャッシュが際限なく伸びない。
   it('期限内は値を返し、期限を過ぎたら undefined を返す', () => {
     const cache = new TtlCache(30);
@@ -853,5 +855,64 @@ describe('ライブAPIのメモリキャッシュ（TtlCache）は、期限と�
 
     expect(cache.get('a')).toBeUndefined();
     expect(() => cache.set('b', 2)).not.toThrow();
+  });
+});
+
+describe('/badge.svg は曲が変わった直後も速く返す', () => {
+  /** 本文を release() まで返さない応答。外部サービスの待ちを、時間に頼らずに作る。 */
+  function gatedResponse(body: string | Buffer, contentType: string): { response: Response; release: () => void } {
+    let release = (): void => {};
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        release = () => {
+          controller.enqueue(typeof body === 'string' ? new TextEncoder().encode(body) : new Uint8Array(body));
+          controller.close();
+        };
+      },
+    });
+    return { response: new Response(stream, { status: 200, headers: { 'content-type': contentType } }), release };
+  }
+
+  it('曲が分かった時点でジャケ写を取りに行き、ムード文の生成を待たない', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    givenLlmConfigured();
+    const llm = gatedResponse(JSON.stringify({ choices: [{ message: { content: '静かな夜の曲。' } }] }), 'application/json');
+    respondWith((url) => (url.includes('/chat/completions') ? llm.response : null));
+
+    const pending = createApp().request('/badge.svg');
+    // LLM が返す前に、ジャケ写の取得が始まっている
+    await vi.waitFor(() => expect(callsTo('.scdn.co')).toHaveLength(1));
+    llm.release();
+    const svg = await (await pending).text();
+
+    expect(svg).toContain('data:image/jpeg;base64,');
+    expect(svg).toContain('静かな夜の曲');
+    expect(callsTo('.scdn.co')).toHaveLength(1);
+  });
+
+  it('同時に来たリクエストは、同じジャケ写を1回だけ取りに行く（Node）', async () => {
+    givenNowPlaying(aSpotifyTrack());
+    const image = gatedResponse(Buffer.from('fake-jpeg-bytes'), 'image/jpeg');
+    respondWith((url) => (url.includes('.scdn.co') ? image.response : null));
+
+    const app = createApp();
+    const first = app.request('/badge.svg');
+    const second = app.request('/badge.svg');
+    await vi.waitFor(() => expect(callsTo('.scdn.co')).toHaveLength(1));
+    image.release();
+    const svgs = await Promise.all([first, second].map(async (res) => (await res).text()));
+
+    for (const svg of svgs) expect(svg).toContain('data:image/jpeg;base64,');
+    expect(callsTo('.scdn.co')).toHaveLength(1);
+  });
+
+  it('Workers（進行中の取得を共有しない）でも、1つのリクエストの中ではジャケ写を1回だけ取りに行く', async () => {
+    setShareInFlightWork(false);
+    givenNowPlaying(aSpotifyTrack());
+
+    const svg = await (await createApp().request('/badge.svg')).text();
+
+    expect(svg).toContain('data:image/jpeg;base64,');
+    expect(callsTo('.scdn.co')).toHaveLength(1);
   });
 });
