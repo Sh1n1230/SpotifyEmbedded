@@ -10,13 +10,14 @@
  * 最新を描く」ことだけ。
  */
 import { Hono, type Context } from 'hono';
-import { collectNowPlaying } from '../core/collect.js';
+import { collectNowPlaying, type CollectOptions } from '../core/collect.js';
 import { renderNowPlayingCard, type PlaybackState } from '../render/card.js';
 import { parseMaxWidth, renderEmbedPage } from '../render/page.js';
 import { IMAGE_CSP_SOURCES, albumArtAtSize, fetchImageDataUri } from '../render/image.js';
 import { resolvePageTheme, resolveTheme } from '../render/theme.js';
 import { artCache } from '../cache/index.js';
 import { liveMoodOptions } from '../http/background.js';
+import { sharesInFlightWork } from '../runtime.js';
 import { SpotifyAuthError } from '../spotify/client.js';
 import type { NowPlayingResponse } from '../types/index.js';
 
@@ -60,22 +61,36 @@ function makeNonce(): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-/** 画像バイト列は使い回す。取得失敗は null のままキャッシュしない。 */
-async function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | null> {
+/**
+ * 進行中のジャケ写の取得（URL ごと）。曲が変わった直後に同時に来た /badge.svg が、同じ画像を並列に取りに行かない。
+ * Workers では別のリクエストが作った Promise を待てないので使わない（src/runtime.ts）。
+ */
+const artInFlight = new Map<string, Promise<string | null>>();
+
+/** 画像バイト列は使い回す。取得失敗は null のままキャッシュしない（fetchImageDataUri は投げない）。 */
+function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | null> {
   const target = albumArtAtSize(url, size);
   const cached = artCache.get(target);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return Promise.resolve(cached);
 
-  const dataUri = await fetchImageDataUri(target);
-  if (dataUri) {
-    try {
-      artCache.set(target, dataUri);
-    } catch {
-      // キャッシュ満杯。次回再取得になるだけ。
-    }
-  }
-  return dataUri;
+  const fetchAndStore = async (): Promise<string | null> => {
+    const dataUri = await fetchImageDataUri(target);
+    if (dataUri) artCache.set(target, dataUri);
+    return dataUri;
+  };
+  if (!sharesInFlightWork()) return fetchAndStore();
+
+  const inFlight = artInFlight.get(target);
+  if (inFlight) return inFlight;
+  const started = fetchAndStore().finally(() => {
+    artInFlight.delete(target);
+  });
+  artInFlight.set(target, started);
+  return started;
 }
+
+/** /badge.svg に描くジャケ写のサイズ。 */
+const BADGE_ART_SIZE = 300;
 
 /**
  * /badge.svg は README の <img>、/embed は他サイトの <iframe> から読まれる。どちらも
@@ -86,9 +101,12 @@ async function cachedArt(url: string, size: 640 | 300 | 64): Promise<string | nu
  */
 const ERROR_HEADER = 'X-Spotify-Embedded-Error';
 
-async function nowPlayingOrNull(c: Context): Promise<NowPlayingResponse | null> {
+async function nowPlayingOrNull(
+  c: Context,
+  onTrack?: CollectOptions['onTrack']
+): Promise<NowPlayingResponse | null> {
   try {
-    return await collectNowPlaying(liveMoodOptions(c));
+    return await collectNowPlaying(onTrack ? { ...liveMoodOptions(c), onTrack } : liveMoodOptions(c));
   } catch (err) {
     // 覚えていた認証の失敗を返しただけのとき（Spotify は呼んでいない）は、表示のたびに同じ案内を出さない
     if (!(err instanceof SpotifyAuthError && err.repeated)) {
@@ -117,13 +135,20 @@ export function rateLimitedEmbedResponse(c: Context): Response | null {
 
 router.get('/badge.svg', async (c) => {
   const theme = resolveTheme(c.req.query('theme'));
-  const data = await nowPlayingOrNull(c);
+  // 曲が分かった時点でジャケ写を取りに行き、ムード文の生成（最大 LIVE_MOOD_DEADLINE_MS）と重ねる。
+  // 直列だと、曲が変わった直後の1回目はムード文の待ちとジャケ写の取得の合計がかかり、camo の時間制限に近づく
+  const prefetched = new Map<string, Promise<string | null>>();
+  const data = await nowPlayingOrNull(c, (track) => {
+    if (track.album_art_url) prefetched.set(track.album_art_url, cachedArt(track.album_art_url, BADGE_ART_SIZE));
+  });
   if (!data) {
     return sendSvg(c, renderNowPlayingCard({ state: 'idle', track: null, mood: null, theme, unavailable: true }));
   }
 
   const state: PlaybackState = data.is_playing && data.track ? 'playing' : 'idle';
-  const art = data.track?.album_art_url ? await cachedArt(data.track.album_art_url, 300) : null;
+  const artUrl = data.track?.album_art_url;
+  // 先に取りに行った画像ならそれを待つ（キャッシュ・進行中の取得を使い回した応答では先回りしていない）
+  const art = artUrl ? await (prefetched.get(artUrl) ?? cachedArt(artUrl, BADGE_ART_SIZE)) : null;
 
   return sendSvg(
     c,
