@@ -1,0 +1,20 @@
+{
+  "track": {
+    "id": "6Dmxt4rbi97c7sjoWRrJoj",
+    "name": "帰ろう",
+    "artist": "Fujii Kaze",
+    "album": "HELP EVER HURT NEVER",
+    "album_art_url": "https://i.scdn.co/image/ab67616d0000b273731953ff97a79644f6eb7b4e",
+    "duration_ms": 284480,
+    "explicit": false,
+    "popularity": null,
+    "spotify_url": "https://open.spotify.com/track/6Dmxt4rbi97c7sjoWRrJoj",
+    "preview_url": null
+  },
+  "mood": {
+    "text": "夕暮れに包まれながら、帰り道に思いを馳せているようです",
+    "generated_at": "2026-11-21T11:38:58.840Z",
+    "model": "qwen/qwen3.8-27b"
+  },
+  "played_at": "2026-11-21T08:45:16.124Z"
+}
