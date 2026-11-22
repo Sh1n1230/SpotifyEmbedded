@@ -7,7 +7,7 @@
 # 更新は Dependabot（.github/dependabot.yml の docker）が PR にする。
 
 # --- build stage ---
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS build
 WORKDIR /app
 COPY package*.json ./
 # npm のキャッシュは層の外（BuildKit のキャッシュマウント）に置く。package-lock.json が変わって層が無効になっても、
@@ -18,7 +18,7 @@ COPY src ./src
 RUN npm run build
 
 # --- runtime stage ---
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runtime
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS runtime
 # 版はビルドのときに --build-arg VERSION=1.2.3 で渡せる（渡さなくてもビルドできる）
 ARG VERSION=dev
 LABEL org.opencontainers.image.source="https://github.com/Sh1n1230/SpotifyEmbedded" \
