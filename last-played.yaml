@@ -1,0 +1,16 @@
+track:
+  id: 0RZiBrdTiCVCCnFCyr68Nr
+  name: ようこそジャパリパークへ
+  artist: Masayoshi Oishi
+  album: カバーアルバム「仮歌」
+  album_art_url: https://i.scdn.co/image/ab67616d0000b2734a4973f86a88d2704d5d2434
+  duration_ms: 203826
+  explicit: false
+  popularity: null
+  spotify_url: https://open.spotify.com/track/0RZiBrdTiCVCCnFCyr68Nr
+  preview_url: null
+mood:
+  text: 今、明るくポップな気分になっています
+  generated_at: '2026-11-28T13:29:50.396Z'
+  model: qwen/qwen3.8-27b
+played_at: '2026-11-28T05:24:59.160Z'
